@@ -12,7 +12,7 @@ class ExpenseService {
         .select()
         .eq('couple_id', coupleId)
         .eq('is_deleted', false)
-        .order('date', ascending: false);
+      .order('created_at', ascending: false);
     return rows.map((r) => ExpenseModel.fromJson(r)).toList();
   }
 
@@ -50,6 +50,33 @@ class ExpenseService {
         })
         .eq('id', expenseId);
   }
+
+  Future<void> updateExpense({
+    required String expenseId,
+    required String walletId,
+    required String categoryId,
+    required double amount,
+    String? description,
+    required DateTime date,
+  }) async {
+    await _db
+        .from('expenses')
+        .update({
+          'wallet_id': walletId,
+          'category_id': categoryId,
+          'amount': amount,
+          'description': description,
+          'date': date.toIso8601String().substring(0, 10),
+        })
+        .eq('id', expenseId);
+  }
+
+        Future<void> restoreExpense(String expenseId) async {
+          await _db
+          .from('expenses')
+          .update({'is_deleted': false, 'deleted_at': null})
+          .eq('id', expenseId);
+        }
 
   Future<List<CategoryModel>> getCategories(String coupleId) async {
     final rows = await _db

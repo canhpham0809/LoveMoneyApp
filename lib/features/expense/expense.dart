@@ -9,4 +9,3 @@ export 'data/services/expense_service.dart';
 
 // Presentation
 export 'presentation/screens/expense_list_screen.dart';
-export 'presentation/screens/add_expense_screen.dart';

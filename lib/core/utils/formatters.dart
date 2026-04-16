@@ -17,3 +17,9 @@ String formatDate(DateTime date) {
       '${date.month.toString().padLeft(2, '0')}/'
       '${date.year}';
 }
+
+/// Format date-time as dd/MM/yyyy HH:mm.
+String formatDateTime(DateTime dateTime) {
+  return '${formatDate(dateTime)} '
+      '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+}

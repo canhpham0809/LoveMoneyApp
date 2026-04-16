@@ -1,13 +1,23 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import 'package:flutter_app_demo/core/utils/amount_input.dart';
+import 'package:flutter_app_demo/core/widgets/amount_suggestion_chips.dart';
 import 'package:flutter_app_demo/core/utils/formatters.dart';
 import 'package:flutter_app_demo/features/fund/data/models/fund_model.dart';
 import 'package:flutter_app_demo/features/fund/data/services/fund_service.dart';
+import 'package:flutter_app_demo/features/fund/presentation/screens/fund_detail_screen.dart';
 
 class FundListScreen extends StatefulWidget {
   final String coupleId;
+  final ValueListenable<int>? refreshSignal;
 
-  const FundListScreen({super.key, required this.coupleId});
+  const FundListScreen({
+    super.key,
+    required this.coupleId,
+    this.refreshSignal,
+  });
 
   @override
   State<FundListScreen> createState() => _FundListScreenState();
@@ -22,7 +32,184 @@ class _FundListScreenState extends State<FundListScreen> {
   @override
   void initState() {
     super.initState();
+    widget.refreshSignal?.addListener(_onExternalRefresh);
     _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant FundListScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshSignal != widget.refreshSignal) {
+      oldWidget.refreshSignal?.removeListener(_onExternalRefresh);
+      widget.refreshSignal?.addListener(_onExternalRefresh);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.refreshSignal?.removeListener(_onExternalRefresh);
+    super.dispose();
+  }
+
+  void _onExternalRefresh() {
+    if (!mounted) return;
+    _load();
+  }
+
+  Future<void> _openFundPopup({FundModel? existing}) async {
+    final nameCtrl = TextEditingController();
+    final targetCtrl = TextEditingController();
+    DateTime? deadline = existing?.deadline;
+    if (existing != null) {
+      nameCtrl.text = existing.name;
+      if (existing.targetAmount != null) {
+        targetCtrl.text = formatAmountInput(
+          existing.targetAmount!.toStringAsFixed(0),
+        );
+      }
+    }
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) => AlertDialog(
+            title: Text(existing == null ? 'Them quy' : 'Sua quy'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Ten quy',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: targetCtrl,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      ThousandsSeparatorInputFormatter(),
+                    ],
+                    decoration: const InputDecoration(
+                      labelText: 'Muc tieu (tuy chon)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  AmountSuggestionChips(
+                    controller: targetCtrl,
+                    onSelected: (value) {
+                      targetCtrl.text = formatAmountInput(value.toString());
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final picked = await showDatePicker(
+                        context: dialogContext,
+                        initialDate: deadline ?? DateTime.now(),
+                        firstDate: DateTime.now(),
+                        lastDate: DateTime(2100),
+                      );
+                      if (picked != null) {
+                        setDialogState(() => deadline = picked);
+                      }
+                    },
+                    icon: const Icon(Icons.calendar_today),
+                    label: Text(
+                      deadline == null
+                          ? 'Chon han (tuy chon)'
+                          : 'Han: ${formatDate(deadline!)}',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Huy'),
+              ),
+              FilledButton(
+                onPressed: () async {
+                  if (nameCtrl.text.trim().isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Nhap ten quy.')),
+                    );
+                    return;
+                  }
+                  if (existing == null) {
+                    await _service.createFund(
+                      coupleId: widget.coupleId,
+                      name: nameCtrl.text.trim(),
+                      targetAmount: targetCtrl.text.trim().isEmpty
+                          ? null
+                          : parseAmountInput(targetCtrl.text.trim()),
+                      deadline: deadline,
+                    );
+                  } else {
+                    await _service.updateFund(
+                      fundId: existing.id,
+                      name: nameCtrl.text.trim(),
+                      targetAmount: targetCtrl.text.trim().isEmpty
+                          ? null
+                          : parseAmountInput(targetCtrl.text.trim()),
+                      deadline: deadline,
+                    );
+                  }
+                  if (dialogContext.mounted) {
+                    Navigator.pop(dialogContext, true);
+                  }
+                },
+                child: const Text('Luu'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (saved == true) {
+      await _load();
+    }
+  }
+
+  Future<void> _showFundActions(FundModel item) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Edit'),
+              onTap: () => Navigator.pop(sheetContext, 'edit'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Colors.red),
+              title: const Text('Delete'),
+              onTap: () => Navigator.pop(sheetContext, 'delete'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (action == 'edit') {
+      await _openFundPopup(existing: item);
+      return;
+    }
+    if (action == 'delete') {
+      await _service.deleteFund(item.id);
+      if (mounted) {
+        setState(() {
+          _items.removeWhere((f) => f.id == item.id);
+        });
+      }
+    }
   }
 
   Future<void> _load() async {
@@ -77,7 +264,24 @@ class _FundListScreenState extends State<FundListScreen> {
                     horizontal: 12,
                     vertical: 6,
                   ),
-                  child: Padding(
+                  child: InkWell(
+                    onTap: () async {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => FundDetailScreen(
+                            coupleId: widget.coupleId,
+                            fundId: item.id,
+                          ),
+                        ),
+                      );
+                      if (mounted) {
+                        await _load();
+                      }
+                    },
+                    onLongPress: () => _showFundActions(item),
+                    borderRadius: BorderRadius.circular(12),
+                    child: Padding(
                     padding: const EdgeInsets.all(12.0),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -139,16 +343,12 @@ class _FundListScreenState extends State<FundListScreen> {
                       ],
                     ),
                   ),
+                  ),
                 );
               },
             ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          // TODO: AddFundScreen
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Tính năng thêm quỹ sẽ sớm ra mắt.')),
-          );
-        },
+        onPressed: _openFundPopup,
         child: const Icon(Icons.add),
       ),
     );

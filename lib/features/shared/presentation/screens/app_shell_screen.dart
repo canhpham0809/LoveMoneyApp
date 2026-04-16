@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -5,13 +7,13 @@ import 'package:flutter_app_demo/features/dashboard/presentation/screens/dashboa
 import 'package:flutter_app_demo/features/expense/presentation/screens/expense_list_screen.dart';
 import 'package:flutter_app_demo/features/income/presentation/screens/income_list_screen.dart';
 import 'package:flutter_app_demo/features/transfer/presentation/screens/transfer_list_screen.dart';
-import 'package:flutter_app_demo/features/dashboard/presentation/screens/analytics_screen.dart';
 import 'package:flutter_app_demo/features/settings/presentation/screens/create_couple_screen.dart';
 import 'package:flutter_app_demo/features/settings/presentation/screens/join_couple_screen.dart';
 import 'package:flutter_app_demo/features/settings/presentation/screens/settings_screen.dart';
-import 'package:flutter_app_demo/features/expense/presentation/screens/add_expense_screen.dart';
-import 'package:flutter_app_demo/features/income/presentation/screens/add_income_screen.dart';
-import 'package:flutter_app_demo/features/transfer/presentation/screens/add_transfer_screen.dart';
+import 'package:flutter_app_demo/features/fund/presentation/screens/fund_list_screen.dart';
+import 'package:flutter_app_demo/features/debt/presentation/screens/debt_list_screen.dart';
+import 'package:flutter_app_demo/features/shared/data/services/quick_add_service.dart';
+import 'package:flutter_app_demo/features/expense/data/services/expense_service.dart';
 
 class AppShellScreen extends StatefulWidget {
   const AppShellScreen({super.key});
@@ -25,6 +27,41 @@ class _AppShellScreenState extends State<AppShellScreen> {
   String? _coupleId;
   bool _isLoading = true;
   String? _error;
+  final ValueNotifier<int> _dashboardRefreshBus = ValueNotifier<int>(0);
+  final ValueNotifier<int> _expenseRefreshBus = ValueNotifier<int>(0);
+  final ValueNotifier<int> _incomeRefreshBus = ValueNotifier<int>(0);
+  final ValueNotifier<int> _transferRefreshBus = ValueNotifier<int>(0);
+  final ValueNotifier<int> _fundRefreshBus = ValueNotifier<int>(0);
+  final ValueNotifier<int> _debtRefreshBus = ValueNotifier<int>(0);
+  final _quickAddService = QuickAddService();
+  final _expenseService = ExpenseService();
+  int _quickAddSnackVersion = 0;
+
+  void _markExpenseChanged() {
+    _dashboardRefreshBus.value += 1;
+    _expenseRefreshBus.value += 1;
+  }
+
+  void _markIncomeChanged() {
+    _dashboardRefreshBus.value += 1;
+    _incomeRefreshBus.value += 1;
+  }
+
+  void _markTransferChanged() {
+    _dashboardRefreshBus.value += 1;
+    _transferRefreshBus.value += 1;
+  }
+
+  @override
+  void dispose() {
+    _dashboardRefreshBus.dispose();
+    _expenseRefreshBus.dispose();
+    _incomeRefreshBus.dispose();
+    _transferRefreshBus.dispose();
+    _fundRefreshBus.dispose();
+    _debtRefreshBus.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -68,83 +105,162 @@ class _AppShellScreenState extends State<AppShellScreen> {
     }
   }
 
-  void _showAddMenu(BuildContext context, String coupleId) {
-    showModalBottomSheet<void>(
+  Future<void> _openQuickAddDialog(String coupleId) async {
+    final categories = await _expenseService.getCategories(coupleId);
+    if (!mounted) return;
+
+    final ctrl = TextEditingController();
+    String? selectedCategoryId;
+    String? selectedCategoryName;
+    final payload = await showDialog<Map<String, String?>>(
       context: context,
-      useRootNavigator: true,
-      useSafeArea: true,
-      isScrollControlled: true,
-      showDragHandle: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-        child: Material(
-          borderRadius: BorderRadius.circular(20),
-          clipBehavior: Clip.antiAlias,
-          color: Theme.of(ctx).colorScheme.surface,
-          child: SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8.0),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Padding(
-                    padding: EdgeInsets.all(12.0),
-                    child: Text(
-                      'Thêm giao dịch',
-                      style: TextStyle(
-                        fontSize: 16.0,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Quick Add'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: ctrl,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    hintText: 'Vi du: 50k breakfast',
+                    border: OutlineInputBorder(),
                   ),
-                  ListTile(
-                    leading: const Icon(Icons.shopping_bag_outlined),
-                    title: const Text('Chi tiêu'),
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => AddExpenseScreen(coupleId: coupleId),
-                        ),
-                      );
-                    },
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Tag danh muc',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 6),
+                if (categories.isEmpty)
+                  const Text(
+                    'Chua co danh muc chi tieu.',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  )
+                else
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: categories
+                        .map(
+                          (c) => ChoiceChip(
+                            label: Text(c.name),
+                            labelStyle: const TextStyle(fontSize: 12),
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 0,
+                            ),
+                            selected: selectedCategoryId == c.id,
+                            onSelected: (_) {
+                              setDialogState(() {
+                                if (selectedCategoryId == c.id) {
+                                  selectedCategoryId = null;
+                                  selectedCategoryName = null;
+                                } else {
+                                  selectedCategoryId = c.id;
+                                  selectedCategoryName = c.name;
+                                }
+                              });
+                            },
+                          ),
+                        )
+                        .toList(),
                   ),
-                  ListTile(
-                    leading: const Icon(Icons.attach_money),
-                    title: const Text('Thu nhập'),
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => AddIncomeScreen(coupleId: coupleId),
-                        ),
-                      );
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.swap_horiz),
-                    title: const Text('Chuyển tiền'),
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => AddTransferScreen(coupleId: coupleId),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
+              ],
             ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Huy'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, {
+                'input': ctrl.text.trim(),
+                'categoryId': selectedCategoryId,
+                'categoryName': selectedCategoryName,
+              }),
+              child: const Text('Luu nhanh'),
+            ),
+          ],
         ),
       ),
     );
+
+    final input = payload?['input']?.trim();
+    final forcedCategoryId = payload?['categoryId'];
+    final forcedCategoryName = payload?['categoryName'];
+
+    if (!mounted || input == null || input.isEmpty) return;
+
+    try {
+      final uid = Supabase.instance.client.auth.currentUser!.id;
+      final result = await _quickAddService.quickAddExpense(
+        coupleId: coupleId,
+        userId: uid,
+        input: input,
+        forcedCategoryId: forcedCategoryId,
+        forcedCategoryName: forcedCategoryName,
+      );
+
+      if (!mounted) return;
+
+      if (!result.success && result.fallbackRequired) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Khong parse duoc Quick Add. Vui long qua man Chi tieu de nhap form.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      if (result.expense != null) {
+        _markExpenseChanged();
+        final messenger = ScaffoldMessenger.of(context);
+        _quickAddSnackVersion += 1;
+        final version = _quickAddSnackVersion;
+        messenger
+          ..hideCurrentSnackBar()
+          ..clearSnackBars()
+          ..showSnackBar(
+          SnackBar(
+            duration: const Duration(seconds: 3),
+            content: Text(
+              'Da luu nhanh ${result.parsedAmount?.toStringAsFixed(0) ?? ''} vao ${result.suggestedCategoryName ?? 'danh muc mac dinh'}',
+            ),
+            action: SnackBarAction(
+              label: 'Undo',
+              onPressed: () async {
+                await _expenseService.deleteExpense(result.expense!.id);
+              },
+            ),
+          ),
+        );
+
+        unawaited(
+          Future<void>.delayed(const Duration(seconds: 3), () {
+            if (!mounted || version != _quickAddSnackVersion) {
+              return;
+            }
+            messenger.hideCurrentSnackBar();
+          }),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Quick Add that bai: $e')));
+    }
   }
 
   @override
@@ -223,11 +339,34 @@ class _AppShellScreenState extends State<AppShellScreen> {
 
     final coupleId = _coupleId!;
     final screens = [
-      DashboardScreen(coupleId: coupleId),
-      ExpenseListScreen(coupleId: coupleId),
-      IncomeListScreen(coupleId: coupleId),
-      TransferListScreen(coupleId: coupleId),
-      AnalyticsScreen(coupleId: coupleId),
+      DashboardScreen(
+        coupleId: coupleId,
+        refreshSignal: _dashboardRefreshBus,
+        onCreatePressed: () => _openQuickAddDialog(coupleId),
+      ),
+      ExpenseListScreen(
+        coupleId: coupleId,
+        refreshSignal: _expenseRefreshBus,
+        onDataChanged: _markExpenseChanged,
+      ),
+      IncomeListScreen(
+        coupleId: coupleId,
+        refreshSignal: _incomeRefreshBus,
+        onDataChanged: _markIncomeChanged,
+      ),
+      TransferListScreen(
+        coupleId: coupleId,
+        refreshSignal: _transferRefreshBus,
+        onDataChanged: _markTransferChanged,
+      ),
+      FundListScreen(
+        coupleId: coupleId,
+        refreshSignal: _fundRefreshBus,
+      ),
+      DebtListScreen(
+        coupleId: coupleId,
+        refreshSignal: _debtRefreshBus,
+      ),
       SettingsScreen(coupleId: coupleId),
     ];
 
@@ -241,7 +380,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
           BottomNavigationBarItem(
             icon: Icon(Icons.dashboard_outlined),
             activeIcon: Icon(Icons.dashboard),
-            label: 'Dashboard',
+            label: 'Home',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.shopping_bag_outlined),
@@ -257,9 +396,14 @@ class _AppShellScreenState extends State<AppShellScreen> {
             label: 'Chuyển tiền',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.trending_up_outlined),
-            activeIcon: Icon(Icons.trending_up),
-            label: 'Analytics',
+            icon: Icon(Icons.savings_outlined),
+            activeIcon: Icon(Icons.savings),
+            label: 'Quỹ',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.credit_card_outlined),
+            activeIcon: Icon(Icons.credit_card),
+            label: 'Nợ',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.settings_outlined),
@@ -267,10 +411,6 @@ class _AppShellScreenState extends State<AppShellScreen> {
             label: 'Cài đặt',
           ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showAddMenu(context, coupleId),
-        child: const Icon(Icons.add),
       ),
     );
   }

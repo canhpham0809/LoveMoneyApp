@@ -9,4 +9,3 @@ export 'data/services/income_service.dart';
 
 // Presentation
 export 'presentation/screens/income_list_screen.dart';
-export 'presentation/screens/add_income_screen.dart';

@@ -48,32 +48,67 @@ class DashboardService {
     );
   }
 
-  /// Recent transactions (last 10 expenses + incomes combined, sorted by date).
+  /// Recent transactions (latest 20 across expense, income, transfer).
   Future<List<Map<String, dynamic>>> getRecentTransactions(
     String coupleId,
   ) async {
+    final categories = await _db
+        .from('categories')
+        .select('id, name')
+        .eq('couple_id', coupleId)
+        .eq('is_deleted', false);
+    final categoryNameById = {
+      for (final c in categories) c['id'] as String: c['name'] as String,
+    };
+
     final expenses = await _db
         .from('expenses')
-        .select('id, amount, date, description, category_name')
+      .select('id, amount, date, description, category_id, category_name, created_at')
         .eq('couple_id', coupleId)
         .eq('is_deleted', false)
-        .order('date', ascending: false)
-        .limit(5);
+      .order('created_at', ascending: false)
+        .limit(10);
     final incomes = await _db
         .from('incomes')
-        .select('id, amount, date, description')
+      .select('id, amount, date, description, created_at')
         .eq('couple_id', coupleId)
         .eq('is_deleted', false)
-        .order('date', ascending: false)
-        .limit(5);
+      .order('created_at', ascending: false)
+        .limit(10);
+    final transfers = await _db
+        .from('transfers')
+      .select('id, amount, date, note, created_at')
+        .eq('couple_id', coupleId)
+        .eq('is_deleted', false)
+      .order('created_at', ascending: false)
+        .limit(10);
+
+    final normalizedExpenses = expenses.map((e) {
+      final categoryId = e['category_id'] as String?;
+      return {
+        ...e,
+        'type': 'expense',
+        'resolved_category_name': categoryId == null
+            ? (e['category_name'] as String?)
+            : (categoryNameById[categoryId] ?? (e['category_name'] as String?)),
+      };
+    });
+
     final combined = [
-      ...expenses.map((e) => {...e, 'type': 'expense'}),
+      ...normalizedExpenses,
       ...incomes.map((i) => {...i, 'type': 'income'}),
+      ...transfers.map((t) => {...t, 'type': 'transfer'}),
     ];
-    combined.sort(
-      (a, b) => (b['date'] as String).compareTo(a['date'] as String),
-    );
-    return combined.take(10).toList();
+    DateTime parseCreatedAt(Map<String, dynamic> tx) {
+      final value = tx['created_at'] as String?;
+      if (value == null || value.isEmpty) {
+        return DateTime.fromMillisecondsSinceEpoch(0);
+      }
+      return DateTime.tryParse(value) ?? DateTime.fromMillisecondsSinceEpoch(0);
+    }
+
+    combined.sort((a, b) => parseCreatedAt(b).compareTo(parseCreatedAt(a)));
+    return combined.take(20).toList();
   }
 
   /// Expense breakdown by category for the current month.

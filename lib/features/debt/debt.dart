@@ -9,4 +9,3 @@ export 'data/services/debt_service.dart';
 
 // Presentation
 export 'presentation/screens/debt_list_screen.dart';
-export 'presentation/screens/add_debt_screen.dart';

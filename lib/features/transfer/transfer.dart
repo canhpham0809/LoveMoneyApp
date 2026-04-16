@@ -7,4 +7,3 @@ export 'data/services/transfer_service.dart';
 
 // Presentation
 export 'presentation/screens/transfer_list_screen.dart';
-export 'presentation/screens/add_transfer_screen.dart';

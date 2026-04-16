@@ -1,0 +1,110 @@
+import 'package:flutter/material.dart';
+
+class AmountSuggestionChips extends StatelessWidget {
+  final TextEditingController controller;
+  final ValueChanged<int> onSelected;
+
+  const AmountSuggestionChips({
+    super.key,
+    required this.controller,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: controller,
+      builder: (context, value, _) {
+        final raw = value.text.trim();
+        final base = _parseBase(raw);
+        if (base == null || base <= 0) {
+          return const SizedBox.shrink();
+        }
+
+        final options = _buildSuggestions(base);
+        if (options.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        const slotCount = 3;
+        const slotWidth = 86.0;
+        const slotSpacing = 4.0;
+        final displayed = List<int?>.generate(
+          slotCount,
+          (index) => index < options.length ? options[index] : null,
+        );
+
+        return Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: SizedBox(
+            width: slotCount * slotWidth + (slotCount - 1) * slotSpacing,
+            child: Row(
+              children: [
+                for (int i = 0; i < displayed.length; i++) ...[
+                  if (i > 0) const SizedBox(width: slotSpacing),
+                  _buildSlot(displayed[i], slotWidth),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSlot(int? value, double width) {
+    if (value == null) {
+      return SizedBox(width: width, height: 30);
+    }
+
+    return SizedBox(
+      width: width,
+      height: 30,
+      child: OutlinedButton(
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          visualDensity: VisualDensity.compact,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        onPressed: () => onSelected(value),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            _formatWithComma(value),
+            style: const TextStyle(fontSize: 11),
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<int> _buildSuggestions(int base) {
+    const int maxMillionScale = 99999999;
+    if (base < 1000) {
+      final list = <int>[base * 1000, base * 10000, base * 100000];
+      return list.where((v) => v <= maxMillionScale).toList();
+    }
+
+    final list = <int>[base, base * 100];
+    return list.where((v) => v <= maxMillionScale).toList();
+  }
+
+  int? _parseBase(String text) {
+    final digitsOnly = text.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digitsOnly.isEmpty) return null;
+    return int.tryParse(digitsOnly);
+  }
+
+  String _formatWithComma(int value) {
+    final s = value.toString();
+    final buffer = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      final fromEnd = s.length - i;
+      buffer.write(s[i]);
+      if (fromEnd > 1 && fromEnd % 3 == 1) {
+        buffer.write(',');
+      }
+    }
+    return buffer.toString();
+  }
+}

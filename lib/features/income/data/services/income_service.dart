@@ -12,7 +12,7 @@ class IncomeService {
         .select()
         .eq('couple_id', coupleId)
         .eq('is_deleted', false)
-        .order('date', ascending: false);
+      .order('created_at', ascending: false);
     return rows.map((r) => IncomeModel.fromJson(r)).toList();
   }
 
@@ -51,6 +51,33 @@ class IncomeService {
         })
         .eq('id', incomeId);
   }
+
+  Future<void> updateIncome({
+    required String incomeId,
+    required String walletId,
+    required String incomeSourceId,
+    required double amount,
+    String? description,
+    required DateTime date,
+  }) async {
+    await _db
+        .from('incomes')
+        .update({
+          'wallet_id': walletId,
+          'income_source_id': incomeSourceId,
+          'amount': amount,
+          'description': description,
+          'date': date.toIso8601String().substring(0, 10),
+        })
+        .eq('id', incomeId);
+  }
+
+        Future<void> restoreIncome(String incomeId) async {
+          await _db
+          .from('incomes')
+          .update({'is_deleted': false, 'deleted_at': null})
+          .eq('id', incomeId);
+        }
 
   Future<List<IncomeSourceModel>> getIncomeSources(String coupleId) async {
     final rows = await _db

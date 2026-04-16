@@ -9,4 +9,3 @@ export 'data/services/fund_service.dart';
 
 // Presentation
 export 'presentation/screens/fund_list_screen.dart';
-export 'presentation/screens/add_fund_screen.dart';

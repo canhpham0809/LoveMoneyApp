@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:flutter_app_demo/features/wallet/presentation/screens/add_wallet_screen.dart';
 import 'package:flutter_app_demo/features/wallet/data/models/wallet_model.dart';
 import 'package:flutter_app_demo/features/wallet/data/services/wallet_service.dart';
 
@@ -103,10 +104,15 @@ class _WalletListScreenState extends State<WalletListScreen> {
             ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
-          // TODO: create AddWalletScreen
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Tính năng thêm ví sẽ sớm ra mắt.')),
+          final createdId = await Navigator.push<String>(
+            context,
+            MaterialPageRoute(
+              builder: (_) => AddWalletScreen(coupleId: widget.coupleId),
+            ),
           );
+          if (createdId != null) {
+            await _load();
+          }
         },
         child: const Icon(Icons.add),
       ),

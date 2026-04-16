@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -6,8 +7,15 @@ import 'package:flutter_app_demo/features/dashboard/data/services/dashboard_serv
 
 class DashboardScreen extends StatefulWidget {
   final String coupleId;
+  final ValueListenable<int>? refreshSignal;
+  final Future<void> Function()? onCreatePressed;
 
-  const DashboardScreen({super.key, required this.coupleId});
+  const DashboardScreen({
+    super.key,
+    required this.coupleId,
+    this.refreshSignal,
+    this.onCreatePressed,
+  });
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -26,14 +34,41 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    widget.refreshSignal?.addListener(_onExternalRefresh);
+    _load(showLoader: true);
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
+  @override
+  void didUpdateWidget(covariant DashboardScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshSignal != widget.refreshSignal) {
+      oldWidget.refreshSignal?.removeListener(_onExternalRefresh);
+      widget.refreshSignal?.addListener(_onExternalRefresh);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.refreshSignal?.removeListener(_onExternalRefresh);
+    super.dispose();
+  }
+
+  void _onExternalRefresh() {
+    if (!mounted) return;
+    _load(showLoader: false);
+  }
+
+  Future<void> _load({required bool showLoader}) async {
+    if (showLoader) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+    } else {
+      if (mounted) {
+        setState(() => _error = null);
+      }
+    }
     try {
       final wallets = await _service.getWalletBalances(widget.coupleId);
       final income = await _service.getMonthlyIncome(widget.coupleId);
@@ -54,7 +89,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (showLoader && mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -62,9 +99,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Dashboard'),
+        title: const Text('Home'),
         actions: [
-          IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
+          IconButton(
+            onPressed: () => _load(showLoader: false),
+            icon: const Icon(Icons.refresh),
+          ),
           IconButton(
             onPressed: () async {
               await Supabase.instance.client.auth.signOut();
@@ -83,12 +123,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 children: [
                   Text(_error!, textAlign: TextAlign.center),
                   const SizedBox(height: 12),
-                  FilledButton(onPressed: _load, child: const Text('Thử lại')),
+                  FilledButton(
+                    onPressed: () => _load(showLoader: true),
+                    child: const Text('Thử lại'),
+                  ),
                 ],
               ),
             )
           : RefreshIndicator(
-              onRefresh: _load,
+              onRefresh: () => _load(showLoader: false),
               child: SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.all(16),
@@ -158,7 +201,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     const SizedBox(height: 16),
                     // Recent transactions
                     const Text(
-                      'Giao dịch gần đây',
+                      '20 giao dịch gần nhất',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -170,29 +213,64 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     else
                       ...(_recentTx.map((tx) {
                         final isExpense = tx['type'] == 'expense';
+                        final isTransfer = tx['type'] == 'transfer';
                         final amount = (tx['amount'] as num?)?.toDouble() ?? 0;
                         return ListTile(
                           leading: CircleAvatar(
-                            backgroundColor: isExpense
+                            backgroundColor: isTransfer
+                                ? Colors.blueGrey[50]
+                                : isExpense
                                 ? Colors.red[50]
                                 : Colors.green[50],
                             child: Icon(
-                              isExpense
+                              isTransfer
+                                  ? Icons.swap_horiz
+                                  : isExpense
                                   ? Icons.arrow_downward
                                   : Icons.arrow_upward,
-                              color: isExpense ? Colors.red : Colors.green,
+                              color: isTransfer
+                                  ? Colors.blueGrey
+                                  : isExpense
+                                  ? Colors.red
+                                  : Colors.green,
                               size: 16,
                             ),
                           ),
                           title: Text(
-                            tx['description'] as String? ??
-                                (isExpense ? 'Chi tiêu' : 'Thu nhập'),
+                            isTransfer
+                                ? ((tx['note'] as String?) ?? 'Chuyen tien')
+                                : (() {
+                                    final description = tx['description'] as String?;
+                                    final categoryName =
+                                        tx['resolved_category_name'] as String?;
+                                    if (description != null && description.trim().isNotEmpty) {
+                                      return description;
+                                    }
+                                    if (isExpense &&
+                                        categoryName != null &&
+                                        categoryName.trim().isNotEmpty) {
+                                      return categoryName;
+                                    }
+                                    return isExpense ? 'Chi tiêu' : 'Thu nhập';
+                                  }()),
                           ),
-                          subtitle: Text(tx['date'] as String? ?? ''),
+                          subtitle: Text(() {
+                            final dateText = tx['date'] as String? ?? '';
+                            final createdAtRaw = tx['created_at'] as String?;
+                            final createdAt = createdAtRaw == null
+                                ? null
+                                : DateTime.tryParse(createdAtRaw);
+                            if (createdAt == null) {
+                              return dateText;
+                            }
+                            return '$dateText · ${formatDateTime(createdAt).split(' ').last}';
+                          }()),
                           trailing: Text(
-                            '${isExpense ? '-' : '+'}${formatVnd(amount)}',
+                            '${isTransfer ? '↔ ' : (isExpense ? '-' : '+')}${formatVnd(amount)}',
                             style: TextStyle(
-                              color: isExpense
+                              color: isTransfer
+                                  ? Colors.blueGrey
+                                  : isExpense
                                   ? Theme.of(context).colorScheme.error
                                   : Colors.green[700],
                               fontWeight: FontWeight.bold,
@@ -203,6 +281,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ],
                 ),
               ),
+            ),
+      floatingActionButton: widget.onCreatePressed == null
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: () async => widget.onCreatePressed!.call(),
+              icon: const Icon(Icons.flash_on_outlined),
+              label: const Text('Quick Add'),
             ),
     );
   }
