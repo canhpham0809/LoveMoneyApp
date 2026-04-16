@@ -1,0 +1,607 @@
+
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--font-sans); }
+.spec { max-width: 680px; padding: 0; }
+
+.header { padding: 28px 0 20px; border-bottom: 0.5px solid var(--color-border-tertiary); margin-bottom: 24px; }
+.header h1 { font-size: 20px; font-weight: 500; color: var(--color-text-primary); }
+.header .meta { display: flex; gap: 16px; margin-top: 8px; font-size: 12px; color: var(--color-text-secondary); }
+.badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; }
+.badge-blue { background: var(--color-background-info); color: var(--color-text-info); }
+.badge-green { background: var(--color-background-success); color: var(--color-text-success); }
+.badge-amber { background: var(--color-background-warning); color: var(--color-text-warning); }
+.badge-red { background: var(--color-background-danger); color: var(--color-text-danger); }
+
+.section { margin-bottom: 28px; }
+.section-title { font-size: 13px; font-weight: 500; color: var(--color-text-secondary); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 0.5px solid var(--color-border-tertiary); }
+
+.card { background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); padding: 14px 16px; margin-bottom: 10px; }
+.card-title { font-size: 14px; font-weight: 500; color: var(--color-text-primary); margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+.card-sub { font-size: 12px; color: var(--color-text-secondary); line-height: 1.6; }
+
+.axis-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+.axis-card { background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 10px 8px; text-align: center; border: 0.5px solid var(--color-border-tertiary); cursor: pointer; transition: border-color 0.15s; }
+.axis-card:hover { border-color: var(--color-border-primary); }
+.axis-card .icon { font-size: 18px; margin-bottom: 4px; }
+.axis-card .label { font-size: 11px; font-weight: 500; color: var(--color-text-primary); }
+.axis-card .sublabel { font-size: 10px; color: var(--color-text-secondary); margin-top: 2px; }
+
+.two-col { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.three-col { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+
+.model-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.model-table th { text-align: left; color: var(--color-text-secondary); font-weight: 500; padding: 6px 8px; border-bottom: 0.5px solid var(--color-border-tertiary); background: var(--color-background-secondary); }
+.model-table td { padding: 5px 8px; border-bottom: 0.5px solid var(--color-border-tertiary); color: var(--color-text-primary); }
+.model-table td:last-child { color: var(--color-text-secondary); }
+.req { color: var(--color-text-danger) !important; font-weight: 500; }
+
+.philosophy { background: var(--color-background-secondary); border-left: 2px solid var(--color-border-info); border-radius: 0 var(--border-radius-md) var(--border-radius-md) 0; padding: 12px 16px; margin-bottom: 12px; }
+.philosophy .quote { font-size: 14px; font-weight: 500; color: var(--color-text-primary); font-style: italic; }
+.philosophy .points { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.philosophy .point { font-size: 12px; color: var(--color-text-secondary); display: flex; align-items: baseline; gap: 6px; }
+.philosophy .point::before { content: "—"; color: var(--color-text-tertiary); flex-shrink: 0; }
+
+.phase-list { display: flex; flex-direction: column; gap: 6px; }
+.phase { border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); overflow: hidden; }
+.phase-header { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--color-background-secondary); cursor: pointer; }
+.phase-header span { font-size: 13px; font-weight: 500; color: var(--color-text-primary); flex: 1; }
+.phase-body { padding: 10px 12px; display: flex; flex-wrap: wrap; gap: 6px; }
+.feature-chip { font-size: 11px; padding: 3px 8px; background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: 4px; color: var(--color-text-primary); }
+
+.notif-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 0.5px solid var(--color-border-tertiary); font-size: 12px; }
+.notif-row:last-child { border-bottom: none; }
+.notif-name { flex: 1; color: var(--color-text-primary); }
+.notif-trigger { flex: 1.2; color: var(--color-text-secondary); }
+
+.nfr-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 8px; }
+.nfr-card { background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 10px 12px; }
+.nfr-label { font-size: 11px; color: var(--color-text-secondary); margin-bottom: 2px; }
+.nfr-value { font-size: 14px; font-weight: 500; color: var(--color-text-primary); }
+
+.ai-card { border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); padding: 10px 12px; margin-bottom: 8px; display: flex; gap: 10px; }
+.ai-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+.ai-content .ai-title { font-size: 13px; font-weight: 500; color: var(--color-text-primary); }
+.ai-content .ai-desc { font-size: 12px; color: var(--color-text-secondary); margin-top: 2px; line-height: 1.5; }
+.ai-content .ai-cond { font-size: 11px; color: var(--color-text-warning); margin-top: 4px; background: var(--color-background-warning); padding: 2px 6px; border-radius: 3px; display: inline-block; }
+
+.tabs { display: flex; gap: 4px; margin-bottom: 12px; background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 3px; }
+.tab { flex: 1; padding: 6px 4px; font-size: 12px; font-weight: 500; text-align: center; color: var(--color-text-secondary); cursor: pointer; border-radius: 6px; transition: all 0.15s; }
+.tab.active { background: var(--color-background-primary); color: var(--color-text-primary); border: 0.5px solid var(--color-border-tertiary); }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+.quick-add-demo { background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 12px; }
+.qa-input-row { display: flex; gap: 8px; margin-bottom: 10px; }
+.qa-input { flex: 1; background: var(--color-background-primary); border: 0.5px solid var(--color-border-secondary); border-radius: var(--border-radius-md); padding: 7px 10px; font-size: 13px; color: var(--color-text-primary); font-family: var(--font-sans); }
+.qa-input:focus { outline: none; border-color: var(--color-border-primary); }
+.qa-btn { background: var(--color-text-primary); color: var(--color-background-primary); border: none; border-radius: var(--border-radius-md); padding: 7px 14px; font-size: 13px; cursor: pointer; font-family: var(--font-sans); }
+.qa-result { font-size: 12px; color: var(--color-text-secondary); min-height: 28px; }
+.qa-parsed { display: flex; gap: 8px; flex-wrap: wrap; }
+.qa-pill { background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: 4px; padding: 3px 8px; font-size: 11px; color: var(--color-text-primary); }
+
+.wallet-demo { display: flex; gap: 8px; margin-bottom: 10px; }
+.wallet-card { flex: 1; background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); padding: 10px 12px; }
+.wallet-name { font-size: 11px; color: var(--color-text-secondary); }
+.wallet-balance { font-size: 18px; font-weight: 500; color: var(--color-text-primary); margin-top: 2px; }
+.wallet-default { font-size: 10px; color: var(--color-text-success); }
+
+.divider { height: 0.5px; background: var(--color-border-tertiary); margin: 20px 0; }
+</style>
+
+<div class="spec">
+
+<div class="header">
+  <h1>📒 Family Cashbook — Product Specification</h1>
+  <div class="meta">
+    <span>Version 1.2</span>
+    <span>·</span>
+    <span>2026-04-16</span>
+    <span>·</span>
+    <span class="badge badge-amber">Draft</span>
+    <span class="badge badge-blue">Merged v1.1 + ChatGPT refinements</span>
+  </div>
+</div>
+
+<!-- TABS NAV -->
+<div class="tabs" id="main-tabs">
+  <div class="tab active" onclick="switchTab('overview')">Tổng quan</div>
+  <div class="tab" onclick="switchTab('axes')">5 Trục</div>
+  <div class="tab" onclick="switchTab('ai')">AI & UX</div>
+  <div class="tab" onclick="switchTab('system')">Hệ thống</div>
+  <div class="tab" onclick="switchTab('roadmap')">Roadmap</div>
+</div>
+
+<!-- TAB: OVERVIEW -->
+<div class="tab-content active" id="tab-overview">
+
+  <div class="section">
+    <div class="section-title">Triết lý sản phẩm</div>
+    <div class="philosophy">
+      <div class="quote">"Ghi nhanh như viết sổ, xem rõ như bảng tổng kết."</div>
+      <div class="points">
+        <div class="point">Ưu tiên tốc độ nhập liệu — thêm giao dịch trong ≤ 5 giây</div>
+        <div class="point">Balance-first — luôn hiển thị số dư rõ ràng</div>
+        <div class="point">Minh bạch chung — cả hai vợ chồng thấy bức tranh đầy đủ</div>
+        <div class="point">AI an toàn — chỉ bật khi đủ dữ liệu (≥30 giao dịch hoặc ≥14 ngày)</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Đối tượng & Nền tảng</div>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title">👫 2 thành viên</div>
+        <div class="card-sub">User A tạo gia đình, mời User B qua mã 6 số. Dữ liệu chia sẻ hoàn toàn. Mỗi Family Cashbook chỉ có đúng 2 thành viên.</div>
+      </div>
+      <div class="card">
+        <div class="card-title">📱 Nền tảng</div>
+        <div class="card-sub">iOS + Android (Flutter). PWA / Web tùy chọn Phase 2. Widget iOS/Android quick-add ở Phase 4.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Wallet & Balance System <span class="badge badge-red" style="margin-left:6px">Mới — quan trọng</span></div>
+    <div class="card" style="margin-bottom:10px">
+      <div class="card-title">Mục tiêu: Trả lời "Gia đình còn bao nhiêu tiền?"</div>
+      <div class="card-sub" style="margin-top:8px">
+        <div class="wallet-demo">
+          <div class="wallet-card">
+            <div class="wallet-name">Tiền gia đình</div>
+            <div class="wallet-balance">12.500.000 đ</div>
+            <div class="wallet-default">● Ví mặc định</div>
+          </div>
+          <div class="wallet-card">
+            <div class="wallet-name">MB Bank</div>
+            <div class="wallet-balance">8.200.000 đ</div>
+            <div class="wallet-default" style="color:var(--color-text-tertiary)">Ví phụ</div>
+          </div>
+        </div>
+        Default: 1 ví "Tiền gia đình". Advanced mode: nhiều ví. Mỗi giao dịch gắn wallet_id. Balance được update real-time và lưu denormalized.
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Quy tắc cập nhật balance</div>
+      <div class="card-sub">Expense → trừ balance &nbsp;·&nbsp; Income → cộng balance &nbsp;·&nbsp; Transfer → trừ ví A, cộng ví B &nbsp;·&nbsp; Fund contribution → trừ balance</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">5 Trục chính</div>
+    <div class="axis-grid">
+      <div class="axis-card" onclick="switchTab('axes'); highlightAxis(0)">
+        <div class="icon">💸</div>
+        <div class="label">Trục 1</div>
+        <div class="sublabel">Chi tiêu</div>
+      </div>
+      <div class="axis-card" onclick="switchTab('axes'); highlightAxis(1)">
+        <div class="icon">🔄</div>
+        <div class="label">Trục 2</div>
+        <div class="sublabel">Chuyển tiền</div>
+      </div>
+      <div class="axis-card" onclick="switchTab('axes'); highlightAxis(2)">
+        <div class="icon">💰</div>
+        <div class="label">Trục 3</div>
+        <div class="sublabel">Thu nhập</div>
+      </div>
+      <div class="axis-card" onclick="switchTab('axes'); highlightAxis(3)">
+        <div class="icon">🏦</div>
+        <div class="label">Trục 4</div>
+        <div class="sublabel">Quỹ chung</div>
+      </div>
+      <div class="axis-card" onclick="switchTab('axes'); highlightAxis(4)">
+        <div class="icon">📋</div>
+        <div class="label">Trục 5</div>
+        <div class="sublabel">Nợ</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- TAB: 5 AXES -->
+<div class="tab-content" id="tab-axes">
+  <div id="axes-content">
+
+  <div class="section">
+    <div class="section-title">Trục 1 — Chi tiêu (Expense)</div>
+    <div class="card" style="margin-bottom:10px">
+      <div class="card-title">Data model</div>
+      <table class="model-table" style="margin-top:8px">
+        <tr><th>Trường</th><th>Kiểu</th><th>Ghi chú</th></tr>
+        <tr><td>id</td><td>UUID</td><td class="req">bắt buộc</td></tr>
+        <tr><td>couple_id</td><td>UUID</td><td class="req">bắt buộc — mới v1.2</td></tr>
+        <tr><td>user_id</td><td>UUID</td><td class="req">bắt buộc</td></tr>
+        <tr><td>wallet_id</td><td>UUID</td><td class="req">bắt buộc — mới v1.2</td></tr>
+        <tr><td>category_id</td><td>UUID</td><td class="req">bắt buộc</td></tr>
+        <tr><td>category_name</td><td>String</td><td>denormalized — perf</td></tr>
+        <tr><td>category_icon</td><td>String</td><td>denormalized — perf</td></tr>
+        <tr><td>amount</td><td>Decimal</td><td class="req">bắt buộc</td></tr>
+        <tr><td>description</td><td>String</td><td>tùy chọn</td></tr>
+        <tr><td>date</td><td>Date</td><td class="req">bắt buộc</td></tr>
+        <tr><td>is_deleted</td><td>Boolean</td><td>soft delete — mới v1.2</td></tr>
+        <tr><td>updated_by</td><td>UUID</td><td>tracking — mới v1.2</td></tr>
+        <tr><td>created_at / updated_at</td><td>Timestamp</td><td class="req">bắt buộc</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <div class="card-title">Danh mục mặc định</div>
+      <div class="card-sub" style="margin-top:6px">🍜 Ăn uống &nbsp;·&nbsp; 🏠 Nhà cửa &nbsp;·&nbsp; 🚗 Đi lại &nbsp;·&nbsp; 💊 Sức khỏe &nbsp;·&nbsp; 👗 Mua sắm &nbsp;·&nbsp; 🎮 Giải trí &nbsp;·&nbsp; 📚 Học phí &nbsp;·&nbsp; ⚡ Tiện ích &nbsp;·&nbsp; 👶 Con cái &nbsp;·&nbsp; 🐾 Thú cưng &nbsp;·&nbsp; 📦 Khác<br><br>Mỗi danh mục có <strong>budget_limit</strong> (ngân sách tháng, reset tháng). Merge category: chọn A+B → merge, cập nhật toàn bộ transaction.</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Trục 2 — Chuyển tiền nội bộ (Transfer)</div>
+    <div class="card">
+      <div class="card-title">Luồng & Data model</div>
+      <div class="card-sub" style="margin-top:6px">Chồng → Vợ (hoặc ngược lại). Tự động tạo Income bên người nhận với nhãn "Nhận từ chuyển khoản nội bộ".</div>
+      <table class="model-table" style="margin-top:8px">
+        <tr><th>Trường</th><th>Kiểu</th><th>Ghi chú</th></tr>
+        <tr><td>from_user_id / to_user_id</td><td>UUID</td><td class="req">bắt buộc</td></tr>
+        <tr><td>from_wallet_id / to_wallet_id</td><td>UUID</td><td class="req">bắt buộc — mới v1.2</td></tr>
+        <tr><td>amount</td><td>Decimal</td><td class="req">bắt buộc</td></tr>
+        <tr><td>linked_income_id</td><td>UUID</td><td class="req">bắt buộc</td></tr>
+        <tr><td>note / date / couple_id</td><td>—</td><td>như chuẩn</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Trục 3 — Thu nhập (Income)</div>
+    <div class="card">
+      <div class="card-title">Nguồn mặc định</div>
+      <div class="card-sub" style="margin-top:6px">💼 Lương &nbsp;·&nbsp; 🎁 Thưởng &nbsp;·&nbsp; 📈 Đầu tư &nbsp;·&nbsp; 💻 Freelance &nbsp;·&nbsp; 🏘️ Cho thuê &nbsp;·&nbsp; 🎀 Quà/biếu &nbsp;·&nbsp; 📦 Khác<br><br>is_from_transfer = true → tự động từ Trục 2, user không tự tạo loại này. Thêm wallet_id và couple_id theo chuẩn v1.2.</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Trục 4 — Quỹ gia đình (Fund)</div>
+    <div class="card">
+      <div class="card-title">Tracking tiến độ</div>
+      <div class="card-sub" style="margin-top:6px">Progress bar trực quan &nbsp;·&nbsp; Dự đoán ngày đạt mục tiêu &nbsp;·&nbsp; Push notification khi đạt 100%<br><br>Quỹ mặc định: 🆘 Khẩn cấp &nbsp;·&nbsp; ✈️ Du lịch &nbsp;·&nbsp; 🏠 Mua nhà &nbsp;·&nbsp; 🎓 Học phí con &nbsp;·&nbsp; 🎄 Tết/Lễ<br><br>Fund Contribution gắn wallet_id — trừ balance khi gửi vào quỹ.</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Trục 5 — Nợ (Debt)</div>
+    <div class="card">
+      <div class="card-title">Debt + Debt Payment</div>
+      <div class="card-sub" style="margin-top:6px">Theo dõi tiến trình trả nợ. Nhắc nhở thông minh theo due_date. Loại mặc định: 🏦 Ngân hàng &nbsp;·&nbsp; 👤 Cá nhân &nbsp;·&nbsp; 💳 Thẻ tín dụng &nbsp;·&nbsp; 🏢 Công ty &nbsp;·&nbsp; 📦 Khác<br><br>Debt Payment → trừ balance của ví tương ứng khi ghi nhận trả nợ.</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Monthly Budget <span class="badge badge-red" style="margin-left:6px">Mới v1.2</span></div>
+    <div class="card">
+      <div class="card-title">Ngân sách tháng toàn gia đình</div>
+      <div class="card-sub" style="margin-top:6px">MonthlyBudget: couple_id · month · amount. Hiển thị progress bar "18tr / 25tr". Cảnh báo 80% → warning, 100% → alert đỏ. Riêng biệt với Category Budget (per-category).</div>
+    </div>
+  </div>
+
+  </div>
+</div>
+
+<!-- TAB: AI & UX -->
+<div class="tab-content" id="tab-ai">
+
+  <div class="section">
+    <div class="section-title">Quick Add <span class="badge badge-red" style="margin-left:6px">Core UX — Mới v1.2</span></div>
+    <div class="card">
+      <div class="card-title">Nhập nhanh từ Home</div>
+      <div class="quick-add-demo">
+        <div class="qa-input-row">
+          <input class="qa-input" id="qa-input" placeholder="50k ăn sáng · 1tr tiền điện · 200k cafe..." />
+          <button class="qa-btn" onclick="parseQA()">Thêm</button>
+        </div>
+        <div class="qa-result" id="qa-result"><span style="color:var(--color-text-tertiary);font-size:11px">Thử gõ: 50k ăn sáng</span></div>
+      </div>
+      <div class="card-sub" style="margin-top:8px">Parse fail → mở form đầy đủ. Sau khi tạo: snackbar 3–5 giây có nút "Hoàn tác". Mục tiêu: ≤ 2 giây từ intent đến saved.</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Edit & Undo Flow <span class="badge badge-red" style="margin-left:6px">Mới v1.2</span></div>
+    <div class="three-col">
+      <div class="card" style="text-align:center; padding:12px 8px">
+        <div style="font-size:20px">👆</div>
+        <div style="font-size:12px;font-weight:500;margin-top:6px">Tap</div>
+        <div style="font-size:11px;color:var(--color-text-secondary);margin-top:2px">Edit chi tiết</div>
+      </div>
+      <div class="card" style="text-align:center; padding:12px 8px">
+        <div style="font-size:20px">👈</div>
+        <div style="font-size:12px;font-weight:500;margin-top:6px">Swipe</div>
+        <div style="font-size:11px;color:var(--color-text-secondary);margin-top:2px">Edit nhanh</div>
+      </div>
+      <div class="card" style="text-align:center; padding:12px 8px">
+        <div style="font-size:20px">✌️</div>
+        <div style="font-size:12px;font-weight:500;margin-top:6px">Long press</div>
+        <div style="font-size:11px;color:var(--color-text-secondary);margin-top:2px">Duplicate</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">UX nhỏ nhưng quan trọng</div>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title">Keyboard & Input</div>
+        <div class="card-sub">Auto numeric keyboard khi nhập số tiền. Auto chọn category gần nhất dùng. Format chuẩn: 50.000 đ (VN style).</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Search</div>
+        <div class="card-sub">Tìm giao dịch theo text description, theo category, theo date range. Kết quả real-time.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">AI System — Safe Mode <span class="badge badge-amber" style="margin-left:6px">Phase 3</span></div>
+    <div class="card" style="background:var(--color-background-warning);border-color:var(--color-border-warning);margin-bottom:10px">
+      <div class="card-title">Điều kiện kích hoạt AI</div>
+      <div class="card-sub">Chỉ bật khi: ≥ 30 giao dịch HOẶC ≥ 14 ngày sử dụng. Fallback: "Hãy tiếp tục ghi chép để xem phân tích chi tiêu 📊"</div>
+    </div>
+    <div class="ai-card">
+      <div class="ai-icon">📊</div>
+      <div class="ai-content">
+        <div class="ai-title">Spending Insights</div>
+        <div class="ai-desc">Cuối tuần/tháng: so sánh, top category, % tăng giảm. Gợi ý liên kết với quỹ: "Cắt 500k/tháng Giải trí → Quỹ Du lịch đạt mục tiêu sớm 2 tháng".</div>
+        <div class="ai-cond">Phase 1: rule-based · Phase 3: Claude API</div>
+      </div>
+    </div>
+    <div class="ai-card">
+      <div class="ai-icon">🏷️</div>
+      <div class="ai-content">
+        <div class="ai-title">Auto-categorize</div>
+        <div class="ai-desc">Gõ "Grab Food" → gợi ý Ăn uống. Học theo lịch sử giao dịch gia đình. Phase 1: keyword matching. Phase 3: Claude API.</div>
+        <div class="ai-cond">Phase 1: rule-based · Phase 3: Claude API</div>
+      </div>
+    </div>
+    <div class="ai-card">
+      <div class="ai-icon">📅</div>
+      <div class="ai-content">
+        <div class="ai-title">Spending Forecast</div>
+        <div class="ai-desc">Dự báo tổng chi cuối tháng dựa trên tốc độ hiện tại và lịch sử. "Với tốc độ này, gia đình sẽ chi ~12.8tr tháng này."</div>
+        <div class="ai-cond">Phase 3</div>
+      </div>
+    </div>
+    <div class="ai-card">
+      <div class="ai-icon">💡</div>
+      <div class="ai-content">
+        <div class="ai-title">Saving Suggestion</div>
+        <div class="ai-desc">Cuối tháng nếu thu > chi: gợi ý phân bổ phần dư vào quỹ phù hợp với tiến độ từng quỹ.</div>
+        <div class="ai-cond">Phase 3</div>
+      </div>
+    </div>
+    <div class="ai-card">
+      <div class="ai-icon">📝</div>
+      <div class="ai-content">
+        <div class="ai-title">Monthly Report</div>
+        <div class="ai-desc">Ngày 1 hàng tháng: tổng thu/chi/tiết kiệm, danh mục nổi bật, tiến độ quỹ, lời khuyên ngắn.</div>
+        <div class="ai-cond">Phase 3</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- TAB: SYSTEM -->
+<div class="tab-content" id="tab-system">
+
+  <div class="section">
+    <div class="section-title">Kiến trúc dữ liệu — Quy tắc bắt buộc v1.2</div>
+    <div class="card" style="margin-bottom:10px">
+      <div class="card-title">Bắt buộc trong TẤT CẢ bảng</div>
+      <div class="card-sub" style="margin-top:6px">
+        <code style="font-family:var(--font-mono);font-size:12px;background:var(--color-background-secondary);padding:2px 6px;border-radius:3px">couple_id</code> — Row-level security / multi-tenant isolation<br><br>
+        <code style="font-family:var(--font-mono);font-size:12px;background:var(--color-background-secondary);padding:2px 6px;border-radius:3px">updated_at</code> &nbsp;
+        <code style="font-family:var(--font-mono);font-size:12px;background:var(--color-background-secondary);padding:2px 6px;border-radius:3px">updated_by</code> — Audit trail<br><br>
+        <code style="font-family:var(--font-mono);font-size:12px;background:var(--color-background-secondary);padding:2px 6px;border-radius:3px">is_deleted</code> &nbsp;
+        <code style="font-family:var(--font-mono);font-size:12px;background:var(--color-background-secondary);padding:2px 6px;border-radius:3px">deleted_at</code> — Soft delete (không xóa cứng nếu có transaction)
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Denormalization (performance)</div>
+      <div class="card-sub" style="margin-top:6px">Expense lưu thêm category_name + category_icon để render feed mà không cần JOIN. Balance của Wallet được lưu và update real-time (eventual consistency với fallback fetch).</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Thông báo (Notification System)</div>
+    <div class="card">
+      <table class="model-table">
+        <tr><th>Loại</th><th>Trigger</th><th>Mức</th></tr>
+        <tr><td>Giao dịch mới từ người kia</td><td>Realtime</td><td><span class="badge badge-blue">Thấp</span></td></tr>
+        <tr><td>Hôm nay chưa ghi chi tiêu</td><td>Daily reminder</td><td><span class="badge badge-blue">Thấp</span></td></tr>
+        <tr><td>80% ngân sách category</td><td>Threshold</td><td><span class="badge badge-amber">Trung bình</span></td></tr>
+        <tr><td>Báo cáo tuần</td><td>Weekly summary</td><td><span class="badge badge-blue">Thấp</span></td></tr>
+        <tr><td>Báo cáo tháng</td><td>Ngày 1 đầu tháng</td><td><span class="badge badge-amber">Trung bình</span></td></tr>
+        <tr><td>Vượt ngân sách</td><td>100% threshold</td><td><span class="badge badge-red">Cao</span></td></tr>
+        <tr><td>Nhắc trả nợ</td><td>N ngày trước due_date</td><td><span class="badge badge-red">Cao</span></td></tr>
+        <tr><td>Nợ quá hạn</td><td>Sau due_date</td><td><span class="badge badge-red">Rất cao</span></td></tr>
+        <tr><td>Quỹ đạt mục tiêu</td><td>100% progress</td><td><span class="badge badge-green">Celebratory</span></td></tr>
+        <tr><td>Gợi ý tiết kiệm</td><td>Cuối tháng</td><td><span class="badge badge-blue">Thấp</span></td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Non-functional Requirements</div>
+    <div class="nfr-grid">
+      <div class="nfr-card"><div class="nfr-label">Thêm giao dịch</div><div class="nfr-value">≤ 5 giây</div></div>
+      <div class="nfr-card"><div class="nfr-label">Quick Add</div><div class="nfr-value">≤ 2 giây</div></div>
+      <div class="nfr-card"><div class="nfr-label">Sync 2 thiết bị</div><div class="nfr-value">Eventual consistency</div></div>
+      <div class="nfr-card"><div class="nfr-label">Offline</div><div class="nfr-value">Queue + retry</div></div>
+      <div class="nfr-card"><div class="nfr-label">Load màn chính</div><div class="nfr-value">< 1 giây</div></div>
+      <div class="nfr-card"><div class="nfr-label">Uptime</div><div class="nfr-value">≥ 99.5%</div></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Tech Stack</div>
+    <div class="two-col">
+      <div class="card"><div class="card-title">Mobile</div><div class="card-sub">Flutter — cross-platform iOS + Android. Widget quick-add ở Phase 4.</div></div>
+      <div class="card"><div class="card-title">Backend</div><div class="card-sub">Supabase (BaaS — nhanh cho MVP). PostgreSQL. WebSocket cho real-time sync.</div></div>
+      <div class="card"><div class="card-title">AI</div><div class="card-sub">Claude API — Spending insights, auto-categorize, monthly report. Rule-based Phase 1 → ML Phase 2.</div></div>
+      <div class="card"><div class="card-title">Infra</div><div class="card-sub">Firebase Auth + FCM. Cloud Storage (avatar). AWS / GCP / Supabase hosting.</div></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- TAB: ROADMAP -->
+<div class="tab-content" id="tab-roadmap">
+
+  <div class="section">
+    <div class="section-title">Roadmap v1.2 (Thực tế hơn)</div>
+    <div class="phase-list">
+
+      <div class="phase">
+        <div class="phase-header">
+          <span class="badge badge-green">Phase 1</span>
+          <span>MVP — Sổ tay số</span>
+        </div>
+        <div class="phase-body">
+          <span class="feature-chip">Onboarding & liên kết gia đình</span>
+          <span class="feature-chip">1 ví mặc định (Wallet)</span>
+          <span class="feature-chip">Trục 1: Chi tiêu + CRUD</span>
+          <span class="feature-chip">Trục 3: Thu nhập thủ công</span>
+          <span class="feature-chip">Trục 4: Quỹ gia đình</span>
+          <span class="feature-chip">Quick Add</span>
+          <span class="feature-chip">Undo / Edit flow</span>
+          <span class="feature-chip">Dashboard cơ bản</span>
+          <span class="feature-chip">Sync real-time 2 thiết bị</span>
+          <span class="feature-chip">4 Master data CRUD</span>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-header">
+          <span class="badge badge-blue">Phase 2</span>
+          <span>Core Complete</span>
+        </div>
+        <div class="phase-body">
+          <span class="feature-chip">Trục 2: Chuyển tiền + auto-link</span>
+          <span class="feature-chip">Trục 5: Nợ + lịch sử trả</span>
+          <span class="feature-chip">Nhiều ví (multi-wallet)</span>
+          <span class="feature-chip">Monthly Budget tổng</span>
+          <span class="feature-chip">Category Budget + cảnh báo</span>
+          <span class="feature-chip">Thống kê đầy đủ 5 trục</span>
+          <span class="feature-chip">Push notification cơ bản</span>
+          <span class="feature-chip">Daily reminder</span>
+          <span class="feature-chip">Weekly summary</span>
+          <span class="feature-chip">Export CSV/Excel</span>
+          <span class="feature-chip">Search giao dịch</span>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-header">
+          <span class="badge badge-amber">Phase 3</span>
+          <span>AI & Intelligence</span>
+        </div>
+        <div class="phase-body">
+          <span class="feature-chip">AI Spending Insights (guarded)</span>
+          <span class="feature-chip">Auto-categorize (Claude API)</span>
+          <span class="feature-chip">Smart Debt Reminder</span>
+          <span class="feature-chip">Spending Forecast</span>
+          <span class="feature-chip">Monthly Report tự động</span>
+          <span class="feature-chip">Saving Suggestion</span>
+          <span class="feature-chip">Merge Category</span>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-header">
+          <span class="badge" style="background:var(--color-background-secondary);color:var(--color-text-secondary)">Phase 4</span>
+          <span>Polish & Growth</span>
+        </div>
+        <div class="phase-body">
+          <span class="feature-chip">Widget iOS/Android (quick-add)</span>
+          <span class="feature-chip">Recurring transaction</span>
+          <span class="feature-chip">Scan hóa đơn bằng camera</span>
+          <span class="feature-chip">Dark mode</span>
+          <span class="feature-chip">Backup & restore</span>
+          <span class="feature-chip">PWA / Web</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+</div>
+
+<script>
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t,i) => {
+    const names = ['overview','axes','ai','system','roadmap'];
+    t.classList.toggle('active', names[i] === name);
+  });
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+}
+
+function highlightAxis(idx) {
+  // just scroll to axes tab which is already switched
+}
+
+const categoryMap = {
+  'ăn': 'Ăn uống', 'sáng': 'Ăn uống', 'cafe': 'Ăn uống', 'cà phê': 'Ăn uống', 'trưa': 'Ăn uống', 'tối': 'Ăn uống', 'grab food': 'Ăn uống',
+  'điện': 'Tiện ích', 'nước': 'Tiện ích', 'internet': 'Tiện ích',
+  'xăng': 'Đi lại', 'grab': 'Đi lại', 'xe': 'Đi lại',
+  'thuốc': 'Sức khỏe', 'bác sĩ': 'Sức khỏe',
+  'học': 'Học phí', 'trường': 'Học phí',
+  'mua': 'Mua sắm', 'quần': 'Mua sắm', 'áo': 'Mua sắm',
+  'giải trí': 'Giải trí', 'phim': 'Giải trí', 'game': 'Giải trí',
+};
+
+function parseAmount(str) {
+  str = str.toLowerCase().trim();
+  const mtr = str.match(/(\d+(?:[.,]\d+)?)\s*tr/);
+  if (mtr) return parseFloat(mtr[1].replace(',','.')) * 1000000;
+  const mk = str.match(/(\d+(?:[.,]\d+)?)\s*k/);
+  if (mk) return parseFloat(mk[1].replace(',','.')) * 1000;
+  const mn = str.match(/(\d[\d.,]*)/);
+  if (mn) return parseFloat(mn[1].replace(/\./g,'').replace(',','.'));
+  return null;
+}
+
+function parseCategory(str) {
+  str = str.toLowerCase();
+  for (const [kw, cat] of Object.entries(categoryMap)) {
+    if (str.includes(kw)) return cat;
+  }
+  return null;
+}
+
+function formatVND(n) {
+  return n.toLocaleString('vi-VN') + ' đ';
+}
+
+function parseQA() {
+  const input = document.getElementById('qa-input').value.trim();
+  const result = document.getElementById('qa-result');
+  if (!input) return;
+  const amount = parseAmount(input);
+  const cat = parseCategory(input);
+  if (amount) {
+    let html = '<div class="qa-parsed">';
+    html += `<span class="qa-pill">💰 ${formatVND(amount)}</span>`;
+    if (cat) html += `<span class="qa-pill">🏷️ ${cat}</span>`;
+    else html += `<span class="qa-pill" style="color:var(--color-text-warning);border-color:var(--color-border-warning)">⚠️ Chọn danh mục</span>`;
+    html += `<span class="qa-pill" style="color:var(--color-text-success)">✓ Đã thêm</span>`;
+    html += '</div>';
+    result.innerHTML = html;
+    document.getElementById('qa-input').value = '';
+  } else {
+    result.innerHTML = '<span style="color:var(--color-text-warning);font-size:12px">Không nhận ra số tiền → mở form đầy đủ</span>';
+  }
+}
+
+document.getElementById('qa-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') parseQA();
+});
+</script>
