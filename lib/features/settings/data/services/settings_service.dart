@@ -81,4 +81,20 @@ class SettingsService {
         .single();
     return Map<String, dynamic>.from(row);
   }
+
+  Future<Map<String, dynamic>> updateUserProfile({
+    required String displayName,
+  }) async {
+    final uid = _db.auth.currentUser?.id;
+    if (uid == null) {
+      throw StateError('Không có phiên đăng nhập hợp lệ.');
+    }
+    final row = await _db
+        .from('users')
+        .update({'display_name': displayName.trim()})
+        .eq('id', uid)
+        .select('id, email, display_name, avatar_url')
+        .single();
+    return Map<String, dynamic>.from(row);
+  }
 }

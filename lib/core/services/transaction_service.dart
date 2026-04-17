@@ -42,11 +42,13 @@ class TransactionService {
         .from('fund_contributions')
         .select('id, amount, date, created_at')
         .eq('couple_id', coupleId)
+        .eq('contribution_type', 'contribution')
         .eq('is_deleted', false);
     var debtsQuery = supabase
         .from('debt_payments')
         .select('id, amount, date, created_at, updated_by')
         .eq('couple_id', coupleId)
+        .isFilter('linked_income_id', null)
         .eq('is_deleted', false);
     var transfersQuery = supabase
         .from('transfers')
@@ -105,9 +107,8 @@ class TransactionService {
           case TransactionType.expense:
           case TransactionType.fund:
           case TransactionType.debt:
+          case TransactionType.transfer:
             expense += tx.amount.abs();
-            break;
-          default:
             break;
         }
       }
@@ -181,6 +182,7 @@ class TransactionService {
         .from('fund_contributions')
         .select('id, amount, date, created_at, note, fund_id')
         .eq('couple_id', coupleId)
+        .eq('contribution_type', 'contribution')
         .eq('is_deleted', false)
         .gte('date', start.toIso8601String().substring(0, 10))
         .lt('date', end.toIso8601String().substring(0, 10));
@@ -188,6 +190,7 @@ class TransactionService {
         .from('debt_payments')
         .select('id, amount, date, created_at, note, debt_id, updated_by')
         .eq('couple_id', coupleId)
+        .isFilter('linked_income_id', null)
         .eq('is_deleted', false)
         .gte('date', start.toIso8601String().substring(0, 10))
         .lt('date', end.toIso8601String().substring(0, 10));

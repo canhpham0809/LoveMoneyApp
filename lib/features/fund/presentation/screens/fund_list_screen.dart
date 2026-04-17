@@ -97,7 +97,7 @@ class _FundListScreenState extends State<FundListScreen> {
                       ThousandsSeparatorInputFormatter(),
                     ],
                     decoration: const InputDecoration(
-                      labelText: 'Muc tieu (tuy chon)',
+                      labelText: 'Muc tieu',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -123,7 +123,7 @@ class _FundListScreenState extends State<FundListScreen> {
                     icon: const Icon(Icons.calendar_today),
                     label: Text(
                       deadline == null
-                          ? 'Chon han (tuy chon)'
+                          ? 'Chon han'
                           : 'Han: ${formatDate(deadline!)}',
                     ),
                   ),
@@ -176,6 +176,7 @@ class _FundListScreenState extends State<FundListScreen> {
 
     if (saved == true) {
       await _load();
+      widget.onDataChanged?.call();
     }
   }
 
@@ -205,12 +206,38 @@ class _FundListScreenState extends State<FundListScreen> {
       return;
     }
     if (action == 'delete') {
+      final amount = await _service.previewDeleteFundSettlement(item.id);
+      if (!mounted) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Xac nhan xoa quy'),
+          content: Text(
+            amount > 0
+                ? 'Neu xac nhan xoa quy, he thong se cong vao thu nhap ${formatVnd(amount)}.'
+                : 'Neu xac nhan xoa quy, he thong khong phat sinh giao dich tien.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Huy'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Xoa'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+
       await _service.deleteFund(item.id);
       if (mounted) {
         setState(() {
           _items.removeWhere((f) => f.id == item.id);
         });
       }
+      widget.onDataChanged?.call();
     }
   }
 

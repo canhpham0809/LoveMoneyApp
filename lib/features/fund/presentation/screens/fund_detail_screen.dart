@@ -88,7 +88,10 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
     }
   }
 
-  Future<void> _openContributionPopup({FundContributionModel? existing}) async {
+  Future<void> _openContributionPopup({
+    FundContributionModel? existing,
+    bool isWithdrawal = false,
+  }) async {
     final walletList = await _walletService.getWallets(widget.coupleId);
     if (!mounted) return;
     if (walletList.isEmpty) {
@@ -112,12 +115,19 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
       noteCtrl.text = existing.note ?? '';
     }
 
+    final isWithdrawalTx =
+        isWithdrawal || existing?.contributionType == 'withdrawal';
+
     final saved = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (dialogContext, setDialogState) => AlertDialog(
-            title: Text(existing == null ? 'Gop quy' : 'Sua dot gop'),
+            title: Text(
+              existing == null
+                  ? (isWithdrawalTx ? 'Rut quy' : 'Gop quy')
+                  : (isWithdrawalTx ? 'Sua dot rut' : 'Sua dot gop'),
+            ),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -130,7 +140,7 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                       ThousandsSeparatorInputFormatter(),
                     ],
                     decoration: const InputDecoration(
-                      labelText: 'So tien gop',
+                      labelText: 'So tien',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -183,17 +193,31 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                   }
                   if (existing == null) {
                     final uid = Supabase.instance.client.auth.currentUser!.id;
-                    await _fundService.createContribution(
-                      coupleId: widget.coupleId,
-                      userId: uid,
-                      fundId: widget.fundId,
-                      walletId: walletId,
-                      amount: amount,
-                      note: noteCtrl.text.trim().isEmpty
-                          ? null
-                          : noteCtrl.text.trim(),
-                      date: selectedDate,
-                    );
+                    if (isWithdrawalTx) {
+                      await _fundService.createWithdrawal(
+                        coupleId: widget.coupleId,
+                        userId: uid,
+                        fundId: widget.fundId,
+                        walletId: walletId,
+                        amount: amount,
+                        note: noteCtrl.text.trim().isEmpty
+                            ? null
+                            : noteCtrl.text.trim(),
+                        date: selectedDate,
+                      );
+                    } else {
+                      await _fundService.createContribution(
+                        coupleId: widget.coupleId,
+                        userId: uid,
+                        fundId: widget.fundId,
+                        walletId: walletId,
+                        amount: amount,
+                        note: noteCtrl.text.trim().isEmpty
+                            ? null
+                            : noteCtrl.text.trim(),
+                        date: selectedDate,
+                      );
+                    }
                   } else {
                     await _fundService.updateContribution(
                       contributionId: existing.id,
@@ -244,10 +268,48 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
       ),
     );
     if (action == 'edit') {
-      await _openContributionPopup(existing: item);
+      await _openContributionPopup(
+        existing: item,
+        isWithdrawal: item.contributionType == 'withdrawal',
+      );
       return;
     }
     if (action == 'delete') {
+      final impact = await _fundService.previewDeleteContributionImpact(
+        item.id,
+      );
+      if (!mounted) return;
+      String message;
+      if (impact < 0) {
+        message =
+            'Neu xac nhan xoa giao dich nay, so du vi se bi tru lai ${formatVnd(impact.abs())}. He thong dong thoi huy giao dich thu nhap lien ket.';
+      } else if (impact > 0) {
+        message =
+            'Neu xac nhan xoa giao dich nay, ban se duoc cong them ${formatVnd(impact)}.';
+      } else {
+        message =
+            'Neu xac nhan xoa giao dich nay, he thong khong phat sinh giao dich bu tru moi.';
+      }
+
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Xac nhan xoa giao dich quy'),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Huy'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Xoa'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+
       await _fundService.deleteContribution(
         contributionId: item.id,
         fundId: widget.fundId,
@@ -294,7 +356,7 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                   child: Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      'Timeline dot gop quy',
+                      'Lich su giao dich quy',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
@@ -307,12 +369,29 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                           itemCount: _contributions.length,
                           itemBuilder: (context, index) {
                             final c = _contributions[index];
+                            final isWithdrawal =
+                                c.contributionType == 'withdrawal';
                             return ListTile(
-                              leading: const Icon(Icons.timeline),
+                              leading: Icon(
+                                isWithdrawal
+                                    ? Icons.south_west_rounded
+                                    : Icons.north_east_rounded,
+                                color: isWithdrawal
+                                    ? Colors.green
+                                    : Colors.orange,
+                              ),
                               onLongPress: () => _showContributionActions(c),
-                              title: Text(formatVnd(c.amount)),
+                              title: Text(
+                                '${isWithdrawal ? '+' : '-'}${formatVnd(c.amount)}',
+                                style: TextStyle(
+                                  color: isWithdrawal
+                                      ? Colors.green
+                                      : Colors.orange,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
                               subtitle: Text(
-                                '${formatDate(c.date)} · ${formatDateTime(c.createdAt).split(' ').last} · ${_memberNameById[c.userId] ?? c.userId}${c.note != null ? ' · ${c.note}' : ''}',
+                                '${isWithdrawal ? 'Rut quy' : 'Gop quy'} · ${formatDate(c.date)} · ${formatDateTime(c.createdAt).split(' ').last} · ${_memberNameById[c.userId] ?? c.userId}${c.note != null ? ' · ${c.note}' : ''}',
                               ),
                             );
                           },
@@ -320,9 +399,22 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                 ),
               ],
             ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _openContributionPopup,
-        child: const Icon(Icons.add),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          FloatingActionButton.small(
+            heroTag: 'fund_withdraw',
+            onPressed: () => _openContributionPopup(isWithdrawal: true),
+            child: const Icon(Icons.south_west_rounded),
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton(
+            heroTag: 'fund_contribute',
+            onPressed: _openContributionPopup,
+            child: const Icon(Icons.add),
+          ),
+        ],
       ),
     );
   }

@@ -6,6 +6,7 @@ import 'package:flutter_app_demo/core/utils/amount_input.dart';
 import 'package:flutter_app_demo/core/widgets/amount_suggestion_chips.dart';
 import 'package:flutter_app_demo/core/utils/formatters.dart';
 import 'package:flutter_app_demo/features/income/data/models/income_model.dart';
+import 'package:flutter_app_demo/features/income/data/models/income_source_model.dart';
 import 'package:flutter_app_demo/features/income/data/services/income_service.dart';
 import 'package:flutter_app_demo/features/income/presentation/screens/income_search_filter_screen.dart';
 import 'package:flutter_app_demo/features/wallet/data/services/wallet_service.dart';
@@ -35,6 +36,20 @@ class IncomeListScreen extends StatefulWidget {
 
   @override
   State<IncomeListScreen> createState() => _IncomeListScreenState();
+}
+
+class _IncomeFormResult {
+  final double amount;
+  final String incomeSourceId;
+  final String? description;
+  final DateTime date;
+
+  const _IncomeFormResult({
+    required this.amount,
+    required this.incomeSourceId,
+    required this.description,
+    required this.date,
+  });
 }
 
 class _IncomeListScreenState extends State<IncomeListScreen> {
@@ -85,11 +100,15 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
       setState(() => _error = null);
     }
     try {
-      final items = await _service.getIncomes(
-        widget.coupleId,
-        createdByUserId: widget.viewerUserId,
-      );
-      final sources = await _service.getIncomeSources(widget.coupleId);
+      final results = await Future.wait<dynamic>([
+        _service.getIncomes(
+          widget.coupleId,
+          createdByUserId: widget.viewerUserId,
+        ),
+        _service.getIncomeSources(widget.coupleId),
+      ]);
+      final items = List<IncomeModel>.from(results[0] as List);
+      final sources = List<IncomeSourceModel>.from(results[1] as List);
       items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       if (mounted) {
         setState(() {
@@ -105,21 +124,116 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
   }
 
   Future<void> _delete(IncomeModel item) async {
+    final removedIndex = _items.indexWhere((e) => e.id == item.id);
+    final removedItem = removedIndex >= 0 ? _items[removedIndex] : item;
+    if (removedIndex >= 0 && mounted) {
+      setState(() {
+        _items.removeAt(removedIndex);
+      });
+    }
+
     try {
       await _service.deleteIncome(item.id);
-      if (mounted) {
-        setState(() {
-          _items.removeWhere((e) => e.id == item.id);
-        });
-      }
       widget.onDataChanged?.call();
     } catch (e) {
+      if (mounted && removedIndex >= 0) {
+        setState(() {
+          final insertAt = removedIndex.clamp(0, _items.length);
+          _items.insert(insertAt, removedItem);
+        });
+      }
       if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Loi xoa: $e')));
       }
     }
+  }
+
+  Future<void> _createIncomeOptimistic({
+    required String walletId,
+    required _IncomeFormResult payload,
+  }) async {
+    final uid = Supabase.instance.client.auth.currentUser!.id;
+    final now = DateTime.now();
+    final tempId = 'temp-income-${now.microsecondsSinceEpoch}';
+    final optimistic = IncomeModel(
+      id: tempId,
+      coupleId: widget.coupleId,
+      userId: uid,
+      walletId: walletId,
+      incomeSourceId: payload.incomeSourceId,
+      amount: payload.amount,
+      description: payload.description,
+      isFromTransfer: false,
+      linkedTransferId: null,
+      date: payload.date,
+      createdAt: now,
+      updatedAt: now,
+      updatedBy: uid,
+      isDeleted: false,
+      deletedAt: null,
+    );
+
+    if (mounted) {
+      setState(() {
+        _items.insert(0, optimistic);
+      });
+    }
+
+    try {
+      final created = await _service.createIncome(
+        coupleId: widget.coupleId,
+        userId: uid,
+        walletId: walletId,
+        incomeSourceId: payload.incomeSourceId,
+        amount: payload.amount,
+        description: payload.description,
+        date: payload.date,
+      );
+      if (!mounted) return;
+      setState(() {
+        final index = _items.indexWhere((e) => e.id == tempId);
+        if (index >= 0) {
+          _items[index] = created;
+        } else {
+          _items.insert(0, created);
+        }
+        _items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      });
+      widget.onDataChanged?.call();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _items.removeWhere((e) => e.id == tempId);
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Loi luu: $e')));
+    }
+  }
+
+  Future<bool> _confirmDeleteIncome(IncomeModel item) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Xac nhan xoa thu nhap'),
+        content: Text(
+          'Neu xac nhan xoa, so du vi se bi tru lai ${formatVnd(item.amount)}. Khong phat sinh giao dich bu tru moi.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).maybePop(false),
+            child: const Text('Huy'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).maybePop(true),
+            child: const Text('Xoa'),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
   }
 
   Future<String?> _resolveDefaultWalletId() async {
@@ -133,7 +247,7 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
   }
 
   Future<void> _openIncomePopup({IncomeModel? existing}) async {
-    final sources = await _service.getIncomeSources(widget.coupleId);
+    final sources = await _service.getIncomeFormSources(widget.coupleId);
     if (!mounted) return;
     if (sources.isEmpty) {
       ScaffoldMessenger.of(
@@ -159,7 +273,7 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
       noteCtrl.text = existing.description ?? '';
     }
 
-    final saved = await showDialog<bool>(
+    final payload = await showDialog<_IncomeFormResult>(
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
@@ -188,25 +302,38 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                     },
                   ),
                   const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: selectedSourceId,
-                    decoration: const InputDecoration(
-                      labelText: 'Nguon thu',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: sources
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: sources
                         .map(
-                          (s) => DropdownMenuItem(
-                            value: s.id,
-                            child: Text(s.name),
+                          (s) => ChoiceChip(
+                            label: Text(
+                              s.name,
+                              style: const TextStyle(
+                                fontSize: 10,
+                              ), // nhỏ font lại
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 0,
+                            ), // giảm padding
+                            visualDensity: const VisualDensity(
+                              horizontal: -4,
+                              vertical: -4,
+                            ), // bóp thêm
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            showCheckmark: false,
+                            selected: selectedSourceId == s.id,
+                            onSelected: (_) {
+                              setDialogState(() {
+                                selectedSourceId = s.id;
+                              });
+                            },
                           ),
                         )
                         .toList(),
-                    onChanged: (v) {
-                      if (v != null) {
-                        setDialogState(() => selectedSourceId = v);
-                      }
-                    },
                   ),
                   const SizedBox(height: 12),
                   TextField(
@@ -237,7 +364,7 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(dialogContext, false),
+                onPressed: () => Navigator.of(dialogContext).maybePop(),
                 child: const Text('Huy'),
               ),
               FilledButton(
@@ -250,33 +377,17 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                     return;
                   }
 
-                  final uid = Supabase.instance.client.auth.currentUser!.id;
-                  if (existing == null) {
-                    await _service.createIncome(
-                      coupleId: widget.coupleId,
-                      userId: uid,
-                      walletId: walletId,
-                      incomeSourceId: selectedSourceId,
-                      amount: amount,
-                      description: noteCtrl.text.trim().isEmpty
-                          ? null
-                          : noteCtrl.text.trim(),
-                      date: selectedDate,
-                    );
-                  } else {
-                    await _service.updateIncome(
-                      incomeId: existing.id,
-                      walletId: walletId,
-                      incomeSourceId: selectedSourceId,
-                      amount: amount,
-                      description: noteCtrl.text.trim().isEmpty
-                          ? null
-                          : noteCtrl.text.trim(),
-                      date: selectedDate,
-                    );
-                  }
                   if (dialogContext.mounted) {
-                    Navigator.pop(dialogContext, true);
+                    Navigator.of(dialogContext).maybePop(
+                      _IncomeFormResult(
+                        amount: amount,
+                        incomeSourceId: selectedSourceId,
+                        description: noteCtrl.text.trim().isEmpty
+                            ? null
+                            : noteCtrl.text.trim(),
+                        date: selectedDate,
+                      ),
+                    );
                   }
                 },
                 child: const Text('Luu'),
@@ -287,9 +398,29 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
       },
     );
 
-    if (saved == true) {
+    if (payload == null) return;
+
+    if (existing == null) {
+      await _createIncomeOptimistic(walletId: walletId, payload: payload);
+      return;
+    }
+
+    try {
+      await _service.updateIncome(
+        incomeId: existing.id,
+        walletId: walletId,
+        incomeSourceId: payload.incomeSourceId,
+        amount: payload.amount,
+        description: payload.description,
+        date: payload.date,
+      );
       await _load(showLoader: false);
       widget.onDataChanged?.call();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Loi luu: $e')));
     }
   }
 
@@ -319,6 +450,8 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
       return;
     }
     if (action == 'delete') {
+      final confirmed = await _confirmDeleteIncome(item);
+      if (!confirmed) return;
       await _delete(item);
     }
   }
@@ -404,6 +537,7 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: const Icon(Icons.delete, color: Colors.white),
                       ),
+                      confirmDismiss: (_) => _confirmDeleteIncome(item),
                       onDismissed: (_) => _delete(item),
                       child: ListTile(
                         leading: const CircleAvatar(
@@ -414,7 +548,7 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                           (item.description != null &&
                                   item.description!.trim().isNotEmpty)
                               ? item.description!
-                              : (_sourceNameById[item.incomeSourceId] ??
+                              : (_sourceNameById[item.incomeSourceId ?? ''] ??
                                     'Giao dich'),
                         ),
                         subtitle: Text(

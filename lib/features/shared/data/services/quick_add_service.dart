@@ -25,6 +25,12 @@ class QuickAddResult {
 class QuickAddService {
   SupabaseClient get _db => Supabase.instance.client;
 
+  bool _isMissingQuickAddColumn(Object error) {
+    return error is PostgrestException &&
+        error.code == '42703' &&
+        error.message.contains('show_in_quick_add');
+  }
+
   static final RegExp _inputPattern = RegExp(
     r'^\s*([0-9]+(?:[\.,][0-9]+)?)\s*(k|tr)?\s*(.*)$',
     caseSensitive: false,
@@ -54,15 +60,21 @@ class QuickAddService {
       );
     }
 
-    final wallets = await _db
-        .from('wallets')
-        .select('id')
-        .eq('couple_id', coupleId)
-        .eq('is_deleted', false)
-        .eq('is_active', true)
-        .order('is_default', ascending: false)
-        .order('created_at', ascending: true)
-        .limit(1);
+    final queryResult = await Future.wait<dynamic>([
+      _db
+          .from('wallets')
+          .select('id')
+          .eq('couple_id', coupleId)
+          .eq('is_deleted', false)
+          .eq('is_active', true)
+          .order('is_default', ascending: false)
+          .order('created_at', ascending: true)
+          .limit(1),
+      _fetchQuickAddCategories(coupleId),
+    ]);
+
+    final wallets = List<dynamic>.from(queryResult[0] as List);
+    final categories = List<dynamic>.from(queryResult[1] as List);
 
     if (wallets.isEmpty) {
       return QuickAddResult(
@@ -72,14 +84,6 @@ class QuickAddService {
         parsedAmount: parsed.amount,
       );
     }
-
-    final categories = await _db
-        .from('categories')
-        .select('id, name')
-        .eq('couple_id', coupleId)
-        .eq('is_deleted', false)
-        .eq('is_active', true)
-        .order('name');
 
     if (categories.isEmpty) {
       return QuickAddResult(
@@ -125,6 +129,28 @@ class QuickAddService {
           forcedCategoryName ?? (suggestedCategory['name'] as String),
       expense: ExpenseModel.fromJson(row),
     );
+  }
+
+  Future<List<dynamic>> _fetchQuickAddCategories(String coupleId) async {
+    try {
+      return await _db
+          .from('categories')
+          .select('id, name')
+          .eq('couple_id', coupleId)
+          .eq('is_deleted', false)
+          .eq('is_active', true)
+          .eq('show_in_quick_add', true)
+          .order('name');
+    } catch (e) {
+      if (!_isMissingQuickAddColumn(e)) rethrow;
+      return await _db
+          .from('categories')
+          .select('id, name')
+          .eq('couple_id', coupleId)
+          .eq('is_deleted', false)
+          .eq('is_active', true)
+          .order('name');
+    }
   }
 
   _ParsedQuickInput? _parseInput(String input) {

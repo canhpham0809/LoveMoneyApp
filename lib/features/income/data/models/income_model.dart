@@ -4,8 +4,8 @@ class IncomeModel extends Equatable {
   final String id;
   final String coupleId;
   final String userId;
-  final String walletId;
-  final String incomeSourceId;
+  final String? walletId;
+  final String? incomeSourceId;
   final double amount;
   final String? description;
   final bool isFromTransfer;
@@ -21,8 +21,8 @@ class IncomeModel extends Equatable {
     required this.id,
     required this.coupleId,
     required this.userId,
-    required this.walletId,
-    required this.incomeSourceId,
+    this.walletId,
+    this.incomeSourceId,
     required this.amount,
     this.description,
     required this.isFromTransfer,
@@ -36,21 +36,31 @@ class IncomeModel extends Equatable {
   });
 
   factory IncomeModel.fromJson(Map<String, dynamic> json) {
+    DateTime parseDate(dynamic value, {DateTime? fallback}) {
+      if (value is String && value.trim().isNotEmpty) {
+        return DateTime.parse(value);
+      }
+      return fallback ?? DateTime.now();
+    }
+
     return IncomeModel(
       id: json['id'] as String,
       coupleId: json['couple_id'] as String,
       userId: json['user_id'] as String,
-      walletId: json['wallet_id'] as String,
-      incomeSourceId: json['income_source_id'] as String,
+      walletId: json['wallet_id'] as String?,
+      incomeSourceId: json['income_source_id'] as String?,
       amount: (json['amount'] as num).toDouble(),
       description: json['description'] as String?,
-      isFromTransfer: json['is_from_transfer'] as bool,
+      isFromTransfer: (json['is_from_transfer'] as bool?) ?? false,
       linkedTransferId: json['linked_transfer_id'] as String?,
-      date: DateTime.parse(json['date'] as String),
-      createdAt: DateTime.parse(json['created_at'] as String),
-      updatedAt: DateTime.parse(json['updated_at'] as String),
+      date: parseDate(json['date']),
+      createdAt: parseDate(json['created_at']),
+      updatedAt: parseDate(
+        json['updated_at'],
+        fallback: parseDate(json['created_at']),
+      ),
       updatedBy: json['updated_by'] as String?,
-      isDeleted: json['is_deleted'] as bool,
+      isDeleted: (json['is_deleted'] as bool?) ?? false,
       deletedAt: json['deleted_at'] != null
           ? DateTime.parse(json['deleted_at'] as String)
           : null,

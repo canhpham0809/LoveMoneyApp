@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_app_demo/core/utils/amount_input.dart';
 import 'package:flutter_app_demo/core/widgets/amount_suggestion_chips.dart';
 import 'package:flutter_app_demo/core/utils/formatters.dart';
+import 'package:flutter_app_demo/features/expense/data/models/category_model.dart';
 import 'package:flutter_app_demo/features/expense/data/models/expense_model.dart';
 import 'package:flutter_app_demo/features/expense/data/services/expense_service.dart';
 import 'package:flutter_app_demo/features/expense/presentation/screens/expense_search_filter_screen.dart';
@@ -35,6 +36,20 @@ class ExpenseListScreen extends StatefulWidget {
 
   @override
   State<ExpenseListScreen> createState() => _ExpenseListScreenState();
+}
+
+class _ExpenseFormResult {
+  final double amount;
+  final String categoryId;
+  final String? description;
+  final DateTime date;
+
+  const _ExpenseFormResult({
+    required this.amount,
+    required this.categoryId,
+    required this.description,
+    required this.date,
+  });
 }
 
 class _ExpenseListScreenState extends State<ExpenseListScreen> {
@@ -85,11 +100,15 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
       setState(() => _error = null);
     }
     try {
-      final categories = await _service.getCategories(widget.coupleId);
-      final items = await _service.getExpenses(
-        widget.coupleId,
-        createdByUserId: widget.viewerUserId,
-      );
+      final results = await Future.wait<dynamic>([
+        _service.getCategories(widget.coupleId),
+        _service.getExpenses(
+          widget.coupleId,
+          createdByUserId: widget.viewerUserId,
+        ),
+      ]);
+      final categories = List<CategoryModel>.from(results[0] as List);
+      final items = List<ExpenseModel>.from(results[1] as List);
       items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       if (mounted) {
         setState(() {
@@ -105,21 +124,116 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
   }
 
   Future<void> _delete(ExpenseModel item) async {
+    final removedIndex = _items.indexWhere((e) => e.id == item.id);
+    final removedItem = removedIndex >= 0 ? _items[removedIndex] : item;
+    if (removedIndex >= 0 && mounted) {
+      setState(() {
+        _items.removeAt(removedIndex);
+      });
+    }
+
     try {
       await _service.deleteExpense(item.id);
-      if (mounted) {
-        setState(() {
-          _items.removeWhere((e) => e.id == item.id);
-        });
-      }
       widget.onDataChanged?.call();
     } catch (e) {
+      if (mounted && removedIndex >= 0) {
+        setState(() {
+          final insertAt = removedIndex.clamp(0, _items.length);
+          _items.insert(insertAt, removedItem);
+        });
+      }
       if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Lỗi xóa: $e')));
       }
     }
+  }
+
+  Future<void> _createExpenseOptimistic({
+    required String walletId,
+    required _ExpenseFormResult payload,
+  }) async {
+    final uid = Supabase.instance.client.auth.currentUser!.id;
+    final now = DateTime.now();
+    final tempId = 'temp-expense-${now.microsecondsSinceEpoch}';
+    final optimistic = ExpenseModel(
+      id: tempId,
+      coupleId: widget.coupleId,
+      userId: uid,
+      walletId: walletId,
+      categoryId: payload.categoryId,
+      categoryName: _categoryNameById[payload.categoryId],
+      categoryIcon: null,
+      amount: payload.amount,
+      description: payload.description,
+      date: payload.date,
+      createdAt: now,
+      updatedAt: now,
+      updatedBy: uid,
+      isDeleted: false,
+      deletedAt: null,
+    );
+
+    if (mounted) {
+      setState(() {
+        _items.insert(0, optimistic);
+      });
+    }
+
+    try {
+      final created = await _service.createExpense(
+        coupleId: widget.coupleId,
+        userId: uid,
+        walletId: walletId,
+        categoryId: payload.categoryId,
+        amount: payload.amount,
+        description: payload.description,
+        date: payload.date,
+      );
+      if (!mounted) return;
+      setState(() {
+        final index = _items.indexWhere((e) => e.id == tempId);
+        if (index >= 0) {
+          _items[index] = created;
+        } else {
+          _items.insert(0, created);
+        }
+        _items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      });
+      widget.onDataChanged?.call();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _items.removeWhere((e) => e.id == tempId);
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Loi luu: $e')));
+    }
+  }
+
+  Future<bool> _confirmDeleteExpense(ExpenseModel item) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Xac nhan xoa chi tieu'),
+        content: Text(
+          'Neu xac nhan xoa, ban se duoc hoan lai ${formatVnd(item.amount)} vao so du vi. Khong phat sinh giao dich bu tru moi.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).maybePop(false),
+            child: const Text('Huy'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).maybePop(true),
+            child: const Text('Xoa'),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
   }
 
   Future<String?> _resolveDefaultWalletId() async {
@@ -133,7 +247,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
   }
 
   Future<void> _openExpensePopup({ExpenseModel? existing}) async {
-    final categories = await _service.getCategories(widget.coupleId);
+    final categories = await _service.getExpenseFormCategories(widget.coupleId);
     if (!mounted) return;
     if (categories.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -159,7 +273,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
       noteCtrl.text = existing.description ?? '';
     }
 
-    final saved = await showDialog<bool>(
+    final payload = await showDialog<_ExpenseFormResult>(
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
@@ -188,25 +302,38 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                     },
                   ),
                   const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: selectedCategoryId,
-                    decoration: const InputDecoration(
-                      labelText: 'Danh muc',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: categories
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: categories
                         .map(
-                          (c) => DropdownMenuItem(
-                            value: c.id,
-                            child: Text(c.name),
+                          (c) => ChoiceChip(
+                            label: Text(
+                              c.name,
+                              style: const TextStyle(
+                                fontSize: 10,
+                              ), // nhỏ font lại
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 0,
+                            ), // giảm padding
+                            visualDensity: const VisualDensity(
+                              horizontal: -4,
+                              vertical: -4,
+                            ), // bóp thêm
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            showCheckmark: false,
+                            selected: selectedCategoryId == c.id,
+                            onSelected: (_) {
+                              setDialogState(() {
+                                selectedCategoryId = c.id;
+                              });
+                            },
                           ),
                         )
                         .toList(),
-                    onChanged: (v) {
-                      if (v != null) {
-                        setDialogState(() => selectedCategoryId = v);
-                      }
-                    },
                   ),
                   const SizedBox(height: 12),
                   TextField(
@@ -237,7 +364,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(dialogContext, false),
+                onPressed: () => Navigator.of(dialogContext).maybePop(),
                 child: const Text('Huy'),
               ),
               FilledButton(
@@ -250,33 +377,17 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                     return;
                   }
 
-                  final uid = Supabase.instance.client.auth.currentUser!.id;
-                  if (existing == null) {
-                    await _service.createExpense(
-                      coupleId: widget.coupleId,
-                      userId: uid,
-                      walletId: walletId,
-                      categoryId: selectedCategoryId,
-                      amount: amount,
-                      description: noteCtrl.text.trim().isEmpty
-                          ? null
-                          : noteCtrl.text.trim(),
-                      date: selectedDate,
-                    );
-                  } else {
-                    await _service.updateExpense(
-                      expenseId: existing.id,
-                      walletId: walletId,
-                      categoryId: selectedCategoryId,
-                      amount: amount,
-                      description: noteCtrl.text.trim().isEmpty
-                          ? null
-                          : noteCtrl.text.trim(),
-                      date: selectedDate,
-                    );
-                  }
                   if (dialogContext.mounted) {
-                    Navigator.pop(dialogContext, true);
+                    Navigator.of(dialogContext).maybePop(
+                      _ExpenseFormResult(
+                        amount: amount,
+                        categoryId: selectedCategoryId,
+                        description: noteCtrl.text.trim().isEmpty
+                            ? null
+                            : noteCtrl.text.trim(),
+                        date: selectedDate,
+                      ),
+                    );
                   }
                 },
                 child: const Text('Luu'),
@@ -287,9 +398,29 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
       },
     );
 
-    if (saved == true) {
+    if (payload == null) return;
+
+    if (existing == null) {
+      await _createExpenseOptimistic(walletId: walletId, payload: payload);
+      return;
+    }
+
+    try {
+      await _service.updateExpense(
+        expenseId: existing.id,
+        walletId: walletId,
+        categoryId: payload.categoryId,
+        amount: payload.amount,
+        description: payload.description,
+        date: payload.date,
+      );
       await _load(showLoader: false);
       widget.onDataChanged?.call();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Loi luu: $e')));
     }
   }
 
@@ -319,6 +450,8 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
       return;
     }
     if (action == 'delete') {
+      final confirmed = await _confirmDeleteExpense(item);
+      if (!confirmed) return;
       await _delete(item);
     }
   }
@@ -404,6 +537,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: const Icon(Icons.delete, color: Colors.white),
                       ),
+                      confirmDismiss: (_) => _confirmDeleteExpense(item),
                       onDismissed: (_) => _delete(item),
                       child: ListTile(
                         leading: const CircleAvatar(

@@ -7,6 +7,12 @@ class TransferService {
 
   static const String _transferIncomeSourceName = 'Internal Transfer';
 
+  bool _isMissingIncomeFormColumn(Object error) {
+    return error is PostgrestException &&
+        error.code == '42703' &&
+        error.message.contains('show_in_income_form');
+  }
+
   Future<List<TransferModel>> getTransfers(
     String coupleId, {
     String? createdByUserId,
@@ -39,12 +45,18 @@ class TransferService {
     required String coupleId,
     required String fromUserId,
     required String toUserId,
+    String? fromWalletId,
     required double amount,
     String? note,
     required DateTime date,
   }) async {
     final transferDate = date.toIso8601String().substring(0, 10);
     final incomeSourceId = await _ensureTransferIncomeSource(coupleId);
+    final effectiveFromWalletId =
+        fromWalletId ?? await _resolveDefaultWalletId(coupleId);
+    if (effectiveFromWalletId == null) {
+      throw Exception('Chua co vi mac dinh de chuyen tien.');
+    }
 
     final transferRow = await _db
         .from('transfers')
@@ -52,7 +64,7 @@ class TransferService {
           'couple_id': coupleId,
           'from_user_id': fromUserId,
           'to_user_id': toUserId,
-          'from_wallet_id': null,
+          'from_wallet_id': effectiveFromWalletId,
           'to_wallet_id': null,
           'amount': amount,
           'note': note,
@@ -115,6 +127,16 @@ class TransferService {
         .eq('id', transferId);
   }
 
+  Future<double> previewDeleteTransferImpact(String transferId) async {
+    final row = await _db
+        .from('transfers')
+        .select('amount')
+        .eq('id', transferId)
+        .eq('is_deleted', false)
+        .single();
+    return (row['amount'] as num?)?.toDouble() ?? 0;
+  }
+
   Future<void> restoreTransfer(String transferId) async {
     await _db
         .from('transfers')
@@ -130,17 +152,32 @@ class TransferService {
     required String transferId,
     required String fromUserId,
     required String toUserId,
+    String? fromWalletId,
     required double amount,
     String? note,
     required DateTime date,
   }) async {
+    final existing = await _db
+        .from('transfers')
+        .select('couple_id, from_wallet_id')
+        .eq('id', transferId)
+        .single();
+    final coupleId = existing['couple_id'] as String;
+    final effectiveFromWalletId =
+        fromWalletId ??
+        (existing['from_wallet_id'] as String?) ??
+        await _resolveDefaultWalletId(coupleId);
+    if (effectiveFromWalletId == null) {
+      throw Exception('Chua co vi mac dinh de chuyen tien.');
+    }
+
     final transferDate = date.toIso8601String().substring(0, 10);
     final updatedTransfer = await _db
         .from('transfers')
         .update({
           'from_user_id': fromUserId,
           'to_user_id': toUserId,
-          'from_wallet_id': null,
+          'from_wallet_id': effectiveFromWalletId,
           'to_wallet_id': null,
           'amount': amount,
           'note': note,
@@ -168,27 +205,76 @@ class TransferService {
   }
 
   Future<String> _ensureTransferIncomeSource(String coupleId) async {
-    final existing = await _db
-        .from('income_sources')
-        .select('id')
-        .eq('couple_id', coupleId)
-        .eq('name', _transferIncomeSourceName)
-        .eq('is_deleted', false)
-        .limit(1);
-    if (existing.isNotEmpty) {
-      return existing.first['id'] as String;
-    }
+    try {
+      final existing = await _db
+          .from('income_sources')
+          .select('id, show_in_income_form')
+          .eq('couple_id', coupleId)
+          .eq('name', _transferIncomeSourceName)
+          .eq('is_deleted', false)
+          .limit(1);
+      if (existing.isNotEmpty) {
+        final id = existing.first['id'] as String;
+        final showInIncomeForm =
+            (existing.first['show_in_income_form'] as bool?) ?? true;
+        if (showInIncomeForm) {
+          await _db
+              .from('income_sources')
+              .update({'show_in_income_form': false})
+              .eq('id', id);
+        }
+        return id;
+      }
 
-    final created = await _db
-        .from('income_sources')
-        .insert({
-          'couple_id': coupleId,
-          'name': _transferIncomeSourceName,
-          'icon': 'swap_horiz',
-          'type': 'other',
-        })
-        .select('id')
-        .single();
-    return created['id'] as String;
+      final created = await _db
+          .from('income_sources')
+          .insert({
+            'couple_id': coupleId,
+            'name': _transferIncomeSourceName,
+            'icon': 'swap_horiz',
+            'type': 'other',
+            'show_in_income_form': false,
+          })
+          .select('id')
+          .single();
+      return created['id'] as String;
+    } catch (e) {
+      if (!_isMissingIncomeFormColumn(e)) rethrow;
+      final existing = await _db
+          .from('income_sources')
+          .select('id')
+          .eq('couple_id', coupleId)
+          .eq('name', _transferIncomeSourceName)
+          .eq('is_deleted', false)
+          .limit(1);
+      if (existing.isNotEmpty) {
+        return existing.first['id'] as String;
+      }
+
+      final created = await _db
+          .from('income_sources')
+          .insert({
+            'couple_id': coupleId,
+            'name': _transferIncomeSourceName,
+            'icon': 'swap_horiz',
+            'type': 'other',
+          })
+          .select('id')
+          .single();
+      return created['id'] as String;
+    }
+  }
+
+  Future<String?> _resolveDefaultWalletId(String coupleId) async {
+    final rows = await _db
+        .from('wallets')
+        .select('id, is_default')
+        .eq('couple_id', coupleId)
+        .eq('is_deleted', false)
+        .order('is_default', ascending: false)
+        .order('created_at', ascending: true)
+        .limit(1);
+    if (rows.isEmpty) return null;
+    return rows.first['id'] as String;
   }
 }

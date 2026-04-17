@@ -5,6 +5,10 @@ class DebtModel extends Equatable {
   final String coupleId;
   final String userId;
   final String debtTypeId;
+  final String debtKind;
+  final bool recordToIncome;
+  final String? linkedIncomeId;
+  final String? linkedExpenseId;
   final String name;
   final double originalAmount;
   final double remainingAmount;
@@ -25,6 +29,10 @@ class DebtModel extends Equatable {
     required this.coupleId,
     required this.userId,
     required this.debtTypeId,
+    required this.debtKind,
+    required this.recordToIncome,
+    this.linkedIncomeId,
+    this.linkedExpenseId,
     required this.name,
     required this.originalAmount,
     required this.remainingAmount,
@@ -47,6 +55,10 @@ class DebtModel extends Equatable {
       coupleId: json['couple_id'] as String,
       userId: json['user_id'] as String,
       debtTypeId: json['debt_type_id'] as String,
+      debtKind: (json['debt_kind'] as String?) ?? 'debt',
+      recordToIncome: (json['record_to_income'] as bool?) ?? false,
+      linkedIncomeId: json['linked_income_id'] as String?,
+      linkedExpenseId: json['linked_expense_id'] as String?,
       name: json['name'] as String,
       originalAmount: (json['original_amount'] as num).toDouble(),
       remainingAmount: (json['remaining_amount'] as num).toDouble(),
@@ -74,6 +86,10 @@ class DebtModel extends Equatable {
       'couple_id': coupleId,
       'user_id': userId,
       'debt_type_id': debtTypeId,
+      'debt_kind': debtKind,
+      'record_to_income': recordToIncome,
+      'linked_income_id': linkedIncomeId,
+      'linked_expense_id': linkedExpenseId,
       'name': name,
       'original_amount': originalAmount,
       'remaining_amount': remainingAmount,
@@ -97,6 +113,10 @@ class DebtModel extends Equatable {
     coupleId,
     userId,
     debtTypeId,
+    debtKind,
+    recordToIncome,
+    linkedIncomeId,
+    linkedExpenseId,
     name,
     originalAmount,
     remainingAmount,

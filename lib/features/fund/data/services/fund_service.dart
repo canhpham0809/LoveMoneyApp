@@ -5,6 +5,14 @@ import 'package:flutter_app_demo/features/fund/data/models/fund_contribution_mod
 
 class FundService {
   SupabaseClient get _db => Supabase.instance.client;
+  static const String _fundWithdrawIncomeSourceName = 'Rut quy';
+  static const String _fundDeleteIncomeSourceName = 'Xoa quy hoan tien';
+
+  bool _isMissingIncomeFormColumn(Object error) {
+    return error is PostgrestException &&
+        error.code == '42703' &&
+        error.message.contains('show_in_income_form');
+  }
 
   Future<List<FundModel>> getFunds(String coupleId) async {
     final rows = await _db
@@ -65,7 +73,47 @@ class FundService {
         .eq('id', fundId);
   }
 
+  Future<double> previewDeleteFundSettlement(String fundId) async {
+    final row = await _db
+        .from('funds')
+        .select('current_amount')
+        .eq('id', fundId)
+        .single();
+    return (row['current_amount'] as num?)?.toDouble() ?? 0;
+  }
+
   Future<void> deleteFund(String fundId) async {
+    final fundRow = await _db
+        .from('funds')
+        .select('couple_id, name, current_amount')
+        .eq('id', fundId)
+        .single();
+
+    final currentAmount = (fundRow['current_amount'] as num?)?.toDouble() ?? 0;
+    if (currentAmount > 0) {
+      final coupleId = fundRow['couple_id'] as String;
+      final defaultWalletId = await _resolveDefaultWalletId(coupleId);
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (defaultWalletId != null && userId != null) {
+        final incomeSourceId = await _ensureIncomeSource(
+          coupleId,
+          _fundDeleteIncomeSourceName,
+          icon: 'undo',
+        );
+        final fundName = (fundRow['name'] as String?)?.trim() ?? 'Quy';
+        await _db.from('incomes').insert({
+          'couple_id': coupleId,
+          'user_id': userId,
+          'wallet_id': defaultWalletId,
+          'income_source_id': incomeSourceId,
+          'amount': currentAmount,
+          'description': 'Hoan tien khi xoa quy $fundName',
+          'is_from_transfer': false,
+          'date': DateTime.now().toIso8601String().substring(0, 10),
+        });
+      }
+    }
+
     await _db
         .from('funds')
         .update({
@@ -106,24 +154,103 @@ class FundService {
           'fund_id': fundId,
           'wallet_id': walletId,
           'amount': amount,
+          'contribution_type': 'contribution',
           'note': note,
           'date': date.toIso8601String().substring(0, 10),
         })
         .select()
         .single();
 
-      final fund = await _db
+    final fund = await _db
         .from('funds')
         .select('current_amount')
         .eq('id', fundId)
         .single();
-      final currentAmount = (fund['current_amount'] as num?)?.toDouble() ?? 0;
-      await _db
+    final currentAmount = (fund['current_amount'] as num?)?.toDouble() ?? 0;
+    await _db
         .from('funds')
         .update({'current_amount': currentAmount + amount})
         .eq('id', fundId);
 
     return FundContributionModel.fromJson(row);
+  }
+
+  Future<FundContributionModel> createWithdrawal({
+    required String coupleId,
+    required String userId,
+    required String fundId,
+    required String walletId,
+    required double amount,
+    String? note,
+    required DateTime date,
+  }) async {
+    final fund = await _db
+        .from('funds')
+        .select('name, current_amount')
+        .eq('id', fundId)
+        .single();
+    final fundName = (fund['name'] as String?)?.trim() ?? 'Quy';
+    final currentAmount = (fund['current_amount'] as num?)?.toDouble() ?? 0;
+    if (amount > currentAmount) {
+      throw Exception('So tien rut vuot qua so du quy hien tai.');
+    }
+
+    final row = await _db
+        .from('fund_contributions')
+        .insert({
+          'couple_id': coupleId,
+          'user_id': userId,
+          'fund_id': fundId,
+          'wallet_id': walletId,
+          'amount': amount,
+          'contribution_type': 'withdrawal',
+          'note': note,
+          'date': date.toIso8601String().substring(0, 10),
+        })
+        .select()
+        .single();
+
+    final contributionId = row['id'] as String;
+
+    try {
+      final incomeSourceId = await _ensureFundWithdrawIncomeSource(coupleId);
+      final incomeRow = await _db
+          .from('incomes')
+          .insert({
+            'couple_id': coupleId,
+            'user_id': userId,
+            'wallet_id': walletId,
+            'income_source_id': incomeSourceId,
+            'amount': amount,
+            'description': note?.trim().isNotEmpty == true
+                ? note!.trim()
+                : 'Rut tien tu quy $fundName',
+            'is_from_transfer': false,
+            'date': date.toIso8601String().substring(0, 10),
+          })
+          .select('id')
+          .single();
+
+      await _db
+          .from('fund_contributions')
+          .update({'linked_income_id': incomeRow['id'] as String})
+          .eq('id', contributionId);
+
+      await _db
+          .from('funds')
+          .update({'current_amount': currentAmount - amount})
+          .eq('id', fundId);
+
+      final updated = await _db
+          .from('fund_contributions')
+          .select()
+          .eq('id', contributionId)
+          .single();
+      return FundContributionModel.fromJson(updated);
+    } catch (_) {
+      await _db.from('fund_contributions').delete().eq('id', contributionId);
+      rethrow;
+    }
   }
 
   Future<void> updateContribution({
@@ -135,10 +262,17 @@ class FundService {
   }) async {
     final existing = await _db
         .from('fund_contributions')
-        .select('amount')
+        .select(
+          'amount, contribution_type, linked_income_id, wallet_id, user_id',
+        )
         .eq('id', contributionId)
         .single();
     final previousAmount = (existing['amount'] as num?)?.toDouble() ?? 0;
+    final contributionType =
+        (existing['contribution_type'] as String?) ?? 'contribution';
+    final linkedIncomeId = existing['linked_income_id'] as String?;
+    final walletId = existing['wallet_id'] as String?;
+    final userId = existing['user_id'] as String?;
 
     await _db
         .from('fund_contributions')
@@ -151,12 +285,43 @@ class FundService {
 
     final fund = await _db
         .from('funds')
-        .select('current_amount')
+        .select('current_amount, name')
         .eq('id', fundId)
         .single();
     final currentAmount = (fund['current_amount'] as num?)?.toDouble() ?? 0;
-    final nextAmount = currentAmount - previousAmount + amount;
-    await _db.from('funds').update({'current_amount': nextAmount}).eq('id', fundId);
+    if (contributionType == 'withdrawal') {
+      final maxAllowed = currentAmount + previousAmount;
+      if (amount > maxAllowed) {
+        throw Exception('So tien rut vuot qua so du quy hien tai.');
+      }
+    }
+
+    final signedPrevious = contributionType == 'withdrawal'
+        ? -previousAmount
+        : previousAmount;
+    final signedNext = contributionType == 'withdrawal' ? -amount : amount;
+    final nextAmount = currentAmount - signedPrevious + signedNext;
+    await _db
+        .from('funds')
+        .update({'current_amount': nextAmount})
+        .eq('id', fundId);
+
+    if (contributionType == 'withdrawal' && linkedIncomeId != null) {
+      final fundName = (fund['name'] as String?)?.trim() ?? 'Quy';
+      await _db
+          .from('incomes')
+          .update({
+            'wallet_id': walletId,
+            'user_id': userId,
+            'amount': amount,
+            'description': note?.trim().isNotEmpty == true
+                ? note!.trim()
+                : 'Rut tien tu quy $fundName',
+            'date': date.toIso8601String().substring(0, 10),
+          })
+          .eq('id', linkedIncomeId)
+          .eq('is_deleted', false);
+    }
   }
 
   Future<void> deleteContribution({
@@ -165,10 +330,13 @@ class FundService {
   }) async {
     final existing = await _db
         .from('fund_contributions')
-        .select('amount')
+        .select('amount, contribution_type, linked_income_id')
         .eq('id', contributionId)
         .single();
     final previousAmount = (existing['amount'] as num?)?.toDouble() ?? 0;
+    final contributionType =
+        (existing['contribution_type'] as String?) ?? 'contribution';
+    final linkedIncomeId = existing['linked_income_id'] as String?;
 
     await _db
         .from('fund_contributions')
@@ -184,7 +352,189 @@ class FundService {
         .eq('id', fundId)
         .single();
     final currentAmount = (fund['current_amount'] as num?)?.toDouble() ?? 0;
-    final nextAmount = (currentAmount - previousAmount).clamp(0, double.infinity);
-    await _db.from('funds').update({'current_amount': nextAmount}).eq('id', fundId);
+    final signedPrevious = contributionType == 'withdrawal'
+        ? -previousAmount
+        : previousAmount;
+    final nextAmount = (currentAmount - signedPrevious).clamp(
+      0,
+      double.infinity,
+    );
+    await _db
+        .from('funds')
+        .update({'current_amount': nextAmount})
+        .eq('id', fundId);
+
+    if (contributionType == 'withdrawal' && linkedIncomeId != null) {
+      await _db
+          .from('incomes')
+          .update({
+            'is_deleted': true,
+            'deleted_at': DateTime.now().toUtc().toIso8601String(),
+          })
+          .eq('id', linkedIncomeId)
+          .eq('is_deleted', false);
+    }
+  }
+
+  Future<double> previewDeleteContributionImpact(String contributionId) async {
+    final row = await _db
+        .from('fund_contributions')
+        .select('amount, contribution_type')
+        .eq('id', contributionId)
+        .eq('is_deleted', false)
+        .single();
+
+    final amount = (row['amount'] as num?)?.toDouble() ?? 0;
+    final contributionType =
+        (row['contribution_type'] as String?) ?? 'contribution';
+
+    if (contributionType == 'withdrawal') {
+      return -amount;
+    }
+    return 0;
+  }
+
+  Future<String> _ensureFundWithdrawIncomeSource(String coupleId) async {
+    try {
+      final existing = await _db
+          .from('income_sources')
+          .select('id, show_in_income_form')
+          .eq('couple_id', coupleId)
+          .eq('name', _fundWithdrawIncomeSourceName)
+          .eq('is_deleted', false)
+          .limit(1);
+
+      if (existing.isNotEmpty) {
+        final id = existing.first['id'] as String;
+        final showInIncomeForm =
+            (existing.first['show_in_income_form'] as bool?) ?? true;
+        if (showInIncomeForm) {
+          await _db
+              .from('income_sources')
+              .update({'show_in_income_form': false})
+              .eq('id', id);
+        }
+        return id;
+      }
+
+      final created = await _db
+          .from('income_sources')
+          .insert({
+            'couple_id': coupleId,
+            'name': _fundWithdrawIncomeSourceName,
+            'icon': 'savings',
+            'type': 'other',
+            'show_in_income_form': false,
+          })
+          .select('id')
+          .single();
+      return created['id'] as String;
+    } catch (e) {
+      if (!_isMissingIncomeFormColumn(e)) rethrow;
+      final existing = await _db
+          .from('income_sources')
+          .select('id')
+          .eq('couple_id', coupleId)
+          .eq('name', _fundWithdrawIncomeSourceName)
+          .eq('is_deleted', false)
+          .limit(1);
+
+      if (existing.isNotEmpty) {
+        return existing.first['id'] as String;
+      }
+
+      final created = await _db
+          .from('income_sources')
+          .insert({
+            'couple_id': coupleId,
+            'name': _fundWithdrawIncomeSourceName,
+            'icon': 'savings',
+            'type': 'other',
+          })
+          .select('id')
+          .single();
+      return created['id'] as String;
+    }
+  }
+
+  Future<String> _ensureIncomeSource(
+    String coupleId,
+    String name, {
+    required String icon,
+  }) async {
+    try {
+      final existing = await _db
+          .from('income_sources')
+          .select('id, show_in_income_form')
+          .eq('couple_id', coupleId)
+          .eq('name', name)
+          .eq('is_deleted', false)
+          .limit(1);
+
+      if (existing.isNotEmpty) {
+        final id = existing.first['id'] as String;
+        final showInIncomeForm =
+            (existing.first['show_in_income_form'] as bool?) ?? true;
+        if (showInIncomeForm) {
+          await _db
+              .from('income_sources')
+              .update({'show_in_income_form': false})
+              .eq('id', id);
+        }
+        return id;
+      }
+
+      final created = await _db
+          .from('income_sources')
+          .insert({
+            'couple_id': coupleId,
+            'name': name,
+            'icon': icon,
+            'type': 'other',
+            'show_in_income_form': false,
+          })
+          .select('id')
+          .single();
+      return created['id'] as String;
+    } catch (e) {
+      if (!_isMissingIncomeFormColumn(e)) rethrow;
+      final existing = await _db
+          .from('income_sources')
+          .select('id')
+          .eq('couple_id', coupleId)
+          .eq('name', name)
+          .eq('is_deleted', false)
+          .limit(1);
+
+      if (existing.isNotEmpty) {
+        return existing.first['id'] as String;
+      }
+
+      final created = await _db
+          .from('income_sources')
+          .insert({
+            'couple_id': coupleId,
+            'name': name,
+            'icon': icon,
+            'type': 'other',
+          })
+          .select('id')
+          .single();
+      return created['id'] as String;
+    }
+  }
+
+  Future<String?> _resolveDefaultWalletId(String coupleId) async {
+    final rows = await _db
+        .from('wallets')
+        .select('id')
+        .eq('couple_id', coupleId)
+        .eq('is_deleted', false)
+        .order('is_default', ascending: false)
+        .order('created_at', ascending: true)
+        .limit(1);
+
+    if (rows.isEmpty) return null;
+    return rows.first['id'] as String;
   }
 }

@@ -6,6 +6,7 @@ class DebtPaymentModel extends Equatable {
   final String debtId;
   final String walletId;
   final double amount;
+  final String? linkedIncomeId;
   final DateTime date;
   final String? note;
   final DateTime createdAt;
@@ -20,6 +21,7 @@ class DebtPaymentModel extends Equatable {
     required this.debtId,
     required this.walletId,
     required this.amount,
+    this.linkedIncomeId,
     required this.date,
     this.note,
     required this.createdAt,
@@ -36,6 +38,7 @@ class DebtPaymentModel extends Equatable {
       debtId: json['debt_id'] as String,
       walletId: json['wallet_id'] as String,
       amount: (json['amount'] as num).toDouble(),
+      linkedIncomeId: json['linked_income_id'] as String?,
       date: DateTime.parse(json['date'] as String),
       note: json['note'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
@@ -55,6 +58,7 @@ class DebtPaymentModel extends Equatable {
       'debt_id': debtId,
       'wallet_id': walletId,
       'amount': amount,
+      'linked_income_id': linkedIncomeId,
       'date': date.toIso8601String(),
       'note': note,
       'created_at': createdAt.toIso8601String(),
@@ -72,6 +76,7 @@ class DebtPaymentModel extends Equatable {
     debtId,
     walletId,
     amount,
+    linkedIncomeId,
     date,
     note,
     createdAt,

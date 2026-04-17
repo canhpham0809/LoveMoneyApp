@@ -76,6 +76,12 @@ class _DebtListScreenState extends State<DebtListScreen> {
     final selectedDebtTypeId = ValueNotifier<String>(
       existing?.debtTypeId ?? (debtTypes.first['id'] as String),
     );
+    final selectedDebtKind = ValueNotifier<String>(
+      existing?.debtKind ?? 'debt',
+    );
+    final shouldRecordToIncome = ValueNotifier<bool>(
+      existing?.recordToIncome ?? false,
+    );
     DateTime? dueDate = existing?.dueDate;
     if (existing != null) {
       personCtrl.text = existing.name;
@@ -144,10 +150,66 @@ class _DebtListScreenState extends State<DebtListScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
+                  ValueListenableBuilder<String>(
+                    valueListenable: selectedDebtKind,
+                    builder: (_, value, child) =>
+                        DropdownButtonFormField<String>(
+                          initialValue: value,
+                          decoration: const InputDecoration(
+                            labelText: 'Phan loai',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'debt',
+                              child: Text('No (ban dang no)'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'lend',
+                              child: Text('Cho muon no'),
+                            ),
+                          ],
+                          onChanged: (v) {
+                            if (v != null) selectedDebtKind.value = v;
+                          },
+                        ),
+                  ),
+                  const SizedBox(height: 8),
+                  ValueListenableBuilder<String>(
+                    valueListenable: selectedDebtKind,
+                    builder: (_, debtKind, child) {
+                      if (debtKind != 'debt') {
+                        return const ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(Icons.info_outline),
+                          title: Text(
+                            'Cho muon se phat sinh giao dich chi tieu.',
+                          ),
+                        );
+                      }
+                      return ValueListenableBuilder<bool>(
+                        valueListenable: shouldRecordToIncome,
+                        builder: (_, value, child) => CheckboxListTile(
+                          contentPadding: EdgeInsets.zero,
+                          value: value,
+                          onChanged: (v) {
+                            shouldRecordToIncome.value = v ?? false;
+                          },
+                          title: const Text(
+                            'Ghi nhan vao thu nhap khi khoi tao',
+                          ),
+                          subtitle: const Text(
+                            'Bat khi khoan no la tien thuc nhan. Tat neu la tai san khac.',
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 12),
                   TextField(
                     controller: noteCtrl,
                     decoration: const InputDecoration(
-                      labelText: 'Ghi chu (tuy chon)',
+                      labelText: 'Ghi chu',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -167,7 +229,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
                     icon: const Icon(Icons.calendar_today),
                     label: Text(
                       dueDate == null
-                          ? 'Chon han thanh toan (tuy chon)'
+                          ? 'Chon han thanh toan'
                           : 'Han: ${formatDate(dueDate!)}',
                     ),
                   ),
@@ -206,6 +268,10 @@ class _DebtListScreenState extends State<DebtListScreen> {
                       coupleId: widget.coupleId,
                       userId: uid,
                       debtTypeId: selectedDebtTypeId.value,
+                      debtKind: selectedDebtKind.value,
+                      recordToIncome: selectedDebtKind.value == 'debt'
+                          ? shouldRecordToIncome.value
+                          : false,
                       name: personCtrl.text.trim(),
                       originalAmount: amount,
                       creditorName: personCtrl.text.trim(),
@@ -219,6 +285,10 @@ class _DebtListScreenState extends State<DebtListScreen> {
                     await _service.updateDebt(
                       debtId: existing.id,
                       debtTypeId: selectedDebtTypeId.value,
+                      debtKind: selectedDebtKind.value,
+                      recordToIncome: selectedDebtKind.value == 'debt'
+                          ? shouldRecordToIncome.value
+                          : false,
                       name: personCtrl.text.trim(),
                       originalAmount: amount,
                       creditorName: personCtrl.text.trim(),
@@ -242,9 +312,12 @@ class _DebtListScreenState extends State<DebtListScreen> {
     );
 
     selectedDebtTypeId.dispose();
+    selectedDebtKind.dispose();
+    shouldRecordToIncome.dispose();
 
     if (saved == true) {
       await _load();
+      widget.onDataChanged?.call();
     }
   }
 
@@ -274,12 +347,46 @@ class _DebtListScreenState extends State<DebtListScreen> {
       return;
     }
     if (action == 'delete') {
+      final impact = await _service.previewDeleteDebtImpact(item.id);
+      if (!mounted) return;
+      String message;
+      if (impact < 0) {
+        message =
+            'Neu xac nhan xoa khoan no, ban se bi tru lai ${formatVnd(impact.abs())}.';
+      } else if (impact > 0) {
+        message =
+            'Neu xac nhan xoa khoan no, ban se duoc cong them ${formatVnd(impact)}.';
+      } else {
+        message =
+            'Neu xac nhan xoa khoan no, he thong khong phat sinh giao dich tien.';
+      }
+
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Xac nhan xoa khoan no'),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Huy'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Xoa'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+
       await _service.deleteDebt(item.id);
       if (mounted) {
         setState(() {
           _items.removeWhere((d) => d.id == item.id);
         });
       }
+      widget.onDataChanged?.call();
     }
   }
 
@@ -302,7 +409,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Khoản nợ'),
+        title: const Text('Khoan no va cho muon'),
         actions: [
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
         ],
@@ -326,6 +433,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
               itemCount: _items.length,
               itemBuilder: (context, index) {
                 final item = _items[index];
+                final isLend = item.debtKind == 'lend';
                 final pct = item.originalAmount > 0
                     ? 1 - (item.remainingAmount / item.originalAmount)
                     : 1.0;
@@ -356,9 +464,13 @@ class _DebtListScreenState extends State<DebtListScreen> {
                       leading: CircleAvatar(
                         backgroundColor: item.isClosed
                             ? Colors.green
-                            : Colors.orange,
+                            : (isLend ? Colors.blue : Colors.orange),
                         child: Icon(
-                          item.isClosed ? Icons.check : Icons.credit_card,
+                          item.isClosed
+                              ? Icons.check
+                              : (isLend
+                                    ? Icons.account_balance_wallet
+                                    : Icons.credit_card),
                           color: Colors.white,
                         ),
                       ),
@@ -366,11 +478,20 @@ class _DebtListScreenState extends State<DebtListScreen> {
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          Text(
+                            isLend ? 'Loai: Cho muon no' : 'Loai: Khoan no',
+                            style: TextStyle(
+                              color: isLend ? Colors.blue : Colors.orange,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                           Text(item.creditorName),
                           LinearProgressIndicator(
                             value: pct.clamp(0.0, 1.0),
                             backgroundColor: Colors.grey[200],
-                            color: item.isClosed ? Colors.green : Colors.orange,
+                            color: item.isClosed
+                                ? Colors.green
+                                : (isLend ? Colors.blue : Colors.orange),
                           ),
                           Text(
                             'Con lai: ${formatVnd(item.remainingAmount)}'

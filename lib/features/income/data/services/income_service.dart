@@ -6,6 +6,12 @@ import 'package:flutter_app_demo/features/income/data/models/income_source_model
 class IncomeService {
   SupabaseClient get _db => Supabase.instance.client;
 
+  bool _isMissingIncomeFormColumn(Object error) {
+    return error is PostgrestException &&
+        error.code == '42703' &&
+        error.message.contains('show_in_income_form');
+  }
+
   Future<List<IncomeModel>> getIncomes(
     String coupleId, {
     String? createdByUserId,
@@ -97,22 +103,107 @@ class IncomeService {
     return rows.map((r) => IncomeSourceModel.fromJson(r)).toList();
   }
 
+  Future<List<IncomeSourceModel>> getIncomeFormSources(String coupleId) async {
+    try {
+      final rows = await _db
+          .from('income_sources')
+          .select()
+          .eq('couple_id', coupleId)
+          .eq('is_deleted', false)
+          .eq('show_in_income_form', true)
+          .order('name');
+      return rows.map((r) => IncomeSourceModel.fromJson(r)).toList();
+    } catch (e) {
+      if (!_isMissingIncomeFormColumn(e)) rethrow;
+      final rows = await _db
+          .from('income_sources')
+          .select()
+          .eq('couple_id', coupleId)
+          .eq('is_deleted', false)
+          .order('name');
+      return rows.map((r) => IncomeSourceModel.fromJson(r)).toList();
+    }
+  }
+
   Future<IncomeSourceModel> createIncomeSource({
     required String coupleId,
     required String name,
     String icon = '💵',
     String type = 'other',
+    bool showInIncomeForm = true,
   }) async {
-    final row = await _db
+    final payload = {
+      'couple_id': coupleId,
+      'name': name,
+      'icon': icon,
+      'type': type,
+      'show_in_income_form': showInIncomeForm,
+    };
+
+    try {
+      final row = await _db
+          .from('income_sources')
+          .insert(payload)
+          .select()
+          .single();
+      return IncomeSourceModel.fromJson(row);
+    } catch (e) {
+      if (!_isMissingIncomeFormColumn(e)) rethrow;
+      payload.remove('show_in_income_form');
+      final row = await _db
+          .from('income_sources')
+          .insert(payload)
+          .select()
+          .single();
+      return IncomeSourceModel.fromJson(row);
+    }
+  }
+
+  Future<IncomeSourceModel> updateIncomeSource({
+    required String sourceId,
+    required String name,
+    required String icon,
+    required String type,
+    required bool isActive,
+    bool? showInIncomeForm,
+  }) async {
+    final payload = <String, dynamic>{
+      'name': name,
+      'icon': icon,
+      'type': type,
+      'is_active': isActive,
+    };
+    if (showInIncomeForm != null) {
+      payload['show_in_income_form'] = showInIncomeForm;
+    }
+    try {
+      final row = await _db
+          .from('income_sources')
+          .update(payload)
+          .eq('id', sourceId)
+          .select()
+          .single();
+      return IncomeSourceModel.fromJson(row);
+    } catch (e) {
+      if (!_isMissingIncomeFormColumn(e)) rethrow;
+      payload.remove('show_in_income_form');
+      final row = await _db
+          .from('income_sources')
+          .update(payload)
+          .eq('id', sourceId)
+          .select()
+          .single();
+      return IncomeSourceModel.fromJson(row);
+    }
+  }
+
+  Future<void> deleteIncomeSource(String sourceId) async {
+    await _db
         .from('income_sources')
-        .insert({
-          'couple_id': coupleId,
-          'name': name,
-          'icon': icon,
-          'type': type,
+        .update({
+          'is_deleted': true,
+          'deleted_at': DateTime.now().toUtc().toIso8601String(),
         })
-        .select()
-        .single();
-    return IncomeSourceModel.fromJson(row);
+        .eq('id', sourceId);
   }
 }

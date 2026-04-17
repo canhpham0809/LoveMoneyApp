@@ -14,6 +14,7 @@ import 'package:flutter_app_demo/features/fund/presentation/screens/fund_list_sc
 import 'package:flutter_app_demo/features/debt/presentation/screens/debt_list_screen.dart';
 import 'package:flutter_app_demo/features/shared/data/services/quick_add_service.dart';
 import 'package:flutter_app_demo/features/expense/data/services/expense_service.dart';
+import 'package:flutter_app_demo/features/expense/data/models/category_model.dart';
 
 class AppShellScreen extends StatefulWidget {
   const AppShellScreen({super.key});
@@ -41,6 +42,8 @@ class _AppShellScreenState extends State<AppShellScreen> {
   final _quickAddService = QuickAddService();
   final _expenseService = ExpenseService();
   int _quickAddSnackVersion = 0;
+  List<CategoryModel> _quickAddCategoriesCache = const [];
+  bool _isWarmingQuickAddCategories = false;
 
   void _markExpenseChanged() {
     _dashboardRefreshBus.value += 1;
@@ -59,10 +62,12 @@ class _AppShellScreenState extends State<AppShellScreen> {
 
   void _markFundChanged() {
     _dashboardRefreshBus.value += 1;
+    _fundRefreshBus.value += 1;
   }
 
   void _markDebtChanged() {
     _dashboardRefreshBus.value += 1;
+    _debtRefreshBus.value += 1;
   }
 
   @override
@@ -148,11 +153,34 @@ class _AppShellScreenState extends State<AppShellScreen> {
             : (userDisplay[partnerId] ?? 'Partner');
         _isLoading = false;
       });
+
+      unawaited(_warmQuickAddCategories(coupleId));
     } catch (e) {
       setState(() {
         _error = e.toString();
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _warmQuickAddCategories(
+    String coupleId, {
+    bool force = false,
+  }) async {
+    if (_isWarmingQuickAddCategories) return;
+    if (!force && _quickAddCategoriesCache.isNotEmpty) return;
+
+    _isWarmingQuickAddCategories = true;
+    try {
+      final categories = await _expenseService.getQuickAddCategories(coupleId);
+      if (!mounted) return;
+      setState(() {
+        _quickAddCategoriesCache = categories;
+      });
+    } catch (_) {
+      // Ignore prefetch failures; fallback still works when user submits.
+    } finally {
+      _isWarmingQuickAddCategories = false;
     }
   }
 
@@ -173,7 +201,13 @@ class _AppShellScreenState extends State<AppShellScreen> {
   }
 
   Future<void> _openQuickAddDialog(String coupleId) async {
-    final categories = await _expenseService.getCategories(coupleId);
+    var categories = _quickAddCategoriesCache;
+    if (categories.isEmpty) {
+      await _warmQuickAddCategories(coupleId, force: true);
+      categories = _quickAddCategoriesCache;
+    } else {
+      unawaited(_warmQuickAddCategories(coupleId, force: true));
+    }
     if (!mounted) return;
 
     final ctrl = TextEditingController();
@@ -198,10 +232,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Text(
-                  'Tag danh muc',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                ),
+
                 const SizedBox(height: 6),
                 if (categories.isEmpty)
                   const Text(
@@ -214,28 +245,54 @@ class _AppShellScreenState extends State<AppShellScreen> {
                     runSpacing: 8,
                     children: categories
                         .map(
-                          (c) => ChoiceChip(
-                            label: Text(c.name),
-                            labelStyle: const TextStyle(fontSize: 12),
-                            visualDensity: VisualDensity.compact,
-                            materialTapTargetSize:
-                                MaterialTapTargetSize.shrinkWrap,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 0,
+                          (c) => ConstrainedBox(
+                            constraints: const BoxConstraints(
+                              minHeight: 24,
+                            ), // ép chiều cao
+                            child: ChoiceChip(
+                              label: Text(
+                                c.name,
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  height: 1.0,
+                                ), // nhỏ + giảm line height
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 0,
+                              ),
+                              visualDensity: const VisualDensity(
+                                horizontal: -4,
+                                vertical: -4,
+                              ),
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                              showCheckmark: false,
+                              selected: selectedCategoryId == c.id,
+                              selectedColor: Colors.blue.withOpacity(
+                                0.12,
+                              ), // nhẹ nhàng hơn
+                              side: BorderSide(
+                                color: selectedCategoryId == c.id
+                                    ? Colors.blue
+                                    : Colors.grey.shade300,
+                                width: 0.8,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              onSelected: (_) {
+                                setDialogState(() {
+                                  if (selectedCategoryId == c.id) {
+                                    selectedCategoryId = null;
+                                    selectedCategoryName = null;
+                                  } else {
+                                    selectedCategoryId = c.id;
+                                    selectedCategoryName = c.name;
+                                  }
+                                });
+                              },
                             ),
-                            selected: selectedCategoryId == c.id,
-                            onSelected: (_) {
-                              setDialogState(() {
-                                if (selectedCategoryId == c.id) {
-                                  selectedCategoryId = null;
-                                  selectedCategoryName = null;
-                                } else {
-                                  selectedCategoryId = c.id;
-                                  selectedCategoryName = c.name;
-                                }
-                              });
-                            },
                           ),
                         )
                         .toList(),
@@ -254,7 +311,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
                 'categoryId': selectedCategoryId,
                 'categoryName': selectedCategoryName,
               }),
-              child: const Text('Luu nhanh'),
+              child: const Text('Luu'),
             ),
           ],
         ),
@@ -466,7 +523,12 @@ class _AppShellScreenState extends State<AppShellScreen> {
         refreshSignal: _debtRefreshBus,
         onDataChanged: _markDebtChanged,
       ),
-      SettingsScreen(coupleId: coupleId),
+      SettingsScreen(
+        coupleId: coupleId,
+        onProfileUpdated: () {
+          _resolveCoupleId();
+        },
+      ),
     ];
 
     return Scaffold(
@@ -484,15 +546,12 @@ class _AppShellScreenState extends State<AppShellScreen> {
           BottomNavigationBarItem(
             icon: Icon(Icons.shopping_bag_outlined),
             activeIcon: Icon(Icons.shopping_bag),
-            label: 'Chi tiêu',
+            label: 'Chi',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.attach_money),
-            label: 'Thu nhập',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.attach_money), label: 'Thu'),
           BottomNavigationBarItem(
             icon: Icon(Icons.swap_horiz),
-            label: 'Chuyển tiền',
+            label: 'Chuyển',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.savings_outlined),
@@ -507,7 +566,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
           BottomNavigationBarItem(
             icon: Icon(Icons.settings_outlined),
             activeIcon: Icon(Icons.settings),
-            label: 'Cài đặt',
+            label: 'Settings ',
           ),
         ],
       ),

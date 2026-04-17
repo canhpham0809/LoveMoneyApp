@@ -7,6 +7,8 @@ class FundContributionModel extends Equatable {
   final String fundId;
   final String walletId;
   final double amount;
+  final String contributionType;
+  final String? linkedIncomeId;
   final String? note;
   final DateTime date;
   final DateTime createdAt;
@@ -22,6 +24,8 @@ class FundContributionModel extends Equatable {
     required this.fundId,
     required this.walletId,
     required this.amount,
+    required this.contributionType,
+    this.linkedIncomeId,
     this.note,
     required this.date,
     required this.createdAt,
@@ -39,6 +43,9 @@ class FundContributionModel extends Equatable {
       fundId: json['fund_id'] as String,
       walletId: json['wallet_id'] as String,
       amount: (json['amount'] as num).toDouble(),
+      contributionType:
+          (json['contribution_type'] as String?) ?? 'contribution',
+      linkedIncomeId: json['linked_income_id'] as String?,
       note: json['note'] as String?,
       date: DateTime.parse(json['date'] as String),
       createdAt: DateTime.parse(json['created_at'] as String),
@@ -59,6 +66,8 @@ class FundContributionModel extends Equatable {
       'fund_id': fundId,
       'wallet_id': walletId,
       'amount': amount,
+      'contribution_type': contributionType,
+      'linked_income_id': linkedIncomeId,
       'note': note,
       'date': date.toIso8601String(),
       'created_at': createdAt.toIso8601String(),
@@ -77,6 +86,8 @@ class FundContributionModel extends Equatable {
     fundId,
     walletId,
     amount,
+    contributionType,
+    linkedIncomeId,
     note,
     date,
     createdAt,

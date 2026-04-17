@@ -8,6 +8,8 @@ class CategoryModel extends Equatable {
   final String color;
   final double? budgetLimit;
   final int sortOrder;
+  final bool showInQuickAdd;
+  final bool showInExpenseForm;
   final bool isActive;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -23,6 +25,8 @@ class CategoryModel extends Equatable {
     required this.color,
     this.budgetLimit,
     required this.sortOrder,
+    required this.showInQuickAdd,
+    required this.showInExpenseForm,
     required this.isActive,
     required this.createdAt,
     required this.updatedAt,
@@ -42,6 +46,8 @@ class CategoryModel extends Equatable {
           ? (json['budget_limit'] as num).toDouble()
           : null,
       sortOrder: json['sort_order'] as int,
+      showInQuickAdd: (json['show_in_quick_add'] as bool?) ?? true,
+      showInExpenseForm: (json['show_in_expense_form'] as bool?) ?? true,
       isActive: json['is_active'] as bool,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
@@ -62,6 +68,8 @@ class CategoryModel extends Equatable {
       'color': color,
       'budget_limit': budgetLimit,
       'sort_order': sortOrder,
+      'show_in_quick_add': showInQuickAdd,
+      'show_in_expense_form': showInExpenseForm,
       'is_active': isActive,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
@@ -80,6 +88,8 @@ class CategoryModel extends Equatable {
     color,
     budgetLimit,
     sortOrder,
+    showInQuickAdd,
+    showInExpenseForm,
     isActive,
     createdAt,
     updatedAt,

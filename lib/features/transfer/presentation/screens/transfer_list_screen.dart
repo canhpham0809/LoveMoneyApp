@@ -35,6 +35,20 @@ class TransferListScreen extends StatefulWidget {
   State<TransferListScreen> createState() => _TransferListScreenState();
 }
 
+class _TransferFormResult {
+  final double amount;
+  final String toUserId;
+  final String? note;
+  final DateTime date;
+
+  const _TransferFormResult({
+    required this.amount,
+    required this.toUserId,
+    required this.note,
+    required this.date,
+  });
+}
+
 class _TransferListScreenState extends State<TransferListScreen> {
   final _service = TransferService();
   List<TransferModel> _items = [];
@@ -95,19 +109,28 @@ class _TransferListScreenState extends State<TransferListScreen> {
   }
 
   Future<void> _delete(TransferModel item) async {
+    final removedIndex = _items.indexWhere((e) => e.id == item.id);
+    final removedItem = removedIndex >= 0 ? _items[removedIndex] : item;
+    if (removedIndex >= 0 && mounted) {
+      setState(() {
+        _items.removeAt(removedIndex);
+      });
+    }
+
     try {
       await _service.deleteTransfer(item.id);
-      if (mounted) {
-        setState(() {
-          _items.removeWhere((e) => e.id == item.id);
-        });
-      }
       widget.onDataChanged?.call();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Da xoa giao dich chuyen tien')),
       );
     } catch (e) {
+      if (mounted && removedIndex >= 0) {
+        setState(() {
+          final insertAt = removedIndex.clamp(0, _items.length);
+          _items.insert(insertAt, removedItem);
+        });
+      }
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -116,9 +139,109 @@ class _TransferListScreenState extends State<TransferListScreen> {
     }
   }
 
+  Future<void> _createTransferOptimistic(_TransferFormResult payload) async {
+    final uid = Supabase.instance.client.auth.currentUser!.id;
+    final now = DateTime.now();
+    final tempId = 'temp-transfer-${now.microsecondsSinceEpoch}';
+    final optimistic = TransferModel(
+      id: tempId,
+      coupleId: widget.coupleId,
+      fromUserId: uid,
+      toUserId: payload.toUserId,
+      fromWalletId: null,
+      toWalletId: null,
+      amount: payload.amount,
+      note: payload.note,
+      linkedIncomeId: null,
+      date: payload.date,
+      createdAt: now,
+      updatedAt: now,
+      updatedBy: uid,
+      isDeleted: false,
+      deletedAt: null,
+    );
+
+    if (mounted) {
+      setState(() {
+        _items.insert(0, optimistic);
+      });
+    }
+
+    try {
+      final created = await _service.createTransfer(
+        coupleId: widget.coupleId,
+        fromUserId: uid,
+        toUserId: payload.toUserId,
+        amount: payload.amount,
+        note: payload.note,
+        date: payload.date,
+      );
+      if (!mounted) return;
+      setState(() {
+        final index = _items.indexWhere((e) => e.id == tempId);
+        if (index >= 0) {
+          _items[index] = created;
+        } else {
+          _items.insert(0, created);
+        }
+        _items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      });
+      widget.onDataChanged?.call();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _items.removeWhere((e) => e.id == tempId);
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Loi luu: $e')));
+    }
+  }
+
+  Future<bool> _confirmDeleteTransfer(TransferModel item) async {
+    final impact = await _service.previewDeleteTransferImpact(item.id);
+    if (!mounted) return false;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Xac nhan xoa giao dich chuyen tien'),
+        content: Text(
+          'Neu xac nhan xoa, ban se duoc hoan lai ${formatVnd(impact)} vao so du vi. He thong dong thoi huy giao dich thu nhap lien ket cua nguoi nhan.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).maybePop(false),
+            child: const Text('Huy'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).maybePop(true),
+            child: const Text('Xoa'),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
   Future<void> _openTransferPopup({TransferModel? existing}) async {
     final members = await _service.getCoupleMembers(widget.coupleId);
     final uid = Supabase.instance.client.auth.currentUser!.id;
+    final memberIds = members.map((m) => m['user_id'] as String).toList();
+    final users = memberIds.isEmpty
+        ? <Map<String, dynamic>>[]
+        : List<Map<String, dynamic>>.from(
+            await Supabase.instance.client
+                .from('users')
+                .select('id, display_name, email')
+                .inFilter('id', memberIds),
+          );
+    final memberLabelById = {
+      for (final user in users)
+        user['id'] as String:
+            ((user['display_name'] as String?)?.trim().isNotEmpty == true
+            ? (user['display_name'] as String).trim()
+            : ((user['email'] as String?) ?? 'User')),
+    };
 
     final recipients = members
         .map((m) => m['user_id'] as String)
@@ -143,7 +266,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
       noteCtrl.text = existing.note ?? '';
     }
 
-    final saved = await showDialog<bool>(
+    final payload = await showDialog<_TransferFormResult>(
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
@@ -184,7 +307,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
                         .map(
                           (id) => DropdownMenuItem(
                             value: id,
-                            child: Text('Partner'),
+                            child: Text(memberLabelById[id] ?? 'Partner'),
                           ),
                         )
                         .toList(),
@@ -223,7 +346,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(dialogContext, false),
+                onPressed: () => Navigator.of(dialogContext).maybePop(),
                 child: const Text('Huy'),
               ),
               FilledButton(
@@ -235,38 +358,17 @@ class _TransferListScreenState extends State<TransferListScreen> {
                     );
                     return;
                   }
-                  try {
-                    if (existing == null) {
-                      await _service.createTransfer(
-                        coupleId: widget.coupleId,
-                        fromUserId: uid,
-                        toUserId: selectedRecipientId,
+                  if (dialogContext.mounted) {
+                    Navigator.of(dialogContext).maybePop(
+                      _TransferFormResult(
                         amount: amount,
+                        toUserId: selectedRecipientId,
                         note: noteCtrl.text.trim().isEmpty
                             ? null
                             : noteCtrl.text.trim(),
                         date: selectedDate,
-                      );
-                    } else {
-                      await _service.updateTransfer(
-                        transferId: existing.id,
-                        fromUserId: uid,
-                        toUserId: selectedRecipientId,
-                        amount: amount,
-                        note: noteCtrl.text.trim().isEmpty
-                            ? null
-                            : noteCtrl.text.trim(),
-                        date: selectedDate,
-                      );
-                    }
-                    if (dialogContext.mounted) {
-                      Navigator.pop(dialogContext, true);
-                    }
-                  } catch (e) {
-                    if (!dialogContext.mounted) return;
-                    ScaffoldMessenger.of(
-                      dialogContext,
-                    ).showSnackBar(SnackBar(content: Text(e.toString())));
+                      ),
+                    );
                   }
                 },
                 child: const Text('Luu'),
@@ -277,9 +379,29 @@ class _TransferListScreenState extends State<TransferListScreen> {
       },
     );
 
-    if (saved == true) {
+    if (payload == null) return;
+
+    if (existing == null) {
+      await _createTransferOptimistic(payload);
+      return;
+    }
+
+    try {
+      await _service.updateTransfer(
+        transferId: existing.id,
+        fromUserId: uid,
+        toUserId: payload.toUserId,
+        amount: payload.amount,
+        note: payload.note,
+        date: payload.date,
+      );
       await _load(showLoader: false);
       widget.onDataChanged?.call();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
     }
   }
 
@@ -309,6 +431,8 @@ class _TransferListScreenState extends State<TransferListScreen> {
       return;
     }
     if (action == 'delete') {
+      final confirmed = await _confirmDeleteTransfer(item);
+      if (!confirmed) return;
       await _delete(item);
     }
   }
@@ -367,6 +491,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: const Icon(Icons.delete, color: Colors.white),
                   ),
+                  confirmDismiss: (_) => _confirmDeleteTransfer(item),
                   onDismissed: (_) => _delete(item),
                   child: ListTile(
                     leading: const CircleAvatar(child: Icon(Icons.swap_horiz)),

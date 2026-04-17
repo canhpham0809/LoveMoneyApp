@@ -114,9 +114,14 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
     final saved = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
+        final isLend = _debt?.debtKind == 'lend';
         return StatefulBuilder(
           builder: (dialogContext, setDialogState) => AlertDialog(
-            title: Text(existing == null ? 'Tra no' : 'Sua dot tra no'),
+            title: Text(
+              existing == null
+                  ? (isLend ? 'Thu hoi no' : 'Tra no')
+                  : (isLend ? 'Sua dot thu hoi' : 'Sua dot tra no'),
+            ),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -129,7 +134,7 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                       ThousandsSeparatorInputFormatter(),
                     ],
                     decoration: const InputDecoration(
-                      labelText: 'So tien tra no',
+                      labelText: 'So tien',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -245,6 +250,39 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
       return;
     }
     if (action == 'delete') {
+      final impact = await _debtService.previewDeletePaymentImpact(item.id);
+      if (!mounted) return;
+      String message;
+      if (impact < 0) {
+        message =
+            'Neu xac nhan xoa dot nay, so du vi se bi tru lai ${formatVnd(impact.abs())}. He thong dong thoi huy giao dich thu nhap lien ket.';
+      } else if (impact > 0) {
+        message =
+            'Neu xac nhan xoa dot nay, ban se duoc cong them ${formatVnd(impact)}.';
+      } else {
+        message =
+            'Neu xac nhan xoa dot nay, he thong khong phat sinh giao dich bu tru moi.';
+      }
+
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Xac nhan xoa dot giao dich no'),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Huy'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Xoa'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+
       await _debtService.deletePayment(
         paymentId: item.id,
         debtId: widget.debtId,
@@ -256,8 +294,9 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final debt = _debt;
+    final isLend = debt?.debtKind == 'lend';
     return Scaffold(
-      appBar: AppBar(title: const Text('Chi tiet No')),
+      appBar: AppBar(title: Text(isLend ? 'Chi tiet Cho muon' : 'Chi tiet No')),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : debt == null
@@ -280,18 +319,20 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text('Tong no: ${formatVnd(debt.originalAmount)}'),
-                        Text('Con lai: ${formatVnd(debt.remainingAmount)}'),
+                        Text(
+                          '${isLend ? 'Con phai thu' : 'Con lai'}: ${formatVnd(debt.remainingAmount)}',
+                        ),
                         Text('Chu no: ${debt.creditorName}'),
                       ],
                     ),
                   ),
                 ),
-                const Padding(
+                Padding(
                   padding: EdgeInsets.symmetric(horizontal: 12),
                   child: Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      'Timeline dot tra no',
+                      isLend ? 'Timeline dot thu hoi' : 'Timeline dot tra no',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
@@ -299,7 +340,13 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                 const SizedBox(height: 8),
                 Expanded(
                   child: _payments.isEmpty
-                      ? const Center(child: Text('Chua co dot tra no nao.'))
+                      ? Center(
+                          child: Text(
+                            isLend
+                                ? 'Chua co dot thu hoi nao.'
+                                : 'Chua co dot tra no nao.',
+                          ),
+                        )
                       : ListView.builder(
                           itemCount: _payments.length,
                           itemBuilder: (context, index) {

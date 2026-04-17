@@ -6,6 +6,18 @@ import 'package:flutter_app_demo/features/expense/data/models/category_model.dar
 class ExpenseService {
   SupabaseClient get _db => Supabase.instance.client;
 
+  bool _isMissingQuickAddColumn(Object error) {
+    return error is PostgrestException &&
+        error.code == '42703' &&
+        error.message.contains('show_in_quick_add');
+  }
+
+  bool _isMissingExpenseFormColumn(Object error) {
+    return error is PostgrestException &&
+        error.code == '42703' &&
+        error.message.contains('show_in_expense_form');
+  }
+
   Future<List<ExpenseModel>> getExpenses(
     String coupleId, {
     String? createdByUserId,
@@ -96,23 +108,140 @@ class ExpenseService {
     return rows.map((r) => CategoryModel.fromJson(r)).toList();
   }
 
+  Future<List<CategoryModel>> getQuickAddCategories(String coupleId) async {
+    try {
+      final rows = await _db
+          .from('categories')
+          .select()
+          .eq('couple_id', coupleId)
+          .eq('is_deleted', false)
+          .eq('show_in_quick_add', true)
+          .order('name');
+      return rows.map((r) => CategoryModel.fromJson(r)).toList();
+    } catch (e) {
+      if (!_isMissingQuickAddColumn(e)) rethrow;
+      final rows = await _db
+          .from('categories')
+          .select()
+          .eq('couple_id', coupleId)
+          .eq('is_deleted', false)
+          .order('name');
+      return rows.map((r) => CategoryModel.fromJson(r)).toList();
+    }
+  }
+
+  Future<List<CategoryModel>> getExpenseFormCategories(String coupleId) async {
+    try {
+      final rows = await _db
+          .from('categories')
+          .select()
+          .eq('couple_id', coupleId)
+          .eq('is_deleted', false)
+          .eq('show_in_expense_form', true)
+          .order('name');
+      return rows.map((r) => CategoryModel.fromJson(r)).toList();
+    } catch (e) {
+      if (!_isMissingExpenseFormColumn(e)) rethrow;
+      final rows = await _db
+          .from('categories')
+          .select()
+          .eq('couple_id', coupleId)
+          .eq('is_deleted', false)
+          .order('name');
+      return rows.map((r) => CategoryModel.fromJson(r)).toList();
+    }
+  }
+
   Future<CategoryModel> createCategory({
     required String coupleId,
     required String name,
     String icon = '💰',
     String color = '#6366F1',
+    bool showInQuickAdd = true,
+    bool showInExpenseForm = true,
   }) async {
-    final row = await _db
+    final payload = {
+      'couple_id': coupleId,
+      'name': name,
+      'icon': icon,
+      'color': color,
+      'sort_order': 0,
+      'show_in_quick_add': showInQuickAdd,
+      'show_in_expense_form': showInExpenseForm,
+    };
+    try {
+      final row = await _db
+          .from('categories')
+          .insert(payload)
+          .select()
+          .single();
+      return CategoryModel.fromJson(row);
+    } catch (e) {
+      if (!_isMissingQuickAddColumn(e) && !_isMissingExpenseFormColumn(e)) {
+        rethrow;
+      }
+      payload.remove('show_in_quick_add');
+      payload.remove('show_in_expense_form');
+      final row = await _db
+          .from('categories')
+          .insert(payload)
+          .select()
+          .single();
+      return CategoryModel.fromJson(row);
+    }
+  }
+
+  Future<CategoryModel> updateCategory({
+    required String categoryId,
+    required String name,
+    required String icon,
+    required String color,
+    required bool isActive,
+    bool? showInQuickAdd,
+    bool? showInExpenseForm,
+  }) async {
+    final payload = <String, dynamic>{
+      'name': name,
+      'icon': icon,
+      'color': color,
+      'is_active': isActive,
+    };
+    if (showInQuickAdd != null) payload['show_in_quick_add'] = showInQuickAdd;
+    if (showInExpenseForm != null) {
+      payload['show_in_expense_form'] = showInExpenseForm;
+    }
+
+    try {
+      final row = await _db
+          .from('categories')
+          .update(payload)
+          .eq('id', categoryId)
+          .select()
+          .single();
+      return CategoryModel.fromJson(row);
+    } catch (e) {
+      if (!_isMissingQuickAddColumn(e) && !_isMissingExpenseFormColumn(e)) {
+        rethrow;
+      }
+      payload.remove('show_in_quick_add');
+      payload.remove('show_in_expense_form');
+      final row = await _db
+          .from('categories')
+          .update(payload)
+          .eq('id', categoryId)
+          .select()
+          .single();
+      return CategoryModel.fromJson(row);
+    }
+  }
+
+  Future<void> deleteCategory(String categoryId) async {
+    await _db
         .from('categories')
-        .insert({
-          'couple_id': coupleId,
-          'name': name,
-          'icon': icon,
-          'color': color,
-          'sort_order': 0,
+        .update({
+          'is_deleted': true,
+          'deleted_at': DateTime.now().toUtc().toIso8601String(),
         })
-        .select()
-        .single();
-    return CategoryModel.fromJson(row);
+        .eq('id', categoryId);
   }
 }

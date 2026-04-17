@@ -6,6 +6,7 @@ class IncomeSourceModel extends Equatable {
   final String name;
   final String icon;
   final String type;
+  final bool showInIncomeForm;
   final bool isActive;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -19,6 +20,7 @@ class IncomeSourceModel extends Equatable {
     required this.name,
     required this.icon,
     required this.type,
+    required this.showInIncomeForm,
     required this.isActive,
     required this.createdAt,
     required this.updatedAt,
@@ -34,6 +36,7 @@ class IncomeSourceModel extends Equatable {
       name: json['name'] as String,
       icon: json['icon'] as String,
       type: json['type'] as String,
+      showInIncomeForm: (json['show_in_income_form'] as bool?) ?? true,
       isActive: json['is_active'] as bool,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
@@ -52,6 +55,7 @@ class IncomeSourceModel extends Equatable {
       'name': name,
       'icon': icon,
       'type': type,
+      'show_in_income_form': showInIncomeForm,
       'is_active': isActive,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
@@ -68,6 +72,7 @@ class IncomeSourceModel extends Equatable {
     name,
     icon,
     type,
+    showInIncomeForm,
     isActive,
     createdAt,
     updatedAt,
