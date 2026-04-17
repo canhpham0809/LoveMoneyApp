@@ -7,17 +7,26 @@ import 'package:flutter_app_demo/core/widgets/amount_suggestion_chips.dart';
 import 'package:flutter_app_demo/core/utils/formatters.dart';
 import 'package:flutter_app_demo/features/transfer/data/models/transfer_model.dart';
 import 'package:flutter_app_demo/features/transfer/data/services/transfer_service.dart';
-import 'package:flutter_app_demo/features/wallet/data/services/wallet_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class TransferListScreen extends StatefulWidget {
   final String coupleId;
+  final String viewerUserId;
+  final String currentUserId;
+  final String viewerLabel;
+  final String? partnerUserId;
+  final VoidCallback? onToggleViewer;
   final ValueListenable<int>? refreshSignal;
   final VoidCallback? onDataChanged;
 
   const TransferListScreen({
     super.key,
     required this.coupleId,
+    required this.viewerUserId,
+    required this.currentUserId,
+    required this.viewerLabel,
+    this.partnerUserId,
+    this.onToggleViewer,
     this.refreshSignal,
     this.onDataChanged,
   });
@@ -28,7 +37,6 @@ class TransferListScreen extends StatefulWidget {
 
 class _TransferListScreenState extends State<TransferListScreen> {
   final _service = TransferService();
-  final _walletService = WalletService();
   List<TransferModel> _items = [];
   bool _isLoading = true;
   String? _error;
@@ -46,6 +54,9 @@ class _TransferListScreenState extends State<TransferListScreen> {
     if (oldWidget.refreshSignal != widget.refreshSignal) {
       oldWidget.refreshSignal?.removeListener(_onExternalRefresh);
       widget.refreshSignal?.addListener(_onExternalRefresh);
+    }
+    if (oldWidget.viewerUserId != widget.viewerUserId) {
+      _load(showLoader: false);
     }
   }
 
@@ -70,7 +81,10 @@ class _TransferListScreenState extends State<TransferListScreen> {
       setState(() => _error = null);
     }
     try {
-      final items = await _service.getTransfers(widget.coupleId);
+      final items = await _service.getTransfers(
+        widget.coupleId,
+        createdByUserId: widget.viewerUserId,
+      );
       items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       if (mounted) setState(() => _items = items);
     } catch (e) {
@@ -104,7 +118,6 @@ class _TransferListScreenState extends State<TransferListScreen> {
 
   Future<void> _openTransferPopup({TransferModel? existing}) async {
     final members = await _service.getCoupleMembers(widget.coupleId);
-    final wallets = await _walletService.getWallets(widget.coupleId);
     final uid = Supabase.instance.client.auth.currentUser!.id;
 
     final recipients = members
@@ -117,12 +130,6 @@ class _TransferListScreenState extends State<TransferListScreen> {
     if (recipients.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Chua co partner trong couple.')),
-      );
-      return;
-    }
-    if (wallets.length < 2) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Can it nhat 2 vi de chuyen tien.')),
       );
       return;
     }
@@ -141,7 +148,9 @@ class _TransferListScreenState extends State<TransferListScreen> {
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (dialogContext, setDialogState) => AlertDialog(
-            title: Text(existing == null ? 'Them chuyen tien' : 'Sua chuyen tien'),
+            title: Text(
+              existing == null ? 'Them chuyen tien' : 'Sua chuyen tien',
+            ),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -166,7 +175,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
-                    value: selectedRecipientId,
+                    initialValue: selectedRecipientId,
                     decoration: const InputDecoration(
                       labelText: 'Nguoi nhan',
                       border: OutlineInputBorder(),
@@ -226,43 +235,38 @@ class _TransferListScreenState extends State<TransferListScreen> {
                     );
                     return;
                   }
-
-                  wallets.sort((a, b) {
-                    if (a.isDefault == b.isDefault) return 0;
-                    return a.isDefault ? -1 : 1;
-                  });
-                  final fromWalletId = existing?.fromWalletId ?? wallets[0].id;
-                  final toWalletId = existing?.toWalletId ?? wallets[1].id;
-
-                  if (existing == null) {
-                    await _service.createTransfer(
-                      coupleId: widget.coupleId,
-                      fromUserId: uid,
-                      toUserId: selectedRecipientId,
-                      fromWalletId: fromWalletId,
-                      toWalletId: toWalletId,
-                      amount: amount,
-                      note: noteCtrl.text.trim().isEmpty
-                          ? null
-                          : noteCtrl.text.trim(),
-                      date: selectedDate,
-                    );
-                  } else {
-                    await _service.updateTransfer(
-                      transferId: existing.id,
-                      fromUserId: uid,
-                      toUserId: selectedRecipientId,
-                      fromWalletId: fromWalletId,
-                      toWalletId: toWalletId,
-                      amount: amount,
-                      note: noteCtrl.text.trim().isEmpty
-                          ? null
-                          : noteCtrl.text.trim(),
-                      date: selectedDate,
-                    );
-                  }
-                  if (dialogContext.mounted) {
-                    Navigator.pop(dialogContext, true);
+                  try {
+                    if (existing == null) {
+                      await _service.createTransfer(
+                        coupleId: widget.coupleId,
+                        fromUserId: uid,
+                        toUserId: selectedRecipientId,
+                        amount: amount,
+                        note: noteCtrl.text.trim().isEmpty
+                            ? null
+                            : noteCtrl.text.trim(),
+                        date: selectedDate,
+                      );
+                    } else {
+                      await _service.updateTransfer(
+                        transferId: existing.id,
+                        fromUserId: uid,
+                        toUserId: selectedRecipientId,
+                        amount: amount,
+                        note: noteCtrl.text.trim().isEmpty
+                            ? null
+                            : noteCtrl.text.trim(),
+                        date: selectedDate,
+                      );
+                    }
+                    if (dialogContext.mounted) {
+                      Navigator.pop(dialogContext, true);
+                    }
+                  } catch (e) {
+                    if (!dialogContext.mounted) return;
+                    ScaffoldMessenger.of(
+                      dialogContext,
+                    ).showSnackBar(SnackBar(content: Text(e.toString())));
                   }
                 },
                 child: const Text('Luu'),
@@ -315,6 +319,16 @@ class _TransferListScreenState extends State<TransferListScreen> {
       appBar: AppBar(
         title: const Text('Chuyển tiền'),
         actions: [
+          if (widget.partnerUserId != null)
+            IconButton(
+              onPressed: widget.onToggleViewer,
+              icon: Icon(
+                widget.viewerUserId == widget.currentUserId
+                    ? Icons.person
+                    : Icons.people_alt_outlined,
+              ),
+              tooltip: 'Đang xem: ${widget.viewerLabel}. Chạm để đổi.',
+            ),
           IconButton(onPressed: () => _load(), icon: const Icon(Icons.refresh)),
         ],
       ),
@@ -335,7 +349,11 @@ class _TransferListScreenState extends State<TransferListScreen> {
               ),
             )
           : _items.isEmpty
-          ? const Center(child: Text('Chưa có lệnh chuyển tiền nào.'))
+          ? Center(
+              child: Text(
+                'Chưa có lệnh chuyển tiền nào của ${widget.viewerLabel}.',
+              ),
+            )
           : ListView.builder(
               itemCount: _items.length,
               itemBuilder: (context, index) {

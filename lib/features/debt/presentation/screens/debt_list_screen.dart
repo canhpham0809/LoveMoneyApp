@@ -13,11 +13,13 @@ import 'package:flutter_app_demo/features/debt/presentation/screens/debt_detail_
 class DebtListScreen extends StatefulWidget {
   final String coupleId;
   final ValueListenable<int>? refreshSignal;
+  final VoidCallback? onDataChanged;
 
   const DebtListScreen({
     super.key,
     required this.coupleId,
     this.refreshSignal,
+    this.onDataChanged,
   });
 
   @override
@@ -65,7 +67,9 @@ class _DebtListScreenState extends State<DebtListScreen> {
     if (!mounted) return;
     if (debtTypes.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Chua co loai no. Vui long tao loai no truoc.')),
+        const SnackBar(
+          content: Text('Chua co loai no. Vui long tao loai no truoc.'),
+        ),
       );
       return;
     }
@@ -120,8 +124,8 @@ class _DebtListScreenState extends State<DebtListScreen> {
                   const SizedBox(height: 12),
                   ValueListenableBuilder<String>(
                     valueListenable: selectedDebtTypeId,
-                    builder: (_, value, __) => DropdownButtonFormField<String>(
-                      value: value,
+                    builder: (_, value, _) => DropdownButtonFormField<String>(
+                      initialValue: value,
                       decoration: const InputDecoration(
                         labelText: 'Loai no',
                         border: OutlineInputBorder(),
@@ -178,16 +182,22 @@ class _DebtListScreenState extends State<DebtListScreen> {
               FilledButton(
                 onPressed: () async {
                   final amount = parseAmountInput(amountCtrl.text.trim());
-                  if (personCtrl.text.trim().isEmpty || amount == null || amount <= 0) {
+                  if (personCtrl.text.trim().isEmpty ||
+                      amount == null ||
+                      amount <= 0) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Nhap du thong tin hop le.')),
+                      const SnackBar(
+                        content: Text('Nhap du thong tin hop le.'),
+                      ),
                     );
                     return;
                   }
                   final uid = Supabase.instance.client.auth.currentUser?.id;
                   if (uid == null) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Khong tim thay phien dang nhap.')),
+                      const SnackBar(
+                        content: Text('Khong tim thay phien dang nhap.'),
+                      ),
                     );
                     return;
                   }
@@ -337,6 +347,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
                       );
                       if (mounted) {
                         await _load();
+                        widget.onDataChanged?.call();
                       }
                     },
                     onLongPress: () => _showDebtActions(item),

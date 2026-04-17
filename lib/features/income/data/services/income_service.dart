@@ -6,13 +6,21 @@ import 'package:flutter_app_demo/features/income/data/models/income_source_model
 class IncomeService {
   SupabaseClient get _db => Supabase.instance.client;
 
-  Future<List<IncomeModel>> getIncomes(String coupleId) async {
-    final rows = await _db
+  Future<List<IncomeModel>> getIncomes(
+    String coupleId, {
+    String? createdByUserId,
+  }) async {
+    var query = _db
         .from('incomes')
         .select()
         .eq('couple_id', coupleId)
-        .eq('is_deleted', false)
-      .order('created_at', ascending: false);
+        .eq('is_deleted', false);
+
+    if (createdByUserId != null) {
+      query = query.eq('user_id', createdByUserId);
+    }
+
+    final rows = await query.order('created_at', ascending: false);
     return rows.map((r) => IncomeModel.fromJson(r)).toList();
   }
 
@@ -72,12 +80,12 @@ class IncomeService {
         .eq('id', incomeId);
   }
 
-        Future<void> restoreIncome(String incomeId) async {
-          await _db
-          .from('incomes')
-          .update({'is_deleted': false, 'deleted_at': null})
-          .eq('id', incomeId);
-        }
+  Future<void> restoreIncome(String incomeId) async {
+    await _db
+        .from('incomes')
+        .update({'is_deleted': false, 'deleted_at': null})
+        .eq('id', incomeId);
+  }
 
   Future<List<IncomeSourceModel>> getIncomeSources(String coupleId) async {
     final rows = await _db

@@ -2,17 +2,30 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'package:flutter_app_demo/core/utils/formatters.dart';
-import 'package:flutter_app_demo/features/dashboard/data/services/dashboard_service.dart';
+import '../../../../core/services/transaction_service.dart';
+import '../../../../core/models/monthly_summary.dart';
+import '../../../../core/models/transaction.dart';
+import '../../../home/widgets/monthly_card.dart';
+import '../../../home/widgets/transaction_list.dart';
 
 class DashboardScreen extends StatefulWidget {
   final String coupleId;
+  final String viewerUserId;
+  final String currentUserId;
+  final String viewerLabel;
+  final String? partnerUserId;
+  final VoidCallback? onToggleViewer;
   final ValueListenable<int>? refreshSignal;
   final Future<void> Function()? onCreatePressed;
 
   const DashboardScreen({
     super.key,
     required this.coupleId,
+    required this.viewerUserId,
+    required this.currentUserId,
+    required this.viewerLabel,
+    this.partnerUserId,
+    this.onToggleViewer,
     this.refreshSignal,
     this.onCreatePressed,
   });
@@ -22,12 +35,13 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  final _service = DashboardService();
-
-  double _totalBalance = 0;
-  double _monthlyIncome = 0;
-  double _monthlyExpense = 0;
-  List<Map<String, dynamic>> _recentTx = [];
+  final _transactionService = TransactionService();
+  final PageController _monthPageController = PageController(
+    viewportFraction: 0.85,
+  );
+  List<MonthlySummary> _monthlySummaries = [];
+  int _selectedMonthIndex = 0;
+  List<Transaction> _recentTransactions = [];
   bool _isLoading = true;
   String? _error;
 
@@ -45,10 +59,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
       oldWidget.refreshSignal?.removeListener(_onExternalRefresh);
       widget.refreshSignal?.addListener(_onExternalRefresh);
     }
+    if (oldWidget.viewerUserId != widget.viewerUserId) {
+      _load(showLoader: false);
+    }
   }
 
   @override
   void dispose() {
+    _monthPageController.dispose();
     widget.refreshSignal?.removeListener(_onExternalRefresh);
     super.dispose();
   }
@@ -70,22 +88,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
     }
     try {
-      final wallets = await _service.getWalletBalances(widget.coupleId);
-      final income = await _service.getMonthlyIncome(widget.coupleId);
-      final expense = await _service.getMonthlyExpense(widget.coupleId);
-      final tx = await _service.getRecentTransactions(widget.coupleId);
-      final balance = wallets.fold<double>(
-        0,
-        (s, w) => s + ((w['computed_balance'] as num?)?.toDouble() ?? 0),
+      final summaries = await _transactionService.fetchMonthlySummaries(
+        coupleId: widget.coupleId,
+        viewerUserId: widget.viewerUserId,
       );
-      if (mounted) {
-        setState(() {
-          _totalBalance = balance;
-          _monthlyIncome = income;
-          _monthlyExpense = expense;
-          _recentTx = tx;
-        });
+      setState(() {
+        _monthlySummaries = summaries;
+        _selectedMonthIndex = 0;
+      });
+      if (_monthPageController.hasClients) {
+        _monthPageController.jumpToPage(0);
       }
+      await _loadRecentTransactions();
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
@@ -95,12 +109,50 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
+  Future<void> _loadRecentTransactions() async {
+    if (_monthlySummaries.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _recentTransactions = const [];
+      });
+      return;
+    }
+    final summary = _monthlySummaries[_selectedMonthIndex];
+    final txs = await _transactionService.fetchRecentTransactions(
+      coupleId: widget.coupleId,
+      year: summary.year,
+      month: summary.month,
+      viewerUserId: widget.viewerUserId,
+    );
+    if (!mounted) return;
+    setState(() {
+      _recentTransactions = txs;
+    });
+  }
+
+  void _onMonthChanged(int index) async {
+    setState(() {
+      _selectedMonthIndex = index;
+    });
+    await _loadRecentTransactions();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Home'),
         actions: [
+          if (widget.partnerUserId != null)
+            IconButton(
+              onPressed: widget.onToggleViewer,
+              icon: Icon(
+                widget.viewerUserId == widget.currentUserId
+                    ? Icons.person
+                    : Icons.people_alt_outlined,
+              ),
+              tooltip: 'Đang xem: ${widget.viewerLabel}. Chạm để đổi.',
+            ),
           IconButton(
             onPressed: () => _load(showLoader: false),
             icon: const Icon(Icons.refresh),
@@ -134,72 +186,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
               onRefresh: () => _load(showLoader: false),
               child: SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(16),
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  16,
+                  16,
+                  widget.onCreatePressed == null ? 16 : 96,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Total balance card
-                    Card(
-                      color: Theme.of(context).colorScheme.primaryContainer,
-                      child: Padding(
-                        padding: const EdgeInsets.all(20.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Tổng số dư',
-                              style: TextStyle(fontSize: 13),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              formatVnd(_totalBalance),
-                              style: Theme.of(context).textTheme.headlineMedium
-                                  ?.copyWith(fontWeight: FontWeight.bold),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    // Monthly summary
-                    const Text(
-                      'Tháng này',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    Text(
+                      'Đang xem: ${widget.viewerLabel}',
+                      style: Theme.of(context).textTheme.bodyMedium,
                     ),
                     const SizedBox(height: 8),
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          children: [
-                            _summaryRow(
-                              'Thu nhập',
-                              _monthlyIncome,
-                              Colors.green[600]!,
-                            ),
-                            const Divider(),
-                            _summaryRow(
-                              'Chi tiêu',
-                              _monthlyExpense,
-                              Theme.of(context).colorScheme.error,
-                            ),
-                            const Divider(),
-                            _summaryRow(
-                              'Còn lại',
-                              _monthlyIncome - _monthlyExpense,
-                              _monthlyIncome >= _monthlyExpense
-                                  ? Colors.green[700]!
-                                  : Theme.of(context).colorScheme.error,
-                            ),
-                          ],
+                    // Monthly swipeable summary cards
+                    if (_monthlySummaries.isNotEmpty)
+                      SizedBox(
+                        height: 180,
+                        child: PageView.builder(
+                          controller: _monthPageController,
+                          itemCount: _monthlySummaries.length,
+                          onPageChanged: _onMonthChanged,
+                          itemBuilder: (context, idx) => MonthlyCard(
+                            summary: _monthlySummaries[idx],
+                            isSelected: idx == _selectedMonthIndex,
+                          ),
                         ),
                       ),
-                    ),
                     const SizedBox(height: 16),
-                    // Recent transactions
+                    // Recent transactions (always current month)
                     const Text(
                       '20 giao dịch gần nhất',
                       style: TextStyle(
@@ -208,76 +224,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    if (_recentTx.isEmpty)
-                      const Center(child: Text('Chưa có giao dịch nào.'))
-                    else
-                      ...(_recentTx.map((tx) {
-                        final isExpense = tx['type'] == 'expense';
-                        final isTransfer = tx['type'] == 'transfer';
-                        final amount = (tx['amount'] as num?)?.toDouble() ?? 0;
-                        return ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: isTransfer
-                                ? Colors.blueGrey[50]
-                                : isExpense
-                                ? Colors.red[50]
-                                : Colors.green[50],
-                            child: Icon(
-                              isTransfer
-                                  ? Icons.swap_horiz
-                                  : isExpense
-                                  ? Icons.arrow_downward
-                                  : Icons.arrow_upward,
-                              color: isTransfer
-                                  ? Colors.blueGrey
-                                  : isExpense
-                                  ? Colors.red
-                                  : Colors.green,
-                              size: 16,
-                            ),
-                          ),
-                          title: Text(
-                            isTransfer
-                                ? ((tx['note'] as String?) ?? 'Chuyen tien')
-                                : (() {
-                                    final description = tx['description'] as String?;
-                                    final categoryName =
-                                        tx['resolved_category_name'] as String?;
-                                    if (description != null && description.trim().isNotEmpty) {
-                                      return description;
-                                    }
-                                    if (isExpense &&
-                                        categoryName != null &&
-                                        categoryName.trim().isNotEmpty) {
-                                      return categoryName;
-                                    }
-                                    return isExpense ? 'Chi tiêu' : 'Thu nhập';
-                                  }()),
-                          ),
-                          subtitle: Text(() {
-                            final dateText = tx['date'] as String? ?? '';
-                            final createdAtRaw = tx['created_at'] as String?;
-                            final createdAt = createdAtRaw == null
-                                ? null
-                                : DateTime.tryParse(createdAtRaw);
-                            if (createdAt == null) {
-                              return dateText;
-                            }
-                            return '$dateText · ${formatDateTime(createdAt).split(' ').last}';
-                          }()),
-                          trailing: Text(
-                            '${isTransfer ? '↔ ' : (isExpense ? '-' : '+')}${formatVnd(amount)}',
-                            style: TextStyle(
-                              color: isTransfer
-                                  ? Colors.blueGrey
-                                  : isExpense
-                                  ? Theme.of(context).colorScheme.error
-                                  : Colors.green[700],
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        );
-                      })),
+                    TransactionList(
+                      transactions: _recentTransactions,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                    ),
                   ],
                 ),
               ),
@@ -289,19 +240,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
               icon: const Icon(Icons.flash_on_outlined),
               label: const Text('Quick Add'),
             ),
-    );
-  }
-
-  Widget _summaryRow(String label, double amount, Color color) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label),
-        Text(
-          formatVnd(amount),
-          style: TextStyle(color: color, fontWeight: FontWeight.bold),
-        ),
-      ],
     );
   }
 }

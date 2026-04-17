@@ -30,6 +30,7 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
 
   FundModel? _fund;
   List<FundContributionModel> _contributions = [];
+  Map<String, String> _memberNameById = {};
   bool _isLoading = true;
 
   @override
@@ -48,10 +49,37 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
         coupleId: widget.coupleId,
         fundId: widget.fundId,
       );
+      final members = await Supabase.instance.client
+          .from('couple_members')
+          .select('user_id')
+          .eq('couple_id', widget.coupleId)
+          .eq('is_deleted', false);
+      final memberIds = members
+          .map((m) => m['user_id'] as String)
+          .toSet()
+          .toList();
+
+      final users = memberIds.isEmpty
+          ? <Map<String, dynamic>>[]
+          : List<Map<String, dynamic>>.from(
+              await Supabase.instance.client
+                  .from('users')
+                  .select('id, display_name, email')
+                  .inFilter('id', memberIds),
+            );
+      final memberNameById = {
+        for (final u in users)
+          u['id'] as String:
+              ((u['display_name'] as String?)?.trim().isNotEmpty == true
+              ? (u['display_name'] as String).trim()
+              : ((u['email'] as String?) ?? 'User')),
+      };
+
       if (!mounted) return;
       setState(() {
         _fund = fund;
         _contributions = contributions;
+        _memberNameById = memberNameById;
       });
     } finally {
       if (showLoader && mounted) {
@@ -284,7 +312,7 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                               onLongPress: () => _showContributionActions(c),
                               title: Text(formatVnd(c.amount)),
                               subtitle: Text(
-                                '${formatDate(c.date)} · ${formatDateTime(c.createdAt).split(' ').last}${c.note != null ? ' · ${c.note}' : ''}',
+                                '${formatDate(c.date)} · ${formatDateTime(c.createdAt).split(' ').last} · ${_memberNameById[c.userId] ?? c.userId}${c.note != null ? ' · ${c.note}' : ''}',
                               ),
                             );
                           },

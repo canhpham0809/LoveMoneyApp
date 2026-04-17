@@ -4,11 +4,11 @@ String formatVnd(num amount) {
   final buf = StringBuffer();
   int count = 0;
   for (int i = str.length - 1; i >= 0; i--) {
-    if (count > 0 && count % 3 == 0) buf.write(',');
+    if (count > 0 && count % 3 == 0) buf.write('.');
     buf.write(str[i]);
     count++;
   }
-  return '${buf.toString().split('').reversed.join()} ₫';
+  return '${buf.toString().split('').reversed.join()}đ';
 }
 
 /// Format date as dd/MM/yyyy.

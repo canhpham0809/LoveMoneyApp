@@ -7,13 +7,21 @@ class TransferService {
 
   static const String _transferIncomeSourceName = 'Internal Transfer';
 
-  Future<List<TransferModel>> getTransfers(String coupleId) async {
-    final rows = await _db
+  Future<List<TransferModel>> getTransfers(
+    String coupleId, {
+    String? createdByUserId,
+  }) async {
+    var query = _db
         .from('transfers')
         .select()
         .eq('couple_id', coupleId)
-        .eq('is_deleted', false)
-      .order('created_at', ascending: false);
+        .eq('is_deleted', false);
+
+    if (createdByUserId != null) {
+      query = query.eq('from_user_id', createdByUserId);
+    }
+
+    final rows = await query.order('created_at', ascending: false);
     return rows.map((r) => TransferModel.fromJson(r)).toList();
   }
 
@@ -31,8 +39,6 @@ class TransferService {
     required String coupleId,
     required String fromUserId,
     required String toUserId,
-    required String fromWalletId,
-    required String toWalletId,
     required double amount,
     String? note,
     required DateTime date,
@@ -46,8 +52,8 @@ class TransferService {
           'couple_id': coupleId,
           'from_user_id': fromUserId,
           'to_user_id': toUserId,
-          'from_wallet_id': fromWalletId,
-          'to_wallet_id': toWalletId,
+          'from_wallet_id': null,
+          'to_wallet_id': null,
           'amount': amount,
           'note': note,
           'date': transferDate,
@@ -63,7 +69,7 @@ class TransferService {
           .insert({
             'couple_id': coupleId,
             'user_id': toUserId,
-            'wallet_id': toWalletId,
+            'wallet_id': null,
             'income_source_id': incomeSourceId,
             'amount': amount,
             'description': note?.trim().isEmpty == true
@@ -124,8 +130,6 @@ class TransferService {
     required String transferId,
     required String fromUserId,
     required String toUserId,
-    required String fromWalletId,
-    required String toWalletId,
     required double amount,
     String? note,
     required DateTime date,
@@ -136,8 +140,8 @@ class TransferService {
         .update({
           'from_user_id': fromUserId,
           'to_user_id': toUserId,
-          'from_wallet_id': fromWalletId,
-          'to_wallet_id': toWalletId,
+          'from_wallet_id': null,
+          'to_wallet_id': null,
           'amount': amount,
           'note': note,
           'date': transferDate,
@@ -152,7 +156,7 @@ class TransferService {
           .from('incomes')
           .update({
             'user_id': toUserId,
-            'wallet_id': toWalletId,
+            'wallet_id': null,
             'amount': amount,
             'description': note?.trim().isEmpty == true
                 ? 'Transfer from partner'

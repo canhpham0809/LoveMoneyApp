@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_app_demo/core/utils/amount_input.dart';
 import 'package:flutter_app_demo/core/widgets/amount_suggestion_chips.dart';
 import 'package:flutter_app_demo/core/utils/formatters.dart';
@@ -28,6 +29,7 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
 
   DebtModel? _debt;
   List<DebtPaymentModel> _payments = [];
+  Map<String, String> _memberNameById = {};
   bool _isLoading = true;
 
   @override
@@ -46,10 +48,37 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
         coupleId: widget.coupleId,
         debtId: widget.debtId,
       );
+      final members = await Supabase.instance.client
+          .from('couple_members')
+          .select('user_id')
+          .eq('couple_id', widget.coupleId)
+          .eq('is_deleted', false);
+      final memberIds = members
+          .map((m) => m['user_id'] as String)
+          .toSet()
+          .toList();
+
+      final users = memberIds.isEmpty
+          ? <Map<String, dynamic>>[]
+          : List<Map<String, dynamic>>.from(
+              await Supabase.instance.client
+                  .from('users')
+                  .select('id, display_name, email')
+                  .inFilter('id', memberIds),
+            );
+      final memberNameById = {
+        for (final u in users)
+          u['id'] as String:
+              ((u['display_name'] as String?)?.trim().isNotEmpty == true
+              ? (u['display_name'] as String).trim()
+              : ((u['email'] as String?) ?? 'User')),
+      };
+
       if (!mounted) return;
       setState(() {
         _debt = debt;
         _payments = payments;
+        _memberNameById = memberNameById;
       });
     } finally {
       if (showLoader && mounted) {
@@ -216,7 +245,10 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
       return;
     }
     if (action == 'delete') {
-      await _debtService.deletePayment(paymentId: item.id, debtId: widget.debtId);
+      await _debtService.deletePayment(
+        paymentId: item.id,
+        debtId: widget.debtId,
+      );
       await _load(showLoader: false);
     }
   }
@@ -277,7 +309,7 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                               onLongPress: () => _showPaymentActions(p),
                               title: Text(formatVnd(p.amount)),
                               subtitle: Text(
-                                '${formatDate(p.date)} · ${formatDateTime(p.createdAt).split(' ').last}${p.note != null ? ' · ${p.note}' : ''}',
+                                '${formatDate(p.date)} · ${formatDateTime(p.createdAt).split(' ').last} · ${p.updatedBy != null ? (_memberNameById[p.updatedBy!] ?? p.updatedBy!) : 'Không rõ'}${p.note != null ? ' · ${p.note}' : ''}',
                               ),
                             );
                           },

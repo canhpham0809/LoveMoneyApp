@@ -12,11 +12,13 @@ import 'package:flutter_app_demo/features/fund/presentation/screens/fund_detail_
 class FundListScreen extends StatefulWidget {
   final String coupleId;
   final ValueListenable<int>? refreshSignal;
+  final VoidCallback? onDataChanged;
 
   const FundListScreen({
     super.key,
     required this.coupleId,
     this.refreshSignal,
+    this.onDataChanged,
   });
 
   @override
@@ -277,72 +279,73 @@ class _FundListScreenState extends State<FundListScreen> {
                       );
                       if (mounted) {
                         await _load();
+                        widget.onDataChanged?.call();
                       }
                     },
                     onLongPress: () => _showFundActions(item),
                     borderRadius: BorderRadius.circular(12),
                     child: Padding(
-                    padding: const EdgeInsets.all(12.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.savings_outlined),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                item.name,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
+                      padding: const EdgeInsets.all(12.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.savings_outlined),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  item.name,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
                                 ),
                               ),
-                            ),
-                            Text(
-                              formatVnd(item.currentAmount),
-                              style: TextStyle(
-                                color: Colors.green[700],
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (item.targetAmount != null) ...[
-                          const SizedBox(height: 8),
-                          LinearProgressIndicator(
-                            value: progress,
-                            backgroundColor: Colors.grey[200],
-                          ),
-                          const SizedBox(height: 4),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
                               Text(
-                                '${(progress * 100).toStringAsFixed(0)}%',
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                              Text(
-                                'Mục tiêu: ${formatVnd(item.targetAmount!)}',
-                                style: const TextStyle(fontSize: 12),
+                                formatVnd(item.currentAmount),
+                                style: TextStyle(
+                                  color: Colors.green[700],
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ],
                           ),
-                        ],
-                        if (item.deadline != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4.0),
-                            child: Text(
-                              'Hạn: ${formatDate(item.deadline!)}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey,
+                          if (item.targetAmount != null) ...[
+                            const SizedBox(height: 8),
+                            LinearProgressIndicator(
+                              value: progress,
+                              backgroundColor: Colors.grey[200],
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  '${(progress * 100).toStringAsFixed(0)}%',
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                                Text(
+                                  'Mục tiêu: ${formatVnd(item.targetAmount!)}',
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                              ],
+                            ),
+                          ],
+                          if (item.deadline != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4.0),
+                              child: Text(
+                                'Hạn: ${formatDate(item.deadline!)}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey,
+                                ),
                               ),
                             ),
-                          ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
                   ),
                 );
               },

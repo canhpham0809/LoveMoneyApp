@@ -6,13 +6,21 @@ import 'package:flutter_app_demo/features/expense/data/models/category_model.dar
 class ExpenseService {
   SupabaseClient get _db => Supabase.instance.client;
 
-  Future<List<ExpenseModel>> getExpenses(String coupleId) async {
-    final rows = await _db
+  Future<List<ExpenseModel>> getExpenses(
+    String coupleId, {
+    String? createdByUserId,
+  }) async {
+    var query = _db
         .from('expenses')
         .select()
         .eq('couple_id', coupleId)
-        .eq('is_deleted', false)
-      .order('created_at', ascending: false);
+        .eq('is_deleted', false);
+
+    if (createdByUserId != null) {
+      query = query.eq('user_id', createdByUserId);
+    }
+
+    final rows = await query.order('created_at', ascending: false);
     return rows.map((r) => ExpenseModel.fromJson(r)).toList();
   }
 
@@ -71,12 +79,12 @@ class ExpenseService {
         .eq('id', expenseId);
   }
 
-        Future<void> restoreExpense(String expenseId) async {
-          await _db
-          .from('expenses')
-          .update({'is_deleted': false, 'deleted_at': null})
-          .eq('id', expenseId);
-        }
+  Future<void> restoreExpense(String expenseId) async {
+    await _db
+        .from('expenses')
+        .update({'is_deleted': false, 'deleted_at': null})
+        .eq('id', expenseId);
+  }
 
   Future<List<CategoryModel>> getCategories(String coupleId) async {
     final rows = await _db

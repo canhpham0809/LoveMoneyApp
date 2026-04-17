@@ -13,12 +13,22 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 class IncomeListScreen extends StatefulWidget {
   final String coupleId;
+  final String viewerUserId;
+  final String currentUserId;
+  final String viewerLabel;
+  final String? partnerUserId;
+  final VoidCallback? onToggleViewer;
   final ValueListenable<int>? refreshSignal;
   final VoidCallback? onDataChanged;
 
   const IncomeListScreen({
     super.key,
     required this.coupleId,
+    required this.viewerUserId,
+    required this.currentUserId,
+    required this.viewerLabel,
+    this.partnerUserId,
+    this.onToggleViewer,
     this.refreshSignal,
     this.onDataChanged,
   });
@@ -49,6 +59,9 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
       oldWidget.refreshSignal?.removeListener(_onExternalRefresh);
       widget.refreshSignal?.addListener(_onExternalRefresh);
     }
+    if (oldWidget.viewerUserId != widget.viewerUserId) {
+      _load(showLoader: false);
+    }
   }
 
   @override
@@ -72,15 +85,16 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
       setState(() => _error = null);
     }
     try {
-      final items = await _service.getIncomes(widget.coupleId);
+      final items = await _service.getIncomes(
+        widget.coupleId,
+        createdByUserId: widget.viewerUserId,
+      );
       final sources = await _service.getIncomeSources(widget.coupleId);
       items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       if (mounted) {
         setState(() {
           _items = items;
-          _sourceNameById = {
-            for (final s in sources) s.id: s.name,
-          };
+          _sourceNameById = {for (final s in sources) s.id: s.name};
         });
       }
     } catch (e) {
@@ -122,9 +136,9 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
     final sources = await _service.getIncomeSources(widget.coupleId);
     if (!mounted) return;
     if (sources.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Chua co nguon thu nhap.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Chua co nguon thu nhap.')));
       return;
     }
     final walletId = await _resolveDefaultWalletId();
@@ -175,7 +189,7 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
-                    value: selectedSourceId,
+                    initialValue: selectedSourceId,
                     decoration: const InputDecoration(
                       labelText: 'Nguon thu',
                       border: OutlineInputBorder(),
@@ -313,7 +327,8 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
   Widget build(BuildContext context) {
     final grouped = <String, List<IncomeModel>>{};
     for (final item in _items) {
-      final key = '${item.date.year}-${item.date.month.toString().padLeft(2, '0')}';
+      final key =
+          '${item.date.year}-${item.date.month.toString().padLeft(2, '0')}';
       grouped.putIfAbsent(key, () => <IncomeModel>[]).add(item);
     }
 
@@ -321,14 +336,23 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
       appBar: AppBar(
         title: const Text('Thu nhập'),
         actions: [
+          if (widget.partnerUserId != null)
+            IconButton(
+              onPressed: widget.onToggleViewer,
+              icon: Icon(
+                widget.viewerUserId == widget.currentUserId
+                    ? Icons.person
+                    : Icons.people_alt_outlined,
+              ),
+              tooltip: 'Đang xem: ${widget.viewerLabel}. Chạm để đổi.',
+            ),
           IconButton(
             onPressed: () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => IncomeSearchFilterScreen(
-                    coupleId: widget.coupleId,
-                  ),
+                  builder: (_) =>
+                      IncomeSearchFilterScreen(coupleId: widget.coupleId),
                 ),
               );
             },
@@ -355,7 +379,9 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
               ),
             )
           : _items.isEmpty
-          ? const Center(child: Text('Chưa có thu nhập nào.'))
+          ? Center(
+              child: Text('Chưa có thu nhập nào của ${widget.viewerLabel}.'),
+            )
           : ListView(
               children: [
                 for (final entry in grouped.entries) ...[

@@ -25,6 +25,11 @@ class AppShellScreen extends StatefulWidget {
 class _AppShellScreenState extends State<AppShellScreen> {
   int _selectedIndex = 0;
   String? _coupleId;
+  String? _currentUserId;
+  String? _viewerUserId;
+  String? _selfLabel;
+  String? _partnerUserId;
+  String? _partnerLabel;
   bool _isLoading = true;
   String? _error;
   final ValueNotifier<int> _dashboardRefreshBus = ValueNotifier<int>(0);
@@ -50,6 +55,14 @@ class _AppShellScreenState extends State<AppShellScreen> {
   void _markTransferChanged() {
     _dashboardRefreshBus.value += 1;
     _transferRefreshBus.value += 1;
+  }
+
+  void _markFundChanged() {
+    _dashboardRefreshBus.value += 1;
+  }
+
+  void _markDebtChanged() {
+    _dashboardRefreshBus.value += 1;
   }
 
   @override
@@ -93,8 +106,46 @@ class _AppShellScreenState extends State<AppShellScreen> {
         });
         return;
       }
+      final coupleId = rows.first['couple_id'] as String;
+      final members = await Supabase.instance.client
+          .from('couple_members')
+          .select('user_id')
+          .eq('couple_id', coupleId)
+          .eq('is_deleted', false);
+      final memberIds = members
+          .map((m) => m['user_id'] as String)
+          .toSet()
+          .toList();
+
+      final users = memberIds.isEmpty
+          ? <Map<String, dynamic>>[]
+          : List<Map<String, dynamic>>.from(
+              await Supabase.instance.client
+                  .from('users')
+                  .select('id, display_name, email')
+                  .inFilter('id', memberIds),
+            );
+      final userDisplay = {
+        for (final u in users)
+          u['id'] as String:
+              ((u['display_name'] as String?)?.trim().isNotEmpty == true
+              ? (u['display_name'] as String).trim()
+              : ((u['email'] as String?) ?? 'User')),
+      };
+      final partnerId = memberIds
+          .where((id) => id != uid)
+          .cast<String?>()
+          .firstWhere((id) => id != null, orElse: () => null);
+
       setState(() {
-        _coupleId = rows.first['couple_id'] as String;
+        _coupleId = coupleId;
+        _currentUserId = uid;
+        _viewerUserId = uid;
+        _selfLabel = userDisplay[uid] ?? 'Tôi';
+        _partnerUserId = partnerId;
+        _partnerLabel = partnerId == null
+            ? null
+            : (userDisplay[partnerId] ?? 'Partner');
         _isLoading = false;
       });
     } catch (e) {
@@ -103,6 +154,22 @@ class _AppShellScreenState extends State<AppShellScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  void _toggleViewer() {
+    final current = _currentUserId;
+    final partner = _partnerUserId;
+    final viewing = _viewerUserId;
+    if (current == null || partner == null || viewing == null) return;
+
+    setState(() {
+      _viewerUserId = viewing == current ? partner : current;
+    });
+
+    _dashboardRefreshBus.value += 1;
+    _expenseRefreshBus.value += 1;
+    _incomeRefreshBus.value += 1;
+    _transferRefreshBus.value += 1;
   }
 
   Future<void> _openQuickAddDialog(String coupleId) async {
@@ -232,19 +299,19 @@ class _AppShellScreenState extends State<AppShellScreen> {
           ..hideCurrentSnackBar()
           ..clearSnackBars()
           ..showSnackBar(
-          SnackBar(
-            duration: const Duration(seconds: 3),
-            content: Text(
-              'Da luu nhanh ${result.parsedAmount?.toStringAsFixed(0) ?? ''} vao ${result.suggestedCategoryName ?? 'danh muc mac dinh'}',
+            SnackBar(
+              duration: const Duration(seconds: 3),
+              content: Text(
+                'Da luu nhanh ${result.parsedAmount?.toStringAsFixed(0) ?? ''} vao ${result.suggestedCategoryName ?? 'danh muc mac dinh'}',
+              ),
+              action: SnackBarAction(
+                label: 'Undo',
+                onPressed: () async {
+                  await _expenseService.deleteExpense(result.expense!.id);
+                },
+              ),
             ),
-            action: SnackBarAction(
-              label: 'Undo',
-              onPressed: () async {
-                await _expenseService.deleteExpense(result.expense!.id);
-              },
-            ),
-          ),
-        );
+          );
 
         unawaited(
           Future<void>.delayed(const Duration(seconds: 3), () {
@@ -338,34 +405,66 @@ class _AppShellScreenState extends State<AppShellScreen> {
     }
 
     final coupleId = _coupleId!;
+    final currentUserId = _currentUserId;
+    final viewerUserId = _viewerUserId;
+    if (currentUserId == null || viewerUserId == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    final viewerLabel = viewerUserId == currentUserId
+        ? (_selfLabel ?? 'Tôi')
+        : (_partnerLabel ?? 'Partner');
+
     final screens = [
       DashboardScreen(
         coupleId: coupleId,
+        viewerUserId: viewerUserId,
+        currentUserId: currentUserId,
+        viewerLabel: viewerLabel,
+        partnerUserId: _partnerUserId,
+        onToggleViewer: _toggleViewer,
         refreshSignal: _dashboardRefreshBus,
         onCreatePressed: () => _openQuickAddDialog(coupleId),
       ),
       ExpenseListScreen(
         coupleId: coupleId,
+        viewerUserId: viewerUserId,
+        currentUserId: currentUserId,
+        viewerLabel: viewerLabel,
+        partnerUserId: _partnerUserId,
+        onToggleViewer: _toggleViewer,
         refreshSignal: _expenseRefreshBus,
         onDataChanged: _markExpenseChanged,
       ),
       IncomeListScreen(
         coupleId: coupleId,
+        viewerUserId: viewerUserId,
+        currentUserId: currentUserId,
+        viewerLabel: viewerLabel,
+        partnerUserId: _partnerUserId,
+        onToggleViewer: _toggleViewer,
         refreshSignal: _incomeRefreshBus,
         onDataChanged: _markIncomeChanged,
       ),
       TransferListScreen(
         coupleId: coupleId,
+        viewerUserId: viewerUserId,
+        currentUserId: currentUserId,
+        viewerLabel: viewerLabel,
+        partnerUserId: _partnerUserId,
+        onToggleViewer: _toggleViewer,
         refreshSignal: _transferRefreshBus,
         onDataChanged: _markTransferChanged,
       ),
       FundListScreen(
         coupleId: coupleId,
         refreshSignal: _fundRefreshBus,
+        onDataChanged: _markFundChanged,
       ),
       DebtListScreen(
         coupleId: coupleId,
         refreshSignal: _debtRefreshBus,
+        onDataChanged: _markDebtChanged,
       ),
       SettingsScreen(coupleId: coupleId),
     ];

@@ -26,25 +26,21 @@ class AmountSuggestionChips extends StatelessWidget {
           return const SizedBox.shrink();
         }
 
-        const slotCount = 3;
-        const slotWidth = 86.0;
-        const slotSpacing = 4.0;
-        final displayed = List<int?>.generate(
-          slotCount,
-          (index) => index < options.length ? options[index] : null,
-        );
-
         return Padding(
           padding: const EdgeInsets.only(top: 6),
           child: SizedBox(
-            width: slotCount * slotWidth + (slotCount - 1) * slotSpacing,
-            child: Row(
-              children: [
-                for (int i = 0; i < displayed.length; i++) ...[
-                  if (i > 0) const SizedBox(width: slotSpacing),
-                  _buildSlot(displayed[i], slotWidth),
+            height: 30,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (int i = 0; i < options.length; i++) ...[
+                    if (i > 0) const SizedBox(width: 2),
+                    _buildSlot(options[i], 80),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         );
@@ -52,18 +48,14 @@ class AmountSuggestionChips extends StatelessWidget {
     );
   }
 
-  Widget _buildSlot(int? value, double width) {
-    if (value == null) {
-      return SizedBox(width: width, height: 30);
-    }
-
+  Widget _buildSlot(int value, double width) {
     return SizedBox(
       width: width,
       height: 30,
       child: OutlinedButton(
         style: OutlinedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 2),
-          visualDensity: VisualDensity.compact,
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          visualDensity: VisualDensity(horizontal: -2, vertical: -2),
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
         onPressed: () => onSelected(value),

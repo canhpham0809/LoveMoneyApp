@@ -5,8 +5,8 @@ class TransferModel extends Equatable {
   final String coupleId;
   final String fromUserId;
   final String toUserId;
-  final String fromWalletId;
-  final String toWalletId;
+  final String? fromWalletId;
+  final String? toWalletId;
   final double amount;
   final String? note;
   final String? linkedIncomeId;
@@ -22,8 +22,8 @@ class TransferModel extends Equatable {
     required this.coupleId,
     required this.fromUserId,
     required this.toUserId,
-    required this.fromWalletId,
-    required this.toWalletId,
+    this.fromWalletId,
+    this.toWalletId,
     required this.amount,
     this.note,
     this.linkedIncomeId,
@@ -41,8 +41,8 @@ class TransferModel extends Equatable {
       coupleId: json['couple_id'] as String,
       fromUserId: json['from_user_id'] as String,
       toUserId: json['to_user_id'] as String,
-      fromWalletId: json['from_wallet_id'] as String,
-      toWalletId: json['to_wallet_id'] as String,
+      fromWalletId: json['from_wallet_id'] as String?,
+      toWalletId: json['to_wallet_id'] as String?,
       amount: (json['amount'] as num).toDouble(),
       note: json['note'] as String?,
       linkedIncomeId: json['linked_income_id'] as String?,

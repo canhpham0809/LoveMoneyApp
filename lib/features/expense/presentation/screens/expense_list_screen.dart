@@ -13,12 +13,22 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ExpenseListScreen extends StatefulWidget {
   final String coupleId;
+  final String viewerUserId;
+  final String currentUserId;
+  final String viewerLabel;
+  final String? partnerUserId;
+  final VoidCallback? onToggleViewer;
   final ValueListenable<int>? refreshSignal;
   final VoidCallback? onDataChanged;
 
   const ExpenseListScreen({
     super.key,
     required this.coupleId,
+    required this.viewerUserId,
+    required this.currentUserId,
+    required this.viewerLabel,
+    this.partnerUserId,
+    this.onToggleViewer,
     this.refreshSignal,
     this.onDataChanged,
   });
@@ -49,6 +59,9 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
       oldWidget.refreshSignal?.removeListener(_onExternalRefresh);
       widget.refreshSignal?.addListener(_onExternalRefresh);
     }
+    if (oldWidget.viewerUserId != widget.viewerUserId) {
+      _load(showLoader: false);
+    }
   }
 
   @override
@@ -73,7 +86,10 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
     }
     try {
       final categories = await _service.getCategories(widget.coupleId);
-      final items = await _service.getExpenses(widget.coupleId);
+      final items = await _service.getExpenses(
+        widget.coupleId,
+        createdByUserId: widget.viewerUserId,
+      );
       items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       if (mounted) {
         setState(() {
@@ -173,7 +189,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
-                    value: selectedCategoryId,
+                    initialValue: selectedCategoryId,
                     decoration: const InputDecoration(
                       labelText: 'Danh muc',
                       border: OutlineInputBorder(),
@@ -311,7 +327,8 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
   Widget build(BuildContext context) {
     final grouped = <String, List<ExpenseModel>>{};
     for (final item in _items) {
-      final key = '${item.date.year}-${item.date.month.toString().padLeft(2, '0')}';
+      final key =
+          '${item.date.year}-${item.date.month.toString().padLeft(2, '0')}';
       grouped.putIfAbsent(key, () => <ExpenseModel>[]).add(item);
     }
 
@@ -319,14 +336,23 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
       appBar: AppBar(
         title: const Text('Chi tiêu'),
         actions: [
+          if (widget.partnerUserId != null)
+            IconButton(
+              onPressed: widget.onToggleViewer,
+              icon: Icon(
+                widget.viewerUserId == widget.currentUserId
+                    ? Icons.person
+                    : Icons.people_alt_outlined,
+              ),
+              tooltip: 'Đang xem: ${widget.viewerLabel}. Chạm để đổi.',
+            ),
           IconButton(
             onPressed: () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => ExpenseSearchFilterScreen(
-                    coupleId: widget.coupleId,
-                  ),
+                  builder: (_) =>
+                      ExpenseSearchFilterScreen(coupleId: widget.coupleId),
                 ),
               );
             },
@@ -353,7 +379,9 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
               ),
             )
           : _items.isEmpty
-          ? const Center(child: Text('Chưa có chi tiêu nào.'))
+          ? Center(
+              child: Text('Chưa có chi tiêu nào của ${widget.viewerLabel}.'),
+            )
           : ListView(
               children: [
                 for (final entry in grouped.entries) ...[

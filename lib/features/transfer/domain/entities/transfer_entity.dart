@@ -5,8 +5,8 @@ class TransferEntity extends Equatable {
   final String coupleId;
   final String fromUserId;
   final String toUserId;
-  final String fromWalletId;
-  final String toWalletId;
+  final String? fromWalletId;
+  final String? toWalletId;
   final double amount;
   final String? note;
   final String linkedIncomeId;
@@ -22,8 +22,8 @@ class TransferEntity extends Equatable {
     required this.coupleId,
     required this.fromUserId,
     required this.toUserId,
-    required this.fromWalletId,
-    required this.toWalletId,
+    this.fromWalletId,
+    this.toWalletId,
     required this.amount,
     this.note,
     required this.linkedIncomeId,
