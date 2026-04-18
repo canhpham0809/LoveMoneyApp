@@ -26,18 +26,32 @@ class TransactionList extends StatelessWidget {
       itemCount: transactions.length,
       itemBuilder: (context, idx) {
         final tx = transactions[idx];
-        final iconData = _iconForType(tx.type);
-        final color = _colorForType(tx.type);
-        final sign = (tx.type == TransactionType.income)
+        final isIncomingTransfer =
+            tx.type == TransactionType.transfer &&
+            tx.title.startsWith('Nhận từ');
+        final isOutgoingTransfer =
+            tx.type == TransactionType.transfer &&
+            tx.title.startsWith('Chuyển cho');
+        final iconData = _iconForType(tx.type, isIncomingTransfer);
+        final color = _colorForType(
+          tx.type,
+          isIncomingTransfer: isIncomingTransfer,
+          isOutgoingTransfer: isOutgoingTransfer,
+        );
+        final sign = tx.type == TransactionType.income
             ? '+'
-            : (tx.type == TransactionType.transfer ? '' : '-');
+            : tx.type == TransactionType.transfer
+            ? (isIncomingTransfer ? '+' : (isOutgoingTransfer ? '-' : ''))
+            : '-';
         return ListTile(
           leading: CircleAvatar(
             backgroundColor: color.withValues(alpha: 0.15),
             child: Icon(iconData, color: color),
           ),
           title: Text(tx.title),
-          subtitle: Text(formatDate(tx.date)),
+          subtitle: Text(
+            '${formatDate(tx.date)} · ${formatTimeUtcPlus7(tx.createdAt)}',
+          ),
           trailing: Text(
             '$sign${formatVnd(tx.amount.abs())}',
             style: TextStyle(color: color, fontWeight: FontWeight.bold),
@@ -47,7 +61,7 @@ class TransactionList extends StatelessWidget {
     );
   }
 
-  IconData _iconForType(TransactionType type) {
+  IconData _iconForType(TransactionType type, bool isIncomingTransfer) {
     switch (type) {
       case TransactionType.income:
         return Icons.arrow_downward;
@@ -58,11 +72,17 @@ class TransactionList extends StatelessWidget {
       case TransactionType.debt:
         return Icons.payments;
       case TransactionType.transfer:
-        return Icons.compare_arrows;
+        return isIncomingTransfer
+            ? Icons.south_west_rounded
+            : Icons.north_east_rounded;
     }
   }
 
-  Color _colorForType(TransactionType type) {
+  Color _colorForType(
+    TransactionType type, {
+    bool isIncomingTransfer = false,
+    bool isOutgoingTransfer = false,
+  }) {
     switch (type) {
       case TransactionType.income:
         return Colors.green;
@@ -73,6 +93,8 @@ class TransactionList extends StatelessWidget {
       case TransactionType.debt:
         return Colors.blue;
       case TransactionType.transfer:
+        if (isIncomingTransfer) return Colors.green;
+        if (isOutgoingTransfer) return Colors.red;
         return Colors.grey;
     }
   }

@@ -23,3 +23,14 @@ String formatDateTime(DateTime dateTime) {
   return '${formatDate(dateTime)} '
       '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
 }
+
+/// Convert a DateTime value to UTC+7 for consistent display.
+DateTime toUtcPlus7(DateTime value) {
+  final utcValue = value.isUtc ? value : value.toUtc();
+  return utcValue.add(const Duration(hours: 7));
+}
+
+/// Format only the time part (HH:mm) in UTC+7.
+String formatTimeUtcPlus7(DateTime value) {
+  return formatDateTime(toUtcPlus7(value)).split(' ').last;
+}

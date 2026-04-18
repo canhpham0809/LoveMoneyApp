@@ -2,11 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'package:flutter_app_demo/features/expense/data/models/category_model.dart';
-import 'package:flutter_app_demo/features/expense/data/services/expense_service.dart';
-import 'package:flutter_app_demo/features/income/data/models/income_source_model.dart';
-import 'package:flutter_app_demo/features/income/data/services/income_service.dart';
 import 'package:flutter_app_demo/features/settings/data/services/settings_service.dart';
+import 'package:flutter_app_demo/features/settings/presentation/screens/debt_type_management_screen.dart';
+import 'package:flutter_app_demo/features/settings/presentation/screens/expense_category_management_screen.dart';
+import 'package:flutter_app_demo/features/settings/presentation/screens/income_source_management_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   final String coupleId;
@@ -24,13 +23,9 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final _service = SettingsService();
-  final _expenseService = ExpenseService();
-  final _incomeService = IncomeService();
 
   Map<String, dynamic>? _couple;
   Map<String, dynamic>? _profile;
-  List<CategoryModel> _categories = [];
-  List<IncomeSourceModel> _incomeSources = [];
   bool _isLoading = true;
   String? _error;
 
@@ -40,31 +35,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _load();
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
+  Future<void> _load({bool showLoader = true}) async {
+    if (showLoader) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+    } else if (mounted) {
+      setState(() => _error = null);
+    }
+
     try {
       final results = await Future.wait<dynamic>([
         _service.getCoupleSettings(widget.coupleId),
         _service.getUserProfile(),
-        _expenseService.getCategories(widget.coupleId),
-        _incomeService.getIncomeSources(widget.coupleId),
       ]);
 
       if (mounted) {
         setState(() {
           _couple = results[0] as Map<String, dynamic>;
           _profile = results[1] as Map<String, dynamic>;
-          _categories = List<CategoryModel>.from(results[2] as List);
-          _incomeSources = List<IncomeSourceModel>.from(results[3] as List);
         });
       }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (showLoader && mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -124,312 +122,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  Future<void> _openCategoryDialog({CategoryModel? existing}) async {
-    final nameCtrl = TextEditingController(text: existing?.name ?? '');
-    final iconCtrl = TextEditingController(text: existing?.icon ?? 'label');
-    final colorCtrl = TextEditingController(text: existing?.color ?? '#6366F1');
-    var isActive = existing?.isActive ?? true;
-    var showInQuickAdd = existing?.showInQuickAdd ?? true;
-    var showInExpenseForm = existing?.showInExpenseForm ?? true;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          title: Text(
-            existing == null ? 'Thêm danh mục Chi' : 'Sửa danh mục Chi',
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Tên danh mục',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: iconCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Icon',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: colorCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Màu (hex)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                SwitchListTile(
-                  value: showInExpenseForm,
-                  onChanged: (v) => setDialogState(() => showInExpenseForm = v),
-                  title: const Text('Hiện khi tạo Chi tiêu'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-                SwitchListTile(
-                  value: showInQuickAdd,
-                  onChanged: (v) => setDialogState(() => showInQuickAdd = v),
-                  title: const Text('Hiện trong Quick Add'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-                SwitchListTile(
-                  value: isActive,
-                  onChanged: (v) => setDialogState(() => isActive = v),
-                  title: const Text('Kích hoạt'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).maybePop(false),
-              child: const Text('Huỷ'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).maybePop(true),
-              child: const Text('Lưu'),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (confirmed != true) return;
-
-    final name = nameCtrl.text.trim();
-    if (name.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Tên danh mục không được để trống.')),
-      );
-      return;
-    }
-
-    try {
-      if (existing == null) {
-        await _expenseService.createCategory(
-          coupleId: widget.coupleId,
-          name: name,
-          icon: iconCtrl.text.trim().isEmpty ? 'label' : iconCtrl.text.trim(),
-          color: colorCtrl.text.trim().isEmpty
-              ? '#6366F1'
-              : colorCtrl.text.trim(),
-          showInQuickAdd: showInQuickAdd,
-          showInExpenseForm: showInExpenseForm,
-        );
-      } else {
-        await _expenseService.updateCategory(
-          categoryId: existing.id,
-          name: name,
-          icon: iconCtrl.text.trim().isEmpty ? 'label' : iconCtrl.text.trim(),
-          color: colorCtrl.text.trim().isEmpty
-              ? '#6366F1'
-              : colorCtrl.text.trim(),
-          isActive: isActive,
-          showInQuickAdd: showInQuickAdd,
-          showInExpenseForm: showInExpenseForm,
-        );
-      }
-      await _load();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Không lưu được danh mục: $e')));
-    }
-  }
-
-  Future<void> _deleteCategory(CategoryModel item) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Xoá danh mục Chi'),
-        content: Text('Xác nhận xoá danh mục ${item.name}?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).maybePop(false),
-            child: const Text('Huỷ'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).maybePop(true),
-            child: const Text('Xoá'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-
-    try {
-      await _expenseService.deleteCategory(item.id);
-      await _load();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Không xoá được danh mục: $e')));
-    }
-  }
-
-  Future<void> _openIncomeSourceDialog({IncomeSourceModel? existing}) async {
-    final nameCtrl = TextEditingController(text: existing?.name ?? '');
-    final iconCtrl = TextEditingController(text: existing?.icon ?? 'payments');
-    final typeCtrl = TextEditingController(text: existing?.type ?? 'other');
-    var isActive = existing?.isActive ?? true;
-    var showInIncomeForm = existing?.showInIncomeForm ?? true;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          title: Text(
-            existing == null ? 'Thêm danh mục Thu' : 'Sửa danh mục Thu',
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Tên danh mục',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: iconCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Icon',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: typeCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Loại',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                SwitchListTile(
-                  value: showInIncomeForm,
-                  onChanged: (v) => setDialogState(() => showInIncomeForm = v),
-                  title: const Text('Hiện khi tạo Thu nhập'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-                SwitchListTile(
-                  value: isActive,
-                  onChanged: (v) => setDialogState(() => isActive = v),
-                  title: const Text('Kích hoạt'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).maybePop(false),
-              child: const Text('Huỷ'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).maybePop(true),
-              child: const Text('Lưu'),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (confirmed != true) return;
-
-    final name = nameCtrl.text.trim();
-    if (name.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Tên danh mục không được để trống.')),
-      );
-      return;
-    }
-
-    try {
-      if (existing == null) {
-        await _incomeService.createIncomeSource(
-          coupleId: widget.coupleId,
-          name: name,
-          icon: iconCtrl.text.trim().isEmpty
-              ? 'payments'
-              : iconCtrl.text.trim(),
-          type: typeCtrl.text.trim().isEmpty ? 'other' : typeCtrl.text.trim(),
-          showInIncomeForm: showInIncomeForm,
-        );
-      } else {
-        await _incomeService.updateIncomeSource(
-          sourceId: existing.id,
-          name: name,
-          icon: iconCtrl.text.trim().isEmpty
-              ? 'payments'
-              : iconCtrl.text.trim(),
-          type: typeCtrl.text.trim().isEmpty ? 'other' : typeCtrl.text.trim(),
-          isActive: isActive,
-          showInIncomeForm: showInIncomeForm,
-        );
-      }
-      await _load();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Không lưu được danh mục Thu: $e')),
-      );
-    }
-  }
-
-  Future<void> _deleteIncomeSource(IncomeSourceModel item) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Xoá danh mục Thu'),
-        content: Text('Xác nhận xoá danh mục ${item.name}?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).maybePop(false),
-            child: const Text('Huỷ'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).maybePop(true),
-            child: const Text('Xoá'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-
-    try {
-      await _incomeService.deleteIncomeSource(item.id);
-      await _load();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Không xoá được danh mục Thu: $e')),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Cài đặt'),
         actions: [
-          IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
+          IconButton(
+            onPressed: () => _load(showLoader: false),
+            icon: const Icon(Icons.refresh),
+          ),
         ],
       ),
       body: _isLoading
@@ -441,7 +143,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 children: [
                   Text(_error!, textAlign: TextAlign.center),
                   const SizedBox(height: 12),
-                  FilledButton(onPressed: _load, child: const Text('Thử lại')),
+                  FilledButton(
+                    onPressed: () => _load(showLoader: true),
+                    child: const Text('Thử lại'),
+                  ),
                 ],
               ),
             )
@@ -537,107 +242,71 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const SizedBox(height: 16),
                   ],
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          'Danh mục Chi',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      FilledButton.tonalIcon(
-                        onPressed: () => _openCategoryDialog(),
-                        icon: const Icon(Icons.add),
-                        label: const Text('Thêm'),
-                      ),
-                    ],
+                  const Text(
+                    'Danh mục',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
                   Card(
                     child: Column(
-                      children: _categories
-                          .map(
-                            (c) => ListTile(
-                              leading: const Icon(Icons.category_outlined),
-                              title: Text(c.name),
-                              subtitle: Text(
-                                'Quick Add: ${c.showInQuickAdd ? 'On' : 'Off'} · Tạo Chi: ${c.showInExpenseForm ? 'On' : 'Off'} · Active: ${c.isActive ? 'On' : 'Off'}',
-                              ),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.edit_outlined),
-                                    onPressed: () =>
-                                        _openCategoryDialog(existing: c),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(
-                                      Icons.delete_outline,
-                                      color: Colors.red,
-                                    ),
-                                    onPressed: () => _deleteCategory(c),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          )
-                          .toList(),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          'Danh mục Thu',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
+                      children: [
+                        ListTile(
+                          leading: const Icon(Icons.shopping_bag_outlined),
+                          title: const Text('Quản lý danh mục Chi'),
+                          subtitle: const Text(
+                            'Tạo/Sửa/Xoá danh mục Chi, chọn icon và màu.',
                           ),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ExpenseCategoryManagementScreen(
+                                  coupleId: widget.coupleId,
+                                ),
+                              ),
+                            );
+                          },
                         ),
-                      ),
-                      FilledButton.tonalIcon(
-                        onPressed: () => _openIncomeSourceDialog(),
-                        icon: const Icon(Icons.add),
-                        label: const Text('Thêm'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Card(
-                    child: Column(
-                      children: _incomeSources
-                          .map(
-                            (s) => ListTile(
-                              leading: const Icon(Icons.attach_money),
-                              title: Text(s.name),
-                              subtitle: Text(
-                                'Hiện tạo Thu: ${s.showInIncomeForm ? 'On' : 'Off'} · Active: ${s.isActive ? 'On' : 'Off'} · Type: ${s.type}',
+                        const Divider(height: 0),
+                        ListTile(
+                          leading: const Icon(Icons.attach_money),
+                          title: const Text('Quản lý danh mục Thu'),
+                          subtitle: const Text(
+                            'Tạo/Sửa/Xoá danh mục Thu và chọn icon.',
+                          ),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => IncomeSourceManagementScreen(
+                                  coupleId: widget.coupleId,
+                                ),
                               ),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.edit_outlined),
-                                    onPressed: () =>
-                                        _openIncomeSourceDialog(existing: s),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(
-                                      Icons.delete_outline,
-                                      color: Colors.red,
-                                    ),
-                                    onPressed: () => _deleteIncomeSource(s),
-                                  ),
-                                ],
+                            );
+                          },
+                        ),
+                        const Divider(height: 0),
+                        ListTile(
+                          leading: const Icon(Icons.credit_card_outlined),
+                          title: const Text('Quản lý danh mục Nợ'),
+                          subtitle: const Text(
+                            'Tạo/Sửa/Xoá danh mục Nợ dùng khi lập khoản nợ.',
+                          ),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => DebtTypeManagementScreen(
+                                  coupleId: widget.coupleId,
+                                ),
                               ),
-                            ),
-                          )
-                          .toList(),
+                            );
+                          },
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 16),

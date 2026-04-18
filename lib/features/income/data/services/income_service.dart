@@ -20,7 +20,8 @@ class IncomeService {
         .from('incomes')
         .select()
         .eq('couple_id', coupleId)
-        .eq('is_deleted', false);
+        .eq('is_deleted', false)
+        .or('is_from_transfer.is.null,is_from_transfer.eq.false');
 
     if (createdByUserId != null) {
       query = query.eq('user_id', createdByUserId);

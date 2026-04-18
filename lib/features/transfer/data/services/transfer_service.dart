@@ -15,7 +15,8 @@ class TransferService {
 
   Future<List<TransferModel>> getTransfers(
     String coupleId, {
-    String? createdByUserId,
+    String? viewerUserId,
+    String? partnerUserId,
   }) async {
     var query = _db
         .from('transfers')
@@ -23,8 +24,16 @@ class TransferService {
         .eq('couple_id', coupleId)
         .eq('is_deleted', false);
 
-    if (createdByUserId != null) {
-      query = query.eq('from_user_id', createdByUserId);
+    if (viewerUserId != null) {
+      if (partnerUserId != null) {
+        query = query.or(
+          'and(from_user_id.eq.$viewerUserId,to_user_id.eq.$partnerUserId),and(from_user_id.eq.$partnerUserId,to_user_id.eq.$viewerUserId)',
+        );
+      } else {
+        query = query.or(
+          'from_user_id.eq.$viewerUserId,to_user_id.eq.$viewerUserId',
+        );
+      }
     }
 
     final rows = await query.order('created_at', ascending: false);
@@ -84,9 +93,7 @@ class TransferService {
             'wallet_id': null,
             'income_source_id': incomeSourceId,
             'amount': amount,
-            'description': note?.trim().isEmpty == true
-                ? 'Transfer from partner'
-                : note,
+            'description': note?.trim().isEmpty == true ? null : note,
             'is_from_transfer': true,
             'linked_transfer_id': transferId,
             'date': transferDate,
@@ -195,9 +202,7 @@ class TransferService {
             'user_id': toUserId,
             'wallet_id': null,
             'amount': amount,
-            'description': note?.trim().isEmpty == true
-                ? 'Transfer from partner'
-                : note,
+            'description': note?.trim().isEmpty == true ? null : note,
             'date': transferDate,
           })
           .eq('id', linkedIncomeId);

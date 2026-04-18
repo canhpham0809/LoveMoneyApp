@@ -52,13 +52,62 @@ class _ExpenseFormResult {
   });
 }
 
+enum _ExpenseFeedKind { expense, fundContribution, debtPayment, transferSent }
+
+class _ExpenseFeedItem {
+  final String id;
+  final _ExpenseFeedKind kind;
+  final double amount;
+  final String title;
+  final DateTime date;
+  final DateTime createdAt;
+  final ExpenseModel? editableExpense;
+
+  const _ExpenseFeedItem({
+    required this.id,
+    required this.kind,
+    required this.amount,
+    required this.title,
+    required this.date,
+    required this.createdAt,
+    this.editableExpense,
+  });
+}
+
 class _ExpenseListScreenState extends State<ExpenseListScreen> {
   final _service = ExpenseService();
   final _walletService = WalletService();
   List<ExpenseModel> _items = [];
+  List<_ExpenseFeedItem> _externalItems = [];
   Map<String, String> _categoryNameById = {};
   bool _isLoading = true;
   String? _error;
+
+  Future<void> _showSwitchBackToSelfAlert() async {
+    final viewingLabel = widget.viewerLabel;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Khong the them khi dang xem $viewingLabel'),
+        content: Text(
+          'Ban dang o view $viewingLabel. Vui long quay ve view cua tai khoan dang nhap de them giao dich.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).maybePop(),
+            child: const Text('Dong'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(dialogContext).maybePop();
+              widget.onToggleViewer?.call();
+            },
+            child: const Text('Chuyen ve toi'),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -106,13 +155,16 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
           widget.coupleId,
           createdByUserId: widget.viewerUserId,
         ),
+        _loadExternalExpenseItems(),
       ]);
       final categories = List<CategoryModel>.from(results[0] as List);
       final items = List<ExpenseModel>.from(results[1] as List);
+      final externalItems = results[2] as List<_ExpenseFeedItem>;
       items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       if (mounted) {
         setState(() {
           _items = items;
+          _externalItems = externalItems;
           _categoryNameById = {for (final c in categories) c.id: c.name};
         });
       }
@@ -121,6 +173,143 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
     } finally {
       if (showLoader && mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Future<List<_ExpenseFeedItem>> _loadExternalExpenseItems() async {
+    final db = Supabase.instance.client;
+
+    var fundsQuery = db
+        .from('fund_contributions')
+        .select('id, amount, date, created_at, note, fund_id, user_id')
+        .eq('couple_id', widget.coupleId)
+        .eq('contribution_type', 'contribution')
+        .eq('is_deleted', false);
+    var debtQuery = db
+        .from('debt_payments')
+        .select(
+          'id, amount, date, created_at, note, debt_id, linked_income_id, updated_by',
+        )
+        .eq('couple_id', widget.coupleId)
+        .eq('is_deleted', false);
+    var transferQuery = db
+        .from('transfers')
+        .select('id, amount, date, created_at, note, from_user_id, to_user_id')
+        .eq('couple_id', widget.coupleId)
+        .eq('is_deleted', false);
+
+    if (widget.viewerUserId.isNotEmpty) {
+      fundsQuery = fundsQuery.eq('user_id', widget.viewerUserId);
+      debtQuery = debtQuery.eq('updated_by', widget.viewerUserId);
+      transferQuery = transferQuery.eq('from_user_id', widget.viewerUserId);
+    }
+
+    final futures = await Future.wait<dynamic>([
+      fundsQuery.order('created_at', ascending: false),
+      debtQuery.order('created_at', ascending: false),
+      transferQuery.order('created_at', ascending: false),
+      db
+          .from('funds')
+          .select('id, name')
+          .eq('couple_id', widget.coupleId)
+          .eq('is_deleted', false),
+      db
+          .from('debts')
+          .select('id, name')
+          .eq('couple_id', widget.coupleId)
+          .eq('is_deleted', false),
+    ]);
+
+    final funds = List<Map<String, dynamic>>.from(futures[0] as List);
+    final payments = List<Map<String, dynamic>>.from(futures[1] as List);
+    final transfers = List<Map<String, dynamic>>.from(futures[2] as List);
+    final fundNameById = {
+      for (final row in List<Map<String, dynamic>>.from(futures[3] as List))
+        row['id'] as String: row['name'] as String,
+    };
+    final debtNameById = {
+      for (final row in List<Map<String, dynamic>>.from(futures[4] as List))
+        row['id'] as String: row['name'] as String,
+    };
+
+    final userIds = <String>{
+      ...transfers.map((row) => row['from_user_id']).whereType<String>(),
+      ...transfers.map((row) => row['to_user_id']).whereType<String>(),
+    };
+    final users = userIds.isEmpty
+        ? <Map<String, dynamic>>[]
+        : List<Map<String, dynamic>>.from(
+            await db
+                .from('users')
+                .select('id, display_name, email')
+                .inFilter('id', userIds.toList()),
+          );
+    final userNameById = {
+      for (final row in users)
+        row['id'] as String:
+            ((row['display_name'] as String?)?.trim().isNotEmpty == true
+            ? (row['display_name'] as String).trim()
+            : ((row['email'] as String?) ?? 'Người kia')),
+    };
+
+    final externalItems = <_ExpenseFeedItem>[];
+
+    for (final row in funds) {
+      final fundId = row['fund_id'] as String?;
+      final fundName =
+          (fundId != null ? fundNameById[fundId] : null) ?? 'Quỹ tiết kiệm';
+      final note = (row['note'] as String?)?.trim();
+      externalItems.add(
+        _ExpenseFeedItem(
+          id: 'fund-${row['id']}',
+          kind: _ExpenseFeedKind.fundContribution,
+          amount: (row['amount'] as num).toDouble(),
+          title: (note != null && note.isNotEmpty) ? note : fundName,
+          date: DateTime.parse(row['date'] as String),
+          createdAt: DateTime.parse(row['created_at'] as String),
+        ),
+      );
+    }
+
+    for (final row in payments) {
+      if (row['linked_income_id'] != null) {
+        continue;
+      }
+      final debtId = row['debt_id'] as String?;
+      final debtName = (debtId != null ? debtNameById[debtId] : null) ?? 'Nợ';
+      final note = (row['note'] as String?)?.trim();
+      externalItems.add(
+        _ExpenseFeedItem(
+          id: 'debt-${row['id']}',
+          kind: _ExpenseFeedKind.debtPayment,
+          amount: (row['amount'] as num).toDouble(),
+          title: (note != null && note.isNotEmpty) ? note : debtName,
+          date: DateTime.parse(row['date'] as String),
+          createdAt: DateTime.parse(row['created_at'] as String),
+        ),
+      );
+    }
+
+    for (final row in transfers) {
+      final toUserId = row['to_user_id'] as String?;
+      final partnerName =
+          (toUserId != null ? userNameById[toUserId] : null) ?? 'Người kia';
+      final note = (row['note'] as String?)?.trim();
+      externalItems.add(
+        _ExpenseFeedItem(
+          id: 'transfer-${row['id']}',
+          kind: _ExpenseFeedKind.transferSent,
+          amount: (row['amount'] as num).toDouble(),
+          title: (note != null && note.isNotEmpty)
+              ? note
+              : 'Chuyển cho $partnerName',
+          date: DateTime.parse(row['date'] as String),
+          createdAt: DateTime.parse(row['created_at'] as String),
+        ),
+      );
+    }
+
+    externalItems.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return externalItems;
   }
 
   Future<void> _delete(ExpenseModel item) async {
@@ -458,11 +647,32 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final grouped = <String, List<ExpenseModel>>{};
-    for (final item in _items) {
+    final mergedItems = <_ExpenseFeedItem>[
+      ..._items.map(
+        (expense) => _ExpenseFeedItem(
+          id: expense.id,
+          kind: _ExpenseFeedKind.expense,
+          amount: expense.amount,
+          title:
+              (expense.description != null &&
+                  expense.description!.trim().isNotEmpty)
+              ? expense.description!
+              : (_categoryNameById[expense.categoryId] ??
+                    expense.categoryName ??
+                    'Giao dịch'),
+          date: expense.date,
+          createdAt: expense.createdAt,
+          editableExpense: expense,
+        ),
+      ),
+      ..._externalItems,
+    ]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    final grouped = <String, List<_ExpenseFeedItem>>{};
+    for (final item in mergedItems) {
       final key =
           '${item.date.year}-${item.date.month.toString().padLeft(2, '0')}';
-      grouped.putIfAbsent(key, () => <ExpenseModel>[]).add(item);
+      grouped.putIfAbsent(key, () => <_ExpenseFeedItem>[]).add(item);
     }
 
     return Scaffold(
@@ -511,25 +721,79 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                 ],
               ),
             )
-          : _items.isEmpty
+          : mergedItems.isEmpty
           ? Center(
               child: Text('Chưa có chi tiêu nào của ${widget.viewerLabel}.'),
             )
           : ListView(
               children: [
                 for (final entry in grouped.entries) ...[
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                    child: Text(
-                      'Thang ${entry.key.split('-')[1]}/${entry.key.split('-')[0]}',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                  Builder(
+                    builder: (context) {
+                      final monthTotal = entry.value.fold<double>(
+                        0,
+                        (sum, row) => sum + row.amount,
+                      );
+                      return Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Tháng ${entry.key.split('-')[1]}/${entry.key.split('-')[0]}',
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            Text(
+                              formatVnd(monthTotal),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
                   ...entry.value.map((item) {
+                    if (item.kind != _ExpenseFeedKind.expense ||
+                        item.editableExpense == null) {
+                      final icon = switch (item.kind) {
+                        _ExpenseFeedKind.fundContribution =>
+                          Icons.savings_outlined,
+                        _ExpenseFeedKind.debtPayment => Icons.credit_card,
+                        _ExpenseFeedKind.transferSent => Icons.swap_horiz,
+                        _ExpenseFeedKind.expense => Icons.shopping_bag_outlined,
+                      };
+                      return ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: Theme.of(
+                            context,
+                          ).colorScheme.error.withOpacity(0.12),
+                          child: Icon(
+                            icon,
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                        title: Text(item.title),
+                        subtitle: Text(
+                          '${formatDate(item.date)} · ${formatTimeUtcPlus7(item.createdAt)}',
+                        ),
+                        trailing: Text(
+                          formatVnd(item.amount),
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      );
+                    }
+
+                    final expense = item.editableExpense!;
                     return Dismissible(
-                      key: ValueKey(item.id),
+                      key: ValueKey(expense.id),
                       direction: DismissDirection.endToStart,
                       background: Container(
                         color: Colors.red,
@@ -537,23 +801,16 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: const Icon(Icons.delete, color: Colors.white),
                       ),
-                      confirmDismiss: (_) => _confirmDeleteExpense(item),
-                      onDismissed: (_) => _delete(item),
+                      confirmDismiss: (_) => _confirmDeleteExpense(expense),
+                      onDismissed: (_) => _delete(expense),
                       child: ListTile(
                         leading: const CircleAvatar(
                           child: Icon(Icons.shopping_bag_outlined),
                         ),
-                        onLongPress: () => _showItemActions(item),
-                        title: Text(
-                          (item.description != null &&
-                                  item.description!.trim().isNotEmpty)
-                              ? item.description!
-                              : (_categoryNameById[item.categoryId] ??
-                                    item.categoryName ??
-                                    'Giao dich'),
-                        ),
+                        onLongPress: () => _showItemActions(expense),
+                        title: Text(item.title),
                         subtitle: Text(
-                          '${formatDate(item.date)} · ${formatDateTime(item.createdAt).split(' ').last}',
+                          '${formatDate(item.date)} · ${formatTimeUtcPlus7(item.createdAt)}',
                         ),
                         trailing: Text(
                           formatVnd(item.amount),
@@ -570,6 +827,10 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
             ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
+          if (widget.viewerUserId != widget.currentUserId) {
+            await _showSwitchBackToSelfAlert();
+            return;
+          }
           await _openExpensePopup();
         },
         child: const Icon(Icons.add),

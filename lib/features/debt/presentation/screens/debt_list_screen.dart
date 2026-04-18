@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -26,11 +28,118 @@ class DebtListScreen extends StatefulWidget {
   State<DebtListScreen> createState() => _DebtListScreenState();
 }
 
+class _DebtFormPayload {
+  final String debtTypeId;
+  final String debtKind;
+  final bool recordToIncome;
+  final String name;
+  final double originalAmount;
+  final String creditorName;
+  final DateTime startDate;
+  final DateTime? dueDate;
+  final String? note;
+
+  const _DebtFormPayload({
+    required this.debtTypeId,
+    required this.debtKind,
+    required this.recordToIncome,
+    required this.name,
+    required this.originalAmount,
+    required this.creditorName,
+    required this.startDate,
+    required this.dueDate,
+    required this.note,
+  });
+}
+
 class _DebtListScreenState extends State<DebtListScreen> {
   final _service = DebtService();
   List<DebtModel> _items = [];
+  List<String> _manualOrderIds = [];
+  String _selectedDebtKind = 'debt';
   bool _isLoading = true;
   String? _error;
+
+  List<DebtModel> get _filteredItems =>
+      _items.where((item) => item.debtKind == _selectedDebtKind).toList();
+
+  void _sortDebtsByDueDate(List<DebtModel> items) {
+    items.sort((a, b) {
+      if (a.dueDate == null && b.dueDate == null) return 0;
+      if (a.dueDate == null) return 1;
+      if (b.dueDate == null) return -1;
+      return a.dueDate!.compareTo(b.dueDate!);
+    });
+  }
+
+  List<DebtModel> _applyDebtOrder(List<DebtModel> items) {
+    final nextItems = List<DebtModel>.from(items);
+    if (_manualOrderIds.isEmpty) {
+      _sortDebtsByDueDate(nextItems);
+      _manualOrderIds = nextItems.map((e) => e.id).toList();
+      return nextItems;
+    }
+
+    final byId = {for (final item in nextItems) item.id: item};
+    final ordered = <DebtModel>[];
+    for (final id in _manualOrderIds) {
+      final item = byId.remove(id);
+      if (item != null) {
+        ordered.add(item);
+      }
+    }
+    final rest = byId.values.toList();
+    _sortDebtsByDueDate(rest);
+    ordered.addAll(rest);
+    _manualOrderIds = ordered.map((e) => e.id).toList();
+    return ordered;
+  }
+
+  void _onReorder(int oldIndex, int newIndex) {
+    final visibleItems = _filteredItems;
+    if (visibleItems.length < 2) return;
+
+    final previousOrder = List<String>.from(_manualOrderIds);
+    setState(() {
+      if (newIndex > oldIndex) {
+        newIndex -= 1;
+      }
+
+      final visibleIds = visibleItems.map((e) => e.id).toList();
+      final movedId = visibleIds.removeAt(oldIndex);
+      visibleIds.insert(newIndex, movedId);
+
+      final reorderedVisibleItems = visibleIds
+          .map((id) => visibleItems.firstWhere((item) => item.id == id))
+          .toList();
+
+      var visibleIndex = 0;
+      _items = _items.map((item) {
+        if (item.debtKind == _selectedDebtKind) {
+          return reorderedVisibleItems[visibleIndex++];
+        }
+        return item;
+      }).toList();
+
+      _manualOrderIds = _items.map((e) => e.id).toList();
+    });
+    unawaited(_persistDebtOrder(previousOrder));
+  }
+
+  Future<void> _persistDebtOrder(List<String> previousOrder) async {
+    try {
+      await _service.updateDebtOrder(_items.map((e) => e.id).toList());
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _manualOrderIds = previousOrder;
+        _items = _applyDebtOrder(_items);
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Khong luu duoc thu tu no: $e')));
+    }
+  }
 
   @override
   void initState() {
@@ -77,12 +186,13 @@ class _DebtListScreenState extends State<DebtListScreen> {
       existing?.debtTypeId ?? (debtTypes.first['id'] as String),
     );
     final selectedDebtKind = ValueNotifier<String>(
-      existing?.debtKind ?? 'debt',
+      existing?.debtKind ?? _selectedDebtKind,
     );
     final shouldRecordToIncome = ValueNotifier<bool>(
       existing?.recordToIncome ?? false,
     );
     DateTime? dueDate = existing?.dueDate;
+    var isClosingDialog = false;
     if (existing != null) {
       personCtrl.text = existing.name;
       amountCtrl.text = formatAmountInput(
@@ -91,7 +201,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
       noteCtrl.text = existing.note ?? '';
     }
 
-    final saved = await showDialog<bool>(
+    final payload = await showDialog<_DebtFormPayload>(
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
@@ -108,7 +218,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
                       border: OutlineInputBorder(),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   TextField(
                     controller: amountCtrl,
                     keyboardType: TextInputType.number,
@@ -127,52 +237,100 @@ class _DebtListScreenState extends State<DebtListScreen> {
                       amountCtrl.text = formatAmountInput(value.toString());
                     },
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   ValueListenableBuilder<String>(
                     valueListenable: selectedDebtTypeId,
-                    builder: (_, value, _) => DropdownButtonFormField<String>(
-                      initialValue: value,
-                      decoration: const InputDecoration(
-                        labelText: 'Loai no',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: debtTypes
-                          .map(
-                            (item) => DropdownMenuItem<String>(
-                              value: item['id'] as String,
-                              child: Text(item['name'] as String),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (v) {
-                        if (v != null) selectedDebtTypeId.value = v;
-                      },
+                    builder: (_, value, _) => Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text('Loai no'),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: debtTypes
+                              .map(
+                                (item) => ChoiceChip(
+                                  label: Text(
+                                    item['name'] as String,
+                                    style: const TextStyle(fontSize: 10),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 0,
+                                  ),
+                                  visualDensity: const VisualDensity(
+                                    horizontal: -4,
+                                    vertical: -4,
+                                  ),
+                                  materialTapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                  showCheckmark: false,
+                                  selected: value == item['id'] as String,
+                                  onSelected: (_) {
+                                    selectedDebtTypeId.value =
+                                        item['id'] as String;
+                                  },
+                                ),
+                              )
+                              .toList(),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   ValueListenableBuilder<String>(
                     valueListenable: selectedDebtKind,
-                    builder: (_, value, child) =>
-                        DropdownButtonFormField<String>(
-                          initialValue: value,
-                          decoration: const InputDecoration(
-                            labelText: 'Phan loai',
-                            border: OutlineInputBorder(),
+                    builder: (_, value, __) => Row(
+                      children: [
+                        GestureDetector(
+                          onTap: () => selectedDebtKind.value = 'debt',
+                          child: Row(
+                            children: [
+                              Radio<String>(
+                                value: 'debt',
+                                groupValue: value,
+                                visualDensity: const VisualDensity(
+                                  horizontal: -4,
+                                  vertical: -4,
+                                ),
+                                materialTapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap,
+                                onChanged: (v) {
+                                  if (v != null) selectedDebtKind.value = v;
+                                },
+                              ),
+                              const Text('Nợ'),
+                            ],
                           ),
-                          items: const [
-                            DropdownMenuItem(
-                              value: 'debt',
-                              child: Text('No (ban dang no)'),
-                            ),
-                            DropdownMenuItem(
-                              value: 'lend',
-                              child: Text('Cho muon no'),
-                            ),
-                          ],
-                          onChanged: (v) {
-                            if (v != null) selectedDebtKind.value = v;
-                          },
                         ),
+                        const SizedBox(width: 16),
+                        GestureDetector(
+                          onTap: () => selectedDebtKind.value = 'lend',
+                          child: Row(
+                            children: [
+                              Radio<String>(
+                                value: 'lend',
+                                groupValue: value,
+                                visualDensity: const VisualDensity(
+                                  horizontal: -4,
+                                  vertical: -4,
+                                ),
+                                materialTapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap,
+                                onChanged: (v) {
+                                  if (v != null) selectedDebtKind.value = v;
+                                },
+                              ),
+                              const Text('Cho mượn'),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 8),
                   ValueListenableBuilder<String>(
@@ -180,32 +338,34 @@ class _DebtListScreenState extends State<DebtListScreen> {
                     builder: (_, debtKind, child) {
                       if (debtKind != 'debt') {
                         return const ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: Icon(Icons.info_outline),
-                          title: Text(
-                            'Cho muon se phat sinh giao dich chi tieu.',
+                          dense: true,
+                          visualDensity: VisualDensity(
+                            horizontal: -2,
+                            vertical: -2,
                           ),
+                          contentPadding: EdgeInsets.zero,
+                          title: Text('Cho muon se phat sinh giao dich.'),
                         );
                       }
                       return ValueListenableBuilder<bool>(
                         valueListenable: shouldRecordToIncome,
                         builder: (_, value, child) => CheckboxListTile(
+                          dense: true,
+                          visualDensity: const VisualDensity(
+                            horizontal: -2,
+                            vertical: -2,
+                          ),
                           contentPadding: EdgeInsets.zero,
                           value: value,
                           onChanged: (v) {
                             shouldRecordToIncome.value = v ?? false;
                           },
-                          title: const Text(
-                            'Ghi nhan vao thu nhap khi khoi tao',
-                          ),
-                          subtitle: const Text(
-                            'Bat khi khoan no la tien thuc nhan. Tat neu la tai san khac.',
-                          ),
+                          title: const Text('Ghi nhan vao chi'),
                         ),
                       );
                     },
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   TextField(
                     controller: noteCtrl,
                     decoration: const InputDecoration(
@@ -213,7 +373,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
                       border: OutlineInputBorder(),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   OutlinedButton.icon(
                     onPressed: () async {
                       final picked = await showDatePicker(
@@ -238,11 +398,19 @@ class _DebtListScreenState extends State<DebtListScreen> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(dialogContext, false),
+                onPressed: () {
+                  if (isClosingDialog) return;
+                  isClosingDialog = true;
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!dialogContext.mounted) return;
+                    Navigator.of(dialogContext).maybePop();
+                  });
+                },
                 child: const Text('Huy'),
               ),
               FilledButton(
                 onPressed: () async {
+                  if (isClosingDialog) return;
                   final amount = parseAmountInput(amountCtrl.text.trim());
                   if (personCtrl.text.trim().isEmpty ||
                       amount == null ||
@@ -256,52 +424,34 @@ class _DebtListScreenState extends State<DebtListScreen> {
                   }
                   final uid = Supabase.instance.client.auth.currentUser?.id;
                   if (uid == null) {
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
                       const SnackBar(
                         content: Text('Khong tim thay phien dang nhap.'),
                       ),
                     );
                     return;
                   }
-                  if (existing == null) {
-                    await _service.createDebt(
-                      coupleId: widget.coupleId,
-                      userId: uid,
-                      debtTypeId: selectedDebtTypeId.value,
-                      debtKind: selectedDebtKind.value,
-                      recordToIncome: selectedDebtKind.value == 'debt'
-                          ? shouldRecordToIncome.value
-                          : false,
-                      name: personCtrl.text.trim(),
-                      originalAmount: amount,
-                      creditorName: personCtrl.text.trim(),
-                      startDate: DateTime.now(),
-                      dueDate: dueDate,
-                      note: noteCtrl.text.trim().isEmpty
-                          ? null
-                          : noteCtrl.text.trim(),
+                  isClosingDialog = true;
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!dialogContext.mounted) return;
+                    Navigator.of(dialogContext).maybePop(
+                      _DebtFormPayload(
+                        debtTypeId: selectedDebtTypeId.value,
+                        debtKind: selectedDebtKind.value,
+                        recordToIncome: selectedDebtKind.value == 'debt'
+                            ? shouldRecordToIncome.value
+                            : false,
+                        name: personCtrl.text.trim(),
+                        originalAmount: amount,
+                        creditorName: personCtrl.text.trim(),
+                        startDate: existing?.startDate ?? DateTime.now(),
+                        dueDate: dueDate,
+                        note: noteCtrl.text.trim().isEmpty
+                            ? null
+                            : noteCtrl.text.trim(),
+                      ),
                     );
-                  } else {
-                    await _service.updateDebt(
-                      debtId: existing.id,
-                      debtTypeId: selectedDebtTypeId.value,
-                      debtKind: selectedDebtKind.value,
-                      recordToIncome: selectedDebtKind.value == 'debt'
-                          ? shouldRecordToIncome.value
-                          : false,
-                      name: personCtrl.text.trim(),
-                      originalAmount: amount,
-                      creditorName: personCtrl.text.trim(),
-                      startDate: existing.startDate,
-                      dueDate: dueDate,
-                      note: noteCtrl.text.trim().isEmpty
-                          ? null
-                          : noteCtrl.text.trim(),
-                    );
-                  }
-                  if (dialogContext.mounted) {
-                    Navigator.pop(dialogContext, true);
-                  }
+                  });
                 },
                 child: const Text('Luu'),
               ),
@@ -315,9 +465,68 @@ class _DebtListScreenState extends State<DebtListScreen> {
     selectedDebtKind.dispose();
     shouldRecordToIncome.dispose();
 
-    if (saved == true) {
-      await _load();
+    if (payload == null) return;
+
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    if (uid == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Khong tim thay phien dang nhap.')),
+      );
+      return;
+    }
+
+    try {
+      if (existing == null) {
+        final created = await _service.createDebt(
+          coupleId: widget.coupleId,
+          userId: uid,
+          debtTypeId: payload.debtTypeId,
+          debtKind: payload.debtKind,
+          recordToIncome: payload.recordToIncome,
+          name: payload.name,
+          originalAmount: payload.originalAmount,
+          creditorName: payload.creditorName,
+          startDate: payload.startDate,
+          dueDate: payload.dueDate,
+          note: payload.note,
+        );
+        if (!mounted) return;
+        setState(() {
+          _items.insert(0, created);
+          _manualOrderIds.remove(created.id);
+          _manualOrderIds.insert(0, created.id);
+          _items = _applyDebtOrder(_items);
+        });
+      } else {
+        await _service.updateDebt(
+          debtId: existing.id,
+          debtTypeId: payload.debtTypeId,
+          debtKind: payload.debtKind,
+          recordToIncome: payload.recordToIncome,
+          name: payload.name,
+          originalAmount: payload.originalAmount,
+          creditorName: payload.creditorName,
+          startDate: payload.startDate,
+          dueDate: payload.dueDate,
+          note: payload.note,
+        );
+        final refreshed = await _service.getDebtById(existing.id);
+        if (!mounted) return;
+        setState(() {
+          final idx = _items.indexWhere((e) => e.id == existing.id);
+          if (idx >= 0) {
+            _items[idx] = refreshed;
+          }
+          _items = _applyDebtOrder(_items);
+        });
+      }
       widget.onDataChanged?.call();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Loi luu: $e')));
     }
   }
 
@@ -329,11 +538,15 @@ class _DebtListScreenState extends State<DebtListScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
+              dense: true,
+              visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
               leading: const Icon(Icons.edit_outlined),
               title: const Text('Edit'),
               onTap: () => Navigator.pop(sheetContext, 'edit'),
             ),
             ListTile(
+              dense: true,
+              visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
               leading: const Icon(Icons.delete_outline, color: Colors.red),
               title: const Text('Delete'),
               onTap: () => Navigator.pop(sheetContext, 'delete'),
@@ -384,6 +597,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
       if (mounted) {
         setState(() {
           _items.removeWhere((d) => d.id == item.id);
+          _manualOrderIds.remove(item.id);
         });
       }
       widget.onDataChanged?.call();
@@ -397,7 +611,11 @@ class _DebtListScreenState extends State<DebtListScreen> {
     });
     try {
       final items = await _service.getDebts(widget.coupleId);
-      if (mounted) setState(() => _items = items);
+      if (mounted) {
+        setState(() {
+          _items = _applyDebtOrder(items);
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
@@ -407,6 +625,14 @@ class _DebtListScreenState extends State<DebtListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final visibleItems = _filteredItems;
+    final totalDebtOwed = _items
+        .where((item) => item.debtKind == 'debt')
+        .fold<double>(0, (sum, item) => sum + item.remainingAmount);
+    final totalLentOut = _items
+        .where((item) => item.debtKind == 'lend')
+        .fold<double>(0, (sum, item) => sum + item.remainingAmount);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Khoan no va cho muon'),
@@ -422,97 +648,216 @@ class _DebtListScreenState extends State<DebtListScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(_error!, textAlign: TextAlign.center),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   FilledButton(onPressed: _load, child: const Text('Thử lại')),
                 ],
               ),
             )
-          : _items.isEmpty
-          ? const Center(child: Text('Chưa có khoản nợ nào.'))
-          : ListView.builder(
-              itemCount: _items.length,
-              itemBuilder: (context, index) {
-                final item = _items[index];
-                final isLend = item.debtKind == 'lend';
-                final pct = item.originalAmount > 0
-                    ? 1 - (item.remainingAmount / item.originalAmount)
-                    : 1.0;
-                return Card(
-                  margin: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  child: InkWell(
-                    onTap: () async {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => DebtDetailScreen(
-                            coupleId: widget.coupleId,
-                            debtId: item.id,
-                          ),
-                        ),
-                      );
-                      if (mounted) {
-                        await _load();
-                        widget.onDataChanged?.call();
-                      }
-                    },
-                    onLongPress: () => _showDebtActions(item),
-                    borderRadius: BorderRadius.circular(12),
-                    child: ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: item.isClosed
-                            ? Colors.green
-                            : (isLend ? Colors.blue : Colors.orange),
-                        child: Icon(
-                          item.isClosed
-                              ? Icons.check
-                              : (isLend
-                                    ? Icons.account_balance_wallet
-                                    : Icons.credit_card),
-                          color: Colors.white,
+          : Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _DebtSummaryCard(
+                          title: 'Tổng tiền đang nợ',
+                          amountText: formatVnd(totalDebtOwed),
+                          selected: _selectedDebtKind == 'debt',
+                          onTap: () {
+                            setState(() => _selectedDebtKind = 'debt');
+                          },
                         ),
                       ),
-                      title: Text(item.name),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            isLend ? 'Loai: Cho muon no' : 'Loai: Khoan no',
-                            style: TextStyle(
-                              color: isLend ? Colors.blue : Colors.orange,
-                              fontWeight: FontWeight.w600,
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _DebtSummaryCard(
+                          title: 'Tổng tiền cho nợ',
+                          amountText: formatVnd(totalLentOut),
+                          selected: _selectedDebtKind == 'lend',
+                          onTap: () {
+                            setState(() => _selectedDebtKind = 'lend');
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (visibleItems.isEmpty)
+                  Expanded(
+                    child: Center(
+                      child: Text(
+                        _selectedDebtKind == 'debt'
+                            ? 'Chưa có khoản đang nợ nào.'
+                            : 'Chưa có khoản cho nợ nào.',
+                      ),
+                    ),
+                  )
+                else
+                  Expanded(
+                    child: ReorderableListView.builder(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      itemCount: visibleItems.length,
+                      onReorder: _onReorder,
+                      buildDefaultDragHandles: false,
+                      itemBuilder: (context, index) {
+                        final item = visibleItems[index];
+                        final isLend = item.debtKind == 'lend';
+                        final pct = item.originalAmount > 0
+                            ? 1 - (item.remainingAmount / item.originalAmount)
+                            : 1.0;
+                        return Card(
+                          key: ValueKey(item.id),
+                          margin: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          child: InkWell(
+                            onTap: () async {
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => DebtDetailScreen(
+                                    coupleId: widget.coupleId,
+                                    debtId: item.id,
+                                  ),
+                                ),
+                              );
+                              if (mounted) {
+                                await _load();
+                                widget.onDataChanged?.call();
+                              }
+                            },
+                            onLongPress: () => _showDebtActions(item),
+                            borderRadius: BorderRadius.circular(12),
+                            child: ListTile(
+                              dense: true,
+                              visualDensity: const VisualDensity(
+                                horizontal: -1,
+                                vertical: -1,
+                              ),
+                              leading: CircleAvatar(
+                                backgroundColor: item.isClosed
+                                    ? Colors.green
+                                    : (isLend ? Colors.blue : Colors.orange),
+                                child: Icon(
+                                  item.isClosed
+                                      ? Icons.check
+                                      : (isLend
+                                            ? Icons.account_balance_wallet
+                                            : Icons.credit_card),
+                                  color: Colors.white,
+                                ),
+                              ),
+                              title: Text(item.name),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    isLend ? 'Cho muon' : 'Dang no',
+                                    style: TextStyle(
+                                      color: isLend
+                                          ? Colors.blue
+                                          : Colors.orange,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  LinearProgressIndicator(
+                                    value: pct.clamp(0.0, 1.0),
+                                    backgroundColor: Colors.grey[200],
+                                    color: item.isClosed
+                                        ? Colors.green
+                                        : (isLend
+                                              ? Colors.blue
+                                              : Colors.orange),
+                                  ),
+                                  Text(
+                                    'Con lai: ${formatVnd(item.remainingAmount)}'
+                                    '${item.dueDate != null ? '\nHan: ${formatDate(item.dueDate!)}' : ''}',
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                ],
+                              ),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    formatVnd(item.originalAmount),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  ReorderableDragStartListener(
+                                    index: index,
+                                    child: const Padding(
+                                      padding: EdgeInsets.only(left: 8),
+                                      child: Icon(Icons.drag_indicator),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              isThreeLine: true,
                             ),
                           ),
-                          Text(item.creditorName),
-                          LinearProgressIndicator(
-                            value: pct.clamp(0.0, 1.0),
-                            backgroundColor: Colors.grey[200],
-                            color: item.isClosed
-                                ? Colors.green
-                                : (isLend ? Colors.blue : Colors.orange),
-                          ),
-                          Text(
-                            'Con lai: ${formatVnd(item.remainingAmount)}'
-                            '${item.dueDate != null ? '\nHan: ${formatDate(item.dueDate!)}' : ''}',
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ],
-                      ),
-                      trailing: Text(
-                        formatVnd(item.originalAmount),
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      isThreeLine: true,
+                        );
+                      },
                     ),
                   ),
-                );
-              },
+              ],
             ),
       floatingActionButton: FloatingActionButton(
         onPressed: _openDebtPopup,
         child: const Icon(Icons.add),
+      ),
+    );
+  }
+}
+
+class _DebtSummaryCard extends StatelessWidget {
+  final String title;
+  final String amountText;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _DebtSummaryCard({
+    required this.title,
+    required this.amountText,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final selectedColor = theme.colorScheme.primaryContainer;
+    final selectedBorder = theme.colorScheme.primary;
+
+    return Card(
+      color: selected ? selectedColor : null,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: selected ? selectedBorder : Colors.transparent,
+          width: 1.2,
+        ),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(fontSize: 12)),
+              const SizedBox(height: 6),
+              Text(
+                amountText,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -28,8 +30,64 @@ class FundListScreen extends StatefulWidget {
 class _FundListScreenState extends State<FundListScreen> {
   final _service = FundService();
   List<FundModel> _items = [];
+  List<String> _manualOrderIds = [];
   bool _isLoading = true;
   String? _error;
+
+  void _sortFundsByName(List<FundModel> items) {
+    items.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+  }
+
+  List<FundModel> _applyFundOrder(List<FundModel> items) {
+    final nextItems = List<FundModel>.from(items);
+    if (_manualOrderIds.isEmpty) {
+      _sortFundsByName(nextItems);
+      _manualOrderIds = nextItems.map((e) => e.id).toList();
+      return nextItems;
+    }
+
+    final byId = {for (final item in nextItems) item.id: item};
+    final ordered = <FundModel>[];
+    for (final id in _manualOrderIds) {
+      final item = byId.remove(id);
+      if (item != null) {
+        ordered.add(item);
+      }
+    }
+    final rest = byId.values.toList();
+    _sortFundsByName(rest);
+    ordered.addAll(rest);
+    _manualOrderIds = ordered.map((e) => e.id).toList();
+    return ordered;
+  }
+
+  void _onReorder(int oldIndex, int newIndex) {
+    final previousOrder = List<String>.from(_manualOrderIds);
+    setState(() {
+      if (newIndex > oldIndex) {
+        newIndex -= 1;
+      }
+      final moved = _items.removeAt(oldIndex);
+      _items.insert(newIndex, moved);
+      _manualOrderIds = _items.map((e) => e.id).toList();
+    });
+    unawaited(_persistFundOrder(previousOrder));
+  }
+
+  Future<void> _persistFundOrder(List<String> previousOrder) async {
+    try {
+      await _service.updateFundOrder(_items.map((e) => e.id).toList());
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _manualOrderIds = previousOrder;
+        _items = _applyFundOrder(_items);
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Khong luu duoc thu tu quy: $e')));
+    }
+  }
 
   @override
   void initState() {
@@ -62,6 +120,7 @@ class _FundListScreenState extends State<FundListScreen> {
     final nameCtrl = TextEditingController();
     final targetCtrl = TextEditingController();
     DateTime? deadline = existing?.deadline;
+    var isClosingDialog = false;
     if (existing != null) {
       nameCtrl.text = existing.name;
       if (existing.targetAmount != null) {
@@ -71,7 +130,7 @@ class _FundListScreenState extends State<FundListScreen> {
       }
     }
 
-    final saved = await showDialog<bool>(
+    final payload = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
@@ -132,39 +191,38 @@ class _FundListScreenState extends State<FundListScreen> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(dialogContext, false),
+                onPressed: () {
+                  if (isClosingDialog) return;
+                  isClosingDialog = true;
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!dialogContext.mounted) return;
+                    Navigator.of(dialogContext).maybePop();
+                  });
+                },
                 child: const Text('Huy'),
               ),
               FilledButton(
                 onPressed: () async {
-                  if (nameCtrl.text.trim().isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
+                  if (isClosingDialog) return;
+                  final name = nameCtrl.text.trim();
+                  if (name.isEmpty) {
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
                       const SnackBar(content: Text('Nhap ten quy.')),
                     );
                     return;
                   }
-                  if (existing == null) {
-                    await _service.createFund(
-                      coupleId: widget.coupleId,
-                      name: nameCtrl.text.trim(),
-                      targetAmount: targetCtrl.text.trim().isEmpty
-                          ? null
-                          : parseAmountInput(targetCtrl.text.trim()),
-                      deadline: deadline,
-                    );
-                  } else {
-                    await _service.updateFund(
-                      fundId: existing.id,
-                      name: nameCtrl.text.trim(),
-                      targetAmount: targetCtrl.text.trim().isEmpty
-                          ? null
-                          : parseAmountInput(targetCtrl.text.trim()),
-                      deadline: deadline,
-                    );
-                  }
-                  if (dialogContext.mounted) {
-                    Navigator.pop(dialogContext, true);
-                  }
+                  final targetAmount = targetCtrl.text.trim().isEmpty
+                      ? null
+                      : parseAmountInput(targetCtrl.text.trim());
+                  isClosingDialog = true;
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!dialogContext.mounted) return;
+                    Navigator.of(dialogContext).maybePop({
+                      'name': name,
+                      'targetAmount': targetAmount,
+                      'deadline': deadline,
+                    });
+                  });
                 },
                 child: const Text('Luu'),
               ),
@@ -174,9 +232,50 @@ class _FundListScreenState extends State<FundListScreen> {
       },
     );
 
-    if (saved == true) {
-      await _load();
+    if (payload == null) return;
+
+    final name = payload['name'] as String;
+    final targetAmount = payload['targetAmount'] as double?;
+    final selectedDeadline = payload['deadline'] as DateTime?;
+
+    try {
+      if (existing == null) {
+        final created = await _service.createFund(
+          coupleId: widget.coupleId,
+          name: name,
+          targetAmount: targetAmount,
+          deadline: selectedDeadline,
+        );
+        if (!mounted) return;
+        setState(() {
+          _items.insert(0, created);
+          _manualOrderIds.remove(created.id);
+          _manualOrderIds.insert(0, created.id);
+          _items = _applyFundOrder(_items);
+        });
+      } else {
+        await _service.updateFund(
+          fundId: existing.id,
+          name: name,
+          targetAmount: targetAmount,
+          deadline: selectedDeadline,
+        );
+        final refreshed = await _service.getFundById(existing.id);
+        if (!mounted) return;
+        setState(() {
+          final idx = _items.indexWhere((e) => e.id == existing.id);
+          if (idx >= 0) {
+            _items[idx] = refreshed;
+          }
+          _items = _applyFundOrder(_items);
+        });
+      }
       widget.onDataChanged?.call();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Loi luu: $e')));
     }
   }
 
@@ -235,6 +334,7 @@ class _FundListScreenState extends State<FundListScreen> {
       if (mounted) {
         setState(() {
           _items.removeWhere((f) => f.id == item.id);
+          _manualOrderIds.remove(item.id);
         });
       }
       widget.onDataChanged?.call();
@@ -248,7 +348,11 @@ class _FundListScreenState extends State<FundListScreen> {
     });
     try {
       final items = await _service.getFunds(widget.coupleId);
-      if (mounted) setState(() => _items = items);
+      if (mounted) {
+        setState(() {
+          _items = _applyFundOrder(items);
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
@@ -258,6 +362,11 @@ class _FundListScreenState extends State<FundListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final totalFundAmount = _items.fold<double>(
+      0,
+      (sum, item) => sum + item.currentAmount,
+    );
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Quỹ tiết kiệm'),
@@ -278,104 +387,145 @@ class _FundListScreenState extends State<FundListScreen> {
                 ],
               ),
             )
-          : _items.isEmpty
-          ? const Center(child: Text('Chưa có quỹ nào.'))
-          : ListView.builder(
-              itemCount: _items.length,
-              itemBuilder: (context, index) {
-                final item = _items[index];
-                final progress =
-                    (item.targetAmount != null && item.targetAmount! > 0)
-                    ? (item.currentAmount / item.targetAmount!).clamp(0.0, 1.0)
-                    : 0.0;
-                return Card(
-                  margin: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  child: InkWell(
-                    onTap: () async {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => FundDetailScreen(
-                            coupleId: widget.coupleId,
-                            fundId: item.id,
-                          ),
+          : Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+                  child: Card(
+                    child: ListTile(
+                      leading: const CircleAvatar(
+                        child: Icon(Icons.savings_outlined),
+                      ),
+                      title: const Text('Tổng tiền đã góp quỹ'),
+                      trailing: Text(
+                        formatVnd(totalFundAmount),
+                        style: TextStyle(
+                          color: Colors.green[700],
+                          fontWeight: FontWeight.bold,
                         ),
-                      );
-                      if (mounted) {
-                        await _load();
-                        widget.onDataChanged?.call();
-                      }
-                    },
-                    onLongPress: () => _showFundActions(item),
-                    borderRadius: BorderRadius.circular(12),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(Icons.savings_outlined),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  item.name,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                              ),
-                              Text(
-                                formatVnd(item.currentAmount),
-                                style: TextStyle(
-                                  color: Colors.green[700],
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                          if (item.targetAmount != null) ...[
-                            const SizedBox(height: 8),
-                            LinearProgressIndicator(
-                              value: progress,
-                              backgroundColor: Colors.grey[200],
-                            ),
-                            const SizedBox(height: 4),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  '${(progress * 100).toStringAsFixed(0)}%',
-                                  style: const TextStyle(fontSize: 12),
-                                ),
-                                Text(
-                                  'Mục tiêu: ${formatVnd(item.targetAmount!)}',
-                                  style: const TextStyle(fontSize: 12),
-                                ),
-                              ],
-                            ),
-                          ],
-                          if (item.deadline != null)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 4.0),
-                              child: Text(
-                                'Hạn: ${formatDate(item.deadline!)}',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey,
-                                ),
-                              ),
-                            ),
-                        ],
                       ),
                     ),
                   ),
-                );
-              },
+                ),
+                if (_items.isEmpty)
+                  const Expanded(child: Center(child: Text('Chưa có quỹ nào.')))
+                else
+                  Expanded(
+                    child: ReorderableListView.builder(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      itemCount: _items.length,
+                      onReorder: _onReorder,
+                      buildDefaultDragHandles: false,
+                      itemBuilder: (context, index) {
+                        final item = _items[index];
+                        final progress =
+                            (item.targetAmount != null &&
+                                item.targetAmount! > 0)
+                            ? (item.currentAmount / item.targetAmount!).clamp(
+                                0.0,
+                                1.0,
+                              )
+                            : 0.0;
+                        return Card(
+                          key: ValueKey(item.id),
+                          margin: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          child: InkWell(
+                            onTap: () async {
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => FundDetailScreen(
+                                    coupleId: widget.coupleId,
+                                    fundId: item.id,
+                                  ),
+                                ),
+                              );
+                              if (mounted) {
+                                await _load();
+                                widget.onDataChanged?.call();
+                              }
+                            },
+                            onLongPress: () => _showFundActions(item),
+                            borderRadius: BorderRadius.circular(12),
+                            child: Padding(
+                              padding: const EdgeInsets.all(12.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.savings_outlined),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          item.name,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16,
+                                          ),
+                                        ),
+                                      ),
+                                      Text(
+                                        formatVnd(item.currentAmount),
+                                        style: TextStyle(
+                                          color: Colors.green[700],
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      ReorderableDragStartListener(
+                                        index: index,
+                                        child: const Padding(
+                                          padding: EdgeInsets.only(left: 8),
+                                          child: Icon(Icons.drag_indicator),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  if (item.targetAmount != null) ...[
+                                    const SizedBox(height: 8),
+                                    LinearProgressIndicator(
+                                      value: progress,
+                                      backgroundColor: Colors.grey[200],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          '${(progress * 100).toStringAsFixed(0)}%',
+                                          style: const TextStyle(fontSize: 12),
+                                        ),
+                                        Text(
+                                          'Mục tiêu: ${formatVnd(item.targetAmount!)}',
+                                          style: const TextStyle(fontSize: 12),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                  if (item.deadline != null)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 4.0),
+                                      child: Text(
+                                        'Hạn: ${formatDate(item.deadline!)}',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
             ),
       floatingActionButton: FloatingActionButton(
         onPressed: _openFundPopup,

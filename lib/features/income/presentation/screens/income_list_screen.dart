@@ -52,13 +52,77 @@ class _IncomeFormResult {
   });
 }
 
+enum _IncomeFeedKind {
+  income,
+  fundWithdrawal,
+  debtCollection,
+  transferReceived,
+}
+
+class _IncomeFeedItem {
+  final String id;
+  final _IncomeFeedKind kind;
+  final double amount;
+  final String title;
+  final DateTime date;
+  final DateTime createdAt;
+  final IncomeModel? editableIncome;
+
+  const _IncomeFeedItem({
+    required this.id,
+    required this.kind,
+    required this.amount,
+    required this.title,
+    required this.date,
+    required this.createdAt,
+    this.editableIncome,
+  });
+}
+
+class _IncomeExternalLoadResult {
+  final List<_IncomeFeedItem> items;
+  final Set<String> linkedIncomeIds;
+
+  const _IncomeExternalLoadResult({
+    required this.items,
+    required this.linkedIncomeIds,
+  });
+}
+
 class _IncomeListScreenState extends State<IncomeListScreen> {
   final _service = IncomeService();
   final _walletService = WalletService();
   List<IncomeModel> _items = [];
+  List<_IncomeFeedItem> _externalItems = [];
   Map<String, String> _sourceNameById = {};
   bool _isLoading = true;
   String? _error;
+
+  Future<void> _showSwitchBackToSelfAlert() async {
+    final viewingLabel = widget.viewerLabel;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Khong the them khi dang xem $viewingLabel'),
+        content: Text(
+          'Ban dang o view $viewingLabel. Vui long quay ve view cua tai khoan dang nhap de them giao dich.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).maybePop(),
+            child: const Text('Dong'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(dialogContext).maybePop();
+              widget.onToggleViewer?.call();
+            },
+            child: const Text('Chuyen ve toi'),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -106,13 +170,25 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
           createdByUserId: widget.viewerUserId,
         ),
         _service.getIncomeSources(widget.coupleId),
+        _loadExternalIncomeItems(),
       ]);
-      final items = List<IncomeModel>.from(results[0] as List);
+      var items = List<IncomeModel>.from(results[0] as List);
       final sources = List<IncomeSourceModel>.from(results[1] as List);
+      final external = results[2] as _IncomeExternalLoadResult;
+
+      items = items.where((income) => !income.isFromTransfer).toList();
+
+      if (external.linkedIncomeIds.isNotEmpty) {
+        items = items
+            .where((income) => !external.linkedIncomeIds.contains(income.id))
+            .toList();
+      }
+
       items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       if (mounted) {
         setState(() {
           _items = items;
+          _externalItems = external.items;
           _sourceNameById = {for (final s in sources) s.id: s.name};
         });
       }
@@ -121,6 +197,164 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
     } finally {
       if (showLoader && mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Future<_IncomeExternalLoadResult> _loadExternalIncomeItems() async {
+    final db = Supabase.instance.client;
+
+    var fundsQuery = db
+        .from('fund_contributions')
+        .select(
+          'id, amount, date, created_at, note, fund_id, linked_income_id, user_id',
+        )
+        .eq('couple_id', widget.coupleId)
+        .eq('contribution_type', 'withdrawal')
+        .eq('is_deleted', false);
+    var debtQuery = db
+        .from('debt_payments')
+        .select(
+          'id, amount, date, created_at, note, debt_id, linked_income_id, updated_by',
+        )
+        .eq('couple_id', widget.coupleId)
+        .eq('is_deleted', false);
+    var transferQuery = db
+        .from('transfers')
+        .select(
+          'id, amount, date, created_at, note, from_user_id, to_user_id, linked_income_id',
+        )
+        .eq('couple_id', widget.coupleId)
+        .eq('is_deleted', false);
+
+    if (widget.viewerUserId.isNotEmpty) {
+      fundsQuery = fundsQuery.eq('user_id', widget.viewerUserId);
+      debtQuery = debtQuery.eq('updated_by', widget.viewerUserId);
+      transferQuery = transferQuery.eq('to_user_id', widget.viewerUserId);
+    }
+
+    final futures = await Future.wait<dynamic>([
+      fundsQuery.order('created_at', ascending: false),
+      debtQuery.order('created_at', ascending: false),
+      transferQuery.order('created_at', ascending: false),
+      db
+          .from('funds')
+          .select('id, name')
+          .eq('couple_id', widget.coupleId)
+          .eq('is_deleted', false),
+      db
+          .from('debts')
+          .select('id, name')
+          .eq('couple_id', widget.coupleId)
+          .eq('is_deleted', false),
+    ]);
+
+    final funds = List<Map<String, dynamic>>.from(futures[0] as List);
+    final payments = List<Map<String, dynamic>>.from(futures[1] as List);
+    final transfers = List<Map<String, dynamic>>.from(futures[2] as List);
+    final fundNameById = {
+      for (final row in List<Map<String, dynamic>>.from(futures[3] as List))
+        row['id'] as String: row['name'] as String,
+    };
+    final debtNameById = {
+      for (final row in List<Map<String, dynamic>>.from(futures[4] as List))
+        row['id'] as String: row['name'] as String,
+    };
+
+    final userIds = <String>{
+      ...funds.map((row) => row['user_id']).whereType<String>(),
+      ...payments.map((row) => row['updated_by']).whereType<String>(),
+      ...transfers.map((row) => row['from_user_id']).whereType<String>(),
+      ...transfers.map((row) => row['to_user_id']).whereType<String>(),
+    };
+    final users = userIds.isEmpty
+        ? <Map<String, dynamic>>[]
+        : List<Map<String, dynamic>>.from(
+            await db
+                .from('users')
+                .select('id, display_name, email')
+                .inFilter('id', userIds.toList()),
+          );
+
+    final userNameById = {
+      for (final row in users)
+        row['id'] as String:
+            ((row['display_name'] as String?)?.trim().isNotEmpty == true
+            ? (row['display_name'] as String).trim()
+            : ((row['email'] as String?) ?? 'Người kia')),
+    };
+
+    final linkedIncomeIds = <String>{};
+    final items = <_IncomeFeedItem>[];
+
+    for (final row in funds) {
+      final linkedIncomeId = row['linked_income_id'] as String?;
+      if (linkedIncomeId != null) {
+        linkedIncomeIds.add(linkedIncomeId);
+      }
+      final fundId = row['fund_id'] as String?;
+      final fundName =
+          (fundId != null ? fundNameById[fundId] : null) ?? 'Quỹ tiết kiệm';
+      final note = (row['note'] as String?)?.trim();
+      items.add(
+        _IncomeFeedItem(
+          id: 'fund-${row['id']}',
+          kind: _IncomeFeedKind.fundWithdrawal,
+          amount: (row['amount'] as num).toDouble(),
+          title: (note != null && note.isNotEmpty) ? note : fundName,
+          date: DateTime.parse(row['date'] as String),
+          createdAt: DateTime.parse(row['created_at'] as String),
+        ),
+      );
+    }
+
+    for (final row in payments) {
+      final linkedIncomeId = row['linked_income_id'] as String?;
+      if (linkedIncomeId == null) {
+        continue;
+      }
+      linkedIncomeIds.add(linkedIncomeId);
+      final debtId = row['debt_id'] as String?;
+      final debtName = (debtId != null ? debtNameById[debtId] : null) ?? 'Nợ';
+      final note = (row['note'] as String?)?.trim();
+      items.add(
+        _IncomeFeedItem(
+          id: 'debt-${row['id']}',
+          kind: _IncomeFeedKind.debtCollection,
+          amount: (row['amount'] as num).toDouble(),
+          title: (note != null && note.isNotEmpty) ? note : debtName,
+          date: DateTime.parse(row['date'] as String),
+          createdAt: DateTime.parse(row['created_at'] as String),
+        ),
+      );
+    }
+
+    for (final row in transfers) {
+      final linkedIncomeId = row['linked_income_id'] as String?;
+      if (linkedIncomeId != null) {
+        linkedIncomeIds.add(linkedIncomeId);
+      }
+      final fromUserId = row['from_user_id'] as String?;
+      final partnerName =
+          (fromUserId != null ? userNameById[fromUserId] : null) ?? 'Người kia';
+      final note = (row['note'] as String?)?.trim();
+      items.add(
+        _IncomeFeedItem(
+          id: 'transfer-${row['id']}',
+          kind: _IncomeFeedKind.transferReceived,
+          amount: (row['amount'] as num).toDouble(),
+          title: (note != null && note.isNotEmpty)
+              ? note
+              : 'Nhận từ $partnerName',
+          date: DateTime.parse(row['date'] as String),
+          createdAt: DateTime.parse(row['created_at'] as String),
+        ),
+      );
+    }
+
+    items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return _IncomeExternalLoadResult(
+      items: items,
+      linkedIncomeIds: linkedIncomeIds,
+    );
   }
 
   Future<void> _delete(IncomeModel item) async {
@@ -458,11 +692,30 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final grouped = <String, List<IncomeModel>>{};
-    for (final item in _items) {
+    final mergedItems = <_IncomeFeedItem>[
+      ..._items.map(
+        (income) => _IncomeFeedItem(
+          id: income.id,
+          kind: _IncomeFeedKind.income,
+          amount: income.amount,
+          title:
+              (income.description != null &&
+                  income.description!.trim().isNotEmpty)
+              ? income.description!
+              : (_sourceNameById[income.incomeSourceId ?? ''] ?? 'Giao dịch'),
+          date: income.date,
+          createdAt: income.createdAt,
+          editableIncome: income,
+        ),
+      ),
+      ..._externalItems,
+    ]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    final grouped = <String, List<_IncomeFeedItem>>{};
+    for (final item in mergedItems) {
       final key =
           '${item.date.year}-${item.date.month.toString().padLeft(2, '0')}';
-      grouped.putIfAbsent(key, () => <IncomeModel>[]).add(item);
+      grouped.putIfAbsent(key, () => <_IncomeFeedItem>[]).add(item);
     }
 
     return Scaffold(
@@ -511,25 +764,75 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                 ],
               ),
             )
-          : _items.isEmpty
+          : mergedItems.isEmpty
           ? Center(
               child: Text('Chưa có thu nhập nào của ${widget.viewerLabel}.'),
             )
           : ListView(
               children: [
                 for (final entry in grouped.entries) ...[
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                    child: Text(
-                      'Thang ${entry.key.split('-')[1]}/${entry.key.split('-')[0]}',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                  Builder(
+                    builder: (context) {
+                      final monthTotal = entry.value.fold<double>(
+                        0,
+                        (sum, row) => sum + row.amount,
+                      );
+                      return Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Tháng ${entry.key.split('-')[1]}/${entry.key.split('-')[0]}',
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            Text(
+                              formatVnd(monthTotal),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green[700],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
                   ...entry.value.map((item) {
+                    if (item.kind != _IncomeFeedKind.income ||
+                        item.editableIncome == null) {
+                      final icon = switch (item.kind) {
+                        _IncomeFeedKind.fundWithdrawal =>
+                          Icons.south_west_rounded,
+                        _IncomeFeedKind.debtCollection =>
+                          Icons.account_balance_wallet_outlined,
+                        _IncomeFeedKind.transferReceived => Icons.swap_horiz,
+                        _IncomeFeedKind.income => Icons.attach_money,
+                      };
+                      return ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: Colors.green.withOpacity(0.12),
+                          child: Icon(icon, color: Colors.green[700]),
+                        ),
+                        title: Text(item.title),
+                        subtitle: Text(
+                          '${formatDate(item.date)} · ${formatTimeUtcPlus7(item.createdAt)}',
+                        ),
+                        trailing: Text(
+                          formatVnd(item.amount),
+                          style: TextStyle(
+                            color: Colors.green[700],
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      );
+                    }
+
+                    final income = item.editableIncome!;
                     return Dismissible(
-                      key: ValueKey(item.id),
+                      key: ValueKey(income.id),
                       direction: DismissDirection.endToStart,
                       background: Container(
                         color: Colors.red,
@@ -537,22 +840,16 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: const Icon(Icons.delete, color: Colors.white),
                       ),
-                      confirmDismiss: (_) => _confirmDeleteIncome(item),
-                      onDismissed: (_) => _delete(item),
+                      confirmDismiss: (_) => _confirmDeleteIncome(income),
+                      onDismissed: (_) => _delete(income),
                       child: ListTile(
                         leading: const CircleAvatar(
                           child: Icon(Icons.attach_money),
                         ),
-                        onLongPress: () => _showItemActions(item),
-                        title: Text(
-                          (item.description != null &&
-                                  item.description!.trim().isNotEmpty)
-                              ? item.description!
-                              : (_sourceNameById[item.incomeSourceId ?? ''] ??
-                                    'Giao dich'),
-                        ),
+                        onLongPress: () => _showItemActions(income),
+                        title: Text(item.title),
                         subtitle: Text(
-                          '${formatDate(item.date)} · ${formatDateTime(item.createdAt).split(' ').last}',
+                          '${formatDate(item.date)} · ${formatTimeUtcPlus7(item.createdAt)}',
                         ),
                         trailing: Text(
                           formatVnd(item.amount),
@@ -569,6 +866,10 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
             ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
+          if (widget.viewerUserId != widget.currentUserId) {
+            await _showSwitchBackToSelfAlert();
+            return;
+          }
           await _openIncomePopup();
         },
         child: const Icon(Icons.add),

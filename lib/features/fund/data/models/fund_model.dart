@@ -5,6 +5,7 @@ class FundModel extends Equatable {
   final String coupleId;
   final String name;
   final String? icon;
+  final int sortOrder;
   final double? targetAmount;
   final double currentAmount;
   final DateTime? deadline;
@@ -21,6 +22,7 @@ class FundModel extends Equatable {
     required this.coupleId,
     required this.name,
     this.icon,
+    required this.sortOrder,
     this.targetAmount,
     required this.currentAmount,
     this.deadline,
@@ -39,6 +41,7 @@ class FundModel extends Equatable {
       coupleId: json['couple_id'] as String,
       name: json['name'] as String,
       icon: json['icon'] as String?,
+      sortOrder: (json['sort_order'] as num?)?.toInt() ?? 0,
       targetAmount: json['target_amount'] != null
           ? (json['target_amount'] as num).toDouble()
           : null,
@@ -64,6 +67,7 @@ class FundModel extends Equatable {
       'couple_id': coupleId,
       'name': name,
       'icon': icon,
+      'sort_order': sortOrder,
       'target_amount': targetAmount,
       'current_amount': currentAmount,
       'deadline': deadline?.toIso8601String(),
@@ -83,6 +87,7 @@ class FundModel extends Equatable {
     coupleId,
     name,
     icon,
+    sortOrder,
     targetAmount,
     currentAmount,
     deadline,

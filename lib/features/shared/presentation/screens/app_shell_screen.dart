@@ -58,16 +58,18 @@ class _AppShellScreenState extends State<AppShellScreen> {
   void _markTransferChanged() {
     _dashboardRefreshBus.value += 1;
     _transferRefreshBus.value += 1;
+    _expenseRefreshBus.value += 1;
+    _incomeRefreshBus.value += 1;
   }
 
   void _markFundChanged() {
-    _dashboardRefreshBus.value += 1;
-    _fundRefreshBus.value += 1;
+    _expenseRefreshBus.value += 1;
+    _incomeRefreshBus.value += 1;
   }
 
   void _markDebtChanged() {
-    _dashboardRefreshBus.value += 1;
-    _debtRefreshBus.value += 1;
+    _expenseRefreshBus.value += 1;
+    _incomeRefreshBus.value += 1;
   }
 
   @override
@@ -150,7 +152,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
         _partnerUserId = partnerId;
         _partnerLabel = partnerId == null
             ? null
-            : (userDisplay[partnerId] ?? 'Partner');
+            : (userDisplay[partnerId] ?? 'Người kia');
         _isLoading = false;
       });
 
@@ -193,11 +195,34 @@ class _AppShellScreenState extends State<AppShellScreen> {
     setState(() {
       _viewerUserId = viewing == current ? partner : current;
     });
+  }
 
-    _dashboardRefreshBus.value += 1;
-    _expenseRefreshBus.value += 1;
-    _incomeRefreshBus.value += 1;
-    _transferRefreshBus.value += 1;
+  Future<void> _showSwitchBackToSelfAlert() async {
+    final viewingLabel = _viewerUserId == _currentUserId
+        ? (_selfLabel ?? 'Tôi')
+        : (_partnerLabel ?? 'Người kia');
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Khong the them'),
+        content: Text(
+          'Ban dang o view $viewingLabel. Vui long quay ve view cua tai khoan dang nhap de them giao dich.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).maybePop(),
+            child: const Text('Dong'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(dialogContext).maybePop();
+              _toggleViewer();
+            },
+            child: const Text('Chuyen ve toi'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _openQuickAddDialog(String coupleId) async {
@@ -470,7 +495,10 @@ class _AppShellScreenState extends State<AppShellScreen> {
 
     final viewerLabel = viewerUserId == currentUserId
         ? (_selfLabel ?? 'Tôi')
-        : (_partnerLabel ?? 'Partner');
+        : (_partnerLabel ?? 'Người kia');
+    final counterpartyUserId = viewerUserId == currentUserId
+        ? _partnerUserId
+        : currentUserId;
 
     final screens = [
       DashboardScreen(
@@ -478,17 +506,23 @@ class _AppShellScreenState extends State<AppShellScreen> {
         viewerUserId: viewerUserId,
         currentUserId: currentUserId,
         viewerLabel: viewerLabel,
-        partnerUserId: _partnerUserId,
+        partnerUserId: counterpartyUserId,
         onToggleViewer: _toggleViewer,
         refreshSignal: _dashboardRefreshBus,
-        onCreatePressed: () => _openQuickAddDialog(coupleId),
+        onCreatePressed: () async {
+          if (_viewerUserId != _currentUserId) {
+            await _showSwitchBackToSelfAlert();
+            return;
+          }
+          await _openQuickAddDialog(coupleId);
+        },
       ),
       ExpenseListScreen(
         coupleId: coupleId,
         viewerUserId: viewerUserId,
         currentUserId: currentUserId,
         viewerLabel: viewerLabel,
-        partnerUserId: _partnerUserId,
+        partnerUserId: counterpartyUserId,
         onToggleViewer: _toggleViewer,
         refreshSignal: _expenseRefreshBus,
         onDataChanged: _markExpenseChanged,
@@ -498,7 +532,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
         viewerUserId: viewerUserId,
         currentUserId: currentUserId,
         viewerLabel: viewerLabel,
-        partnerUserId: _partnerUserId,
+        partnerUserId: counterpartyUserId,
         onToggleViewer: _toggleViewer,
         refreshSignal: _incomeRefreshBus,
         onDataChanged: _markIncomeChanged,
@@ -508,7 +542,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
         viewerUserId: viewerUserId,
         currentUserId: currentUserId,
         viewerLabel: viewerLabel,
-        partnerUserId: _partnerUserId,
+        partnerUserId: counterpartyUserId,
         onToggleViewer: _toggleViewer,
         refreshSignal: _transferRefreshBus,
         onDataChanged: _markTransferChanged,

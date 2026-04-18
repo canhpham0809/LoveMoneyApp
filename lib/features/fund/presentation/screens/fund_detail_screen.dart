@@ -110,6 +110,7 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
     final amountCtrl = TextEditingController();
     final noteCtrl = TextEditingController();
     DateTime selectedDate = existing?.date ?? DateTime.now();
+    var isClosingDialog = false;
     if (existing != null) {
       amountCtrl.text = existing.amount.toStringAsFixed(0);
       noteCtrl.text = existing.note ?? '';
@@ -179,11 +180,19 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(dialogContext, false),
+                onPressed: () {
+                  if (isClosingDialog) return;
+                  isClosingDialog = true;
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!dialogContext.mounted) return;
+                    Navigator.of(dialogContext).maybePop(false);
+                  });
+                },
                 child: const Text('Huy'),
               ),
               FilledButton(
                 onPressed: () async {
+                  if (isClosingDialog) return;
                   final amount = parseAmountInput(amountCtrl.text.trim());
                   if (amount == null || amount <= 0) {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -229,9 +238,11 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                       date: selectedDate,
                     );
                   }
-                  if (dialogContext.mounted) {
-                    Navigator.pop(dialogContext, true);
-                  }
+                  isClosingDialog = true;
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!dialogContext.mounted) return;
+                    Navigator.of(dialogContext).maybePop(true);
+                  });
                 },
                 child: const Text('Luu'),
               ),
@@ -391,7 +402,7 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                                 ),
                               ),
                               subtitle: Text(
-                                '${isWithdrawal ? 'Rut quy' : 'Gop quy'} · ${formatDate(c.date)} · ${formatDateTime(c.createdAt).split(' ').last} · ${_memberNameById[c.userId] ?? c.userId}${c.note != null ? ' · ${c.note}' : ''}',
+                                '${isWithdrawal ? 'Rut quy' : 'Gop quy'} · ${formatDate(c.date)} · ${formatTimeUtcPlus7(c.createdAt)} · ${_memberNameById[c.userId] ?? c.userId}${c.note != null ? ' · ${c.note}' : ''}',
                               ),
                             );
                           },

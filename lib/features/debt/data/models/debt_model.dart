@@ -5,6 +5,7 @@ class DebtModel extends Equatable {
   final String coupleId;
   final String userId;
   final String debtTypeId;
+  final int sortOrder;
   final String debtKind;
   final bool recordToIncome;
   final String? linkedIncomeId;
@@ -29,6 +30,7 @@ class DebtModel extends Equatable {
     required this.coupleId,
     required this.userId,
     required this.debtTypeId,
+    required this.sortOrder,
     required this.debtKind,
     required this.recordToIncome,
     this.linkedIncomeId,
@@ -55,6 +57,7 @@ class DebtModel extends Equatable {
       coupleId: json['couple_id'] as String,
       userId: json['user_id'] as String,
       debtTypeId: json['debt_type_id'] as String,
+      sortOrder: (json['sort_order'] as num?)?.toInt() ?? 0,
       debtKind: (json['debt_kind'] as String?) ?? 'debt',
       recordToIncome: (json['record_to_income'] as bool?) ?? false,
       linkedIncomeId: json['linked_income_id'] as String?,
@@ -86,6 +89,7 @@ class DebtModel extends Equatable {
       'couple_id': coupleId,
       'user_id': userId,
       'debt_type_id': debtTypeId,
+      'sort_order': sortOrder,
       'debt_kind': debtKind,
       'record_to_income': recordToIncome,
       'linked_income_id': linkedIncomeId,
@@ -113,6 +117,7 @@ class DebtModel extends Equatable {
     coupleId,
     userId,
     debtTypeId,
+    sortOrder,
     debtKind,
     recordToIncome,
     linkedIncomeId,

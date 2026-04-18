@@ -8,6 +8,12 @@ class FundService {
   static const String _fundWithdrawIncomeSourceName = 'Rut quy';
   static const String _fundDeleteIncomeSourceName = 'Xoa quy hoan tien';
 
+  bool _isMissingSortOrderColumn(Object error) {
+    return error is PostgrestException &&
+        error.code == '42703' &&
+        error.message.contains('sort_order');
+  }
+
   bool _isMissingIncomeFormColumn(Object error) {
     return error is PostgrestException &&
         error.code == '42703' &&
@@ -15,13 +21,42 @@ class FundService {
   }
 
   Future<List<FundModel>> getFunds(String coupleId) async {
-    final rows = await _db
-        .from('funds')
-        .select()
-        .eq('couple_id', coupleId)
-        .eq('is_deleted', false)
-        .order('name');
-    return rows.map((r) => FundModel.fromJson(r)).toList();
+    try {
+      final rows = await _db
+          .from('funds')
+          .select()
+          .eq('couple_id', coupleId)
+          .eq('is_deleted', false)
+          .order('sort_order')
+          .order('created_at');
+      return rows.map((r) => FundModel.fromJson(r)).toList();
+    } catch (e) {
+      if (!_isMissingSortOrderColumn(e)) rethrow;
+      final rows = await _db
+          .from('funds')
+          .select()
+          .eq('couple_id', coupleId)
+          .eq('is_deleted', false)
+          .order('name');
+      return rows.map((r) => FundModel.fromJson(r)).toList();
+    }
+  }
+
+  Future<int> _nextSortOrder(String coupleId) async {
+    try {
+      final rows = await _db
+          .from('funds')
+          .select('sort_order')
+          .eq('couple_id', coupleId)
+          .eq('is_deleted', false)
+          .order('sort_order', ascending: false)
+          .limit(1);
+      if (rows.isEmpty) return 0;
+      return ((rows.first['sort_order'] as num?)?.toInt() ?? 0) + 1;
+    } catch (e) {
+      if (!_isMissingSortOrderColumn(e)) rethrow;
+      return 0;
+    }
   }
 
   Future<FundModel> createFund({
@@ -32,20 +67,44 @@ class FundService {
     String? icon,
     String? color,
   }) async {
-    final row = await _db
-        .from('funds')
-        .insert({
-          'couple_id': coupleId,
-          'name': name,
-          'target_amount': targetAmount,
-          'deadline': deadline?.toIso8601String().substring(0, 10),
-          'icon': icon,
-          'color': color,
-          'current_amount': 0,
-        })
-        .select()
-        .single();
-    return FundModel.fromJson(row);
+    final payload = {
+      'couple_id': coupleId,
+      'name': name,
+      'target_amount': targetAmount,
+      'deadline': deadline?.toIso8601String().substring(0, 10),
+      'icon': icon,
+      'color': color,
+      'current_amount': 0,
+      'sort_order': await _nextSortOrder(coupleId),
+    };
+
+    try {
+      final row = await _db.from('funds').insert(payload).select().single();
+      return FundModel.fromJson(row);
+    } catch (e) {
+      if (!_isMissingSortOrderColumn(e)) rethrow;
+      payload.remove('sort_order');
+      final row = await _db.from('funds').insert(payload).select().single();
+      return FundModel.fromJson(row);
+    }
+  }
+
+  Future<void> updateFundOrder(List<String> orderedIds) async {
+    if (orderedIds.isEmpty) return;
+
+    for (var i = 0; i < orderedIds.length; i++) {
+      try {
+        await _db
+            .from('funds')
+            .update({'sort_order': i})
+            .eq('id', orderedIds[i]);
+      } catch (e) {
+        if (_isMissingSortOrderColumn(e)) {
+          return;
+        }
+        rethrow;
+      }
+    }
   }
 
   Future<FundModel> getFundById(String fundId) async {

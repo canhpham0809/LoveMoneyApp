@@ -32,7 +32,8 @@ class TransactionService {
         .from('incomes')
         .select('id, amount, date, created_at')
         .eq('couple_id', coupleId)
-        .eq('is_deleted', false);
+        .eq('is_deleted', false)
+        .or('is_from_transfer.is.null,is_from_transfer.eq.false');
     var expensesQuery = supabase
         .from('expenses')
         .select('id, amount, date, created_at')
@@ -52,7 +53,7 @@ class TransactionService {
         .eq('is_deleted', false);
     var transfersQuery = supabase
         .from('transfers')
-        .select('id, amount, date, created_at')
+        .select('id, amount, date, created_at, from_user_id, to_user_id')
         .eq('couple_id', coupleId)
         .eq('is_deleted', false);
 
@@ -61,7 +62,9 @@ class TransactionService {
       expensesQuery = expensesQuery.eq('user_id', viewerUserId);
       fundsQuery = fundsQuery.eq('user_id', viewerUserId);
       debtsQuery = debtsQuery.eq('updated_by', viewerUserId);
-      transfersQuery = transfersQuery.eq('from_user_id', viewerUserId);
+      transfersQuery = transfersQuery.or(
+        'from_user_id.eq.$viewerUserId,to_user_id.eq.$viewerUserId',
+      );
     }
 
     final results = await Future.wait([
@@ -72,52 +75,74 @@ class TransactionService {
       transfersQuery.order('created_at', ascending: false),
     ]);
 
-    final transactions = <Transaction>[
-      ...(results[0] as List).map(
-        (json) => Transaction.fromJson({...json, 'type': 'income'}),
-      ),
-      ...(results[1] as List).map(
-        (json) => Transaction.fromJson({...json, 'type': 'expense'}),
-      ),
-      ...(results[2] as List).map(
-        (json) => Transaction.fromJson({...json, 'type': 'fund'}),
-      ),
-      ...(results[3] as List).map(
-        (json) => Transaction.fromJson({...json, 'type': 'debt'}),
-      ),
-      ...(results[4] as List).map(
-        (json) => Transaction.fromJson({...json, 'type': 'transfer'}),
-      ),
-    ];
+    final grouped = <String, Map<String, double>>{};
 
-    final Map<String, List<Transaction>> grouped = {};
-    for (final tx in transactions) {
-      final key = '${tx.date.year}-${tx.date.month}';
-      grouped.putIfAbsent(key, () => []).add(tx);
+    void addIncome(DateTime date, double amount) {
+      final key = '${date.year}-${date.month}';
+      final bucket = grouped.putIfAbsent(
+        key,
+        () => <String, double>{'income': 0, 'expense': 0},
+      );
+      bucket['income'] = (bucket['income'] ?? 0) + amount;
+    }
+
+    void addExpense(DateTime date, double amount) {
+      final key = '${date.year}-${date.month}';
+      final bucket = grouped.putIfAbsent(
+        key,
+        () => <String, double>{'income': 0, 'expense': 0},
+      );
+      bucket['expense'] = (bucket['expense'] ?? 0) + amount.abs();
+    }
+
+    for (final row in results[0] as List) {
+      final date = DateTime.parse(
+        (row as Map<String, dynamic>)['date'] as String,
+      );
+      addIncome(date, (row['amount'] as num).toDouble());
+    }
+    for (final row in results[1] as List) {
+      final date = DateTime.parse(
+        (row as Map<String, dynamic>)['date'] as String,
+      );
+      addExpense(date, (row['amount'] as num).toDouble());
+    }
+    for (final row in results[2] as List) {
+      final date = DateTime.parse(
+        (row as Map<String, dynamic>)['date'] as String,
+      );
+      addExpense(date, (row['amount'] as num).toDouble());
+    }
+    for (final row in results[3] as List) {
+      final date = DateTime.parse(
+        (row as Map<String, dynamic>)['date'] as String,
+      );
+      addExpense(date, (row['amount'] as num).toDouble());
+    }
+    for (final row in results[4] as List) {
+      final map = row as Map<String, dynamic>;
+      final date = DateTime.parse(map['date'] as String);
+      final amount = (map['amount'] as num).toDouble();
+
+      if (viewerUserId == null) {
+        // Internal transfers should not affect couple-level net summary.
+        continue;
+      }
+
+      if (map['to_user_id'] == viewerUserId) {
+        addIncome(date, amount);
+      } else {
+        addExpense(date, amount);
+      }
     }
 
     return grouped.entries.map((entry) {
-      final txs = entry.value;
-      double income = 0, expense = 0;
-      for (final tx in txs) {
-        switch (tx.type) {
-          case TransactionType.income:
-            income += tx.amount;
-            break;
-          case TransactionType.expense:
-          case TransactionType.fund:
-          case TransactionType.debt:
-          case TransactionType.transfer:
-            expense += tx.amount.abs();
-            break;
-        }
-      }
       final parts = entry.key.split('-');
       return MonthlySummary(
         year: int.parse(parts[0]),
         month: int.parse(parts[1]),
-        income: income,
-        expense: expense,
+        income: entry.value['income'] ?? 0,
+        expense: entry.value['expense'] ?? 0,
       );
     }).toList()..sort(
       (a, b) => b.year != a.year
@@ -167,6 +192,7 @@ class TransactionService {
         .select('id, amount, date, created_at, description')
         .eq('couple_id', coupleId)
         .eq('is_deleted', false)
+        .or('is_from_transfer.is.null,is_from_transfer.eq.false')
         .gte('date', start.toIso8601String().substring(0, 10))
         .lt('date', end.toIso8601String().substring(0, 10));
     var expensesQuery = supabase
@@ -196,7 +222,7 @@ class TransactionService {
         .lt('date', end.toIso8601String().substring(0, 10));
     var transfersQuery = supabase
         .from('transfers')
-        .select('id, amount, date, created_at, note')
+        .select('id, amount, date, created_at, note, from_user_id, to_user_id')
         .eq('couple_id', coupleId)
         .eq('is_deleted', false)
         .gte('date', start.toIso8601String().substring(0, 10))
@@ -207,7 +233,9 @@ class TransactionService {
       expensesQuery = expensesQuery.eq('user_id', viewerUserId);
       fundsQuery = fundsQuery.eq('user_id', viewerUserId);
       debtsQuery = debtsQuery.eq('updated_by', viewerUserId);
-      transfersQuery = transfersQuery.eq('from_user_id', viewerUserId);
+      transfersQuery = transfersQuery.or(
+        'from_user_id.eq.$viewerUserId,to_user_id.eq.$viewerUserId',
+      );
     }
 
     final results = await Future.wait([
@@ -272,17 +300,45 @@ class TransactionService {
         ),
       });
     });
-    final transfers = (results[4] as List).map((json) {
-      final row = Map<String, dynamic>.from(json);
-      return Transaction.fromJson({
-        ...row,
-        'type': 'transfer',
-        'title': _pickTitle(
-          row: row,
-          fallback: 'Chuyển tiền',
-          preferredFields: const ['note'],
-        ),
-      });
+
+    final transferRows = (results[4] as List)
+        .map((json) => Map<String, dynamic>.from(json))
+        .toList();
+    final transferUserIds = <String>{
+      ...transferRows.map((row) => row['from_user_id']).whereType<String>(),
+      ...transferRows.map((row) => row['to_user_id']).whereType<String>(),
+    };
+    final transferUsers = transferUserIds.isEmpty
+        ? <Map<String, dynamic>>[]
+        : List<Map<String, dynamic>>.from(
+            await supabase
+                .from('users')
+                .select('id, display_name, email')
+                .inFilter('id', transferUserIds.toList()),
+          );
+    final transferUserNameById = {
+      for (final row in transferUsers)
+        row['id'] as String:
+            ((row['display_name'] as String?)?.trim().isNotEmpty == true
+            ? (row['display_name'] as String).trim()
+            : ((row['email'] as String?) ?? 'Người kia')),
+    };
+
+    final transfers = transferRows.map((row) {
+      final fromUserId = row['from_user_id'] as String?;
+      final toUserId = row['to_user_id'] as String?;
+      final isIncoming = viewerUserId != null
+          ? toUserId == viewerUserId
+          : false;
+      final partnerId = isIncoming ? fromUserId : toUserId;
+      final partnerName =
+          (partnerId != null ? transferUserNameById[partnerId] : null) ??
+          'Người kia';
+      final directionLabel = isIncoming ? 'Nhận từ' : 'Chuyển cho';
+      final title = ((row['note'] as String?)?.trim().isNotEmpty ?? false)
+          ? (row['note'] as String).trim()
+          : '$directionLabel $partnerName';
+      return Transaction.fromJson({...row, 'type': 'transfer', 'title': title});
     });
 
     final transactions = <Transaction>[

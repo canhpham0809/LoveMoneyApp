@@ -356,7 +356,7 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                               onLongPress: () => _showPaymentActions(p),
                               title: Text(formatVnd(p.amount)),
                               subtitle: Text(
-                                '${formatDate(p.date)} · ${formatDateTime(p.createdAt).split(' ').last} · ${p.updatedBy != null ? (_memberNameById[p.updatedBy!] ?? p.updatedBy!) : 'Không rõ'}${p.note != null ? ' · ${p.note}' : ''}',
+                                '${formatDate(p.date)} · ${formatTimeUtcPlus7(p.createdAt)} · ${p.updatedBy != null ? (_memberNameById[p.updatedBy!] ?? p.updatedBy!) : 'Không rõ'}${p.note != null ? ' · ${p.note}' : ''}',
                               ),
                             );
                           },

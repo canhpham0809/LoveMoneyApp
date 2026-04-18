@@ -52,8 +52,44 @@ class _TransferFormResult {
 class _TransferListScreenState extends State<TransferListScreen> {
   final _service = TransferService();
   List<TransferModel> _items = [];
+  Map<String, String> _userNameById = {};
   bool _isLoading = true;
   String? _error;
+
+  DateTime _toUtcPlus7(DateTime value) {
+    final utcValue = value.isUtc ? value : value.toUtc();
+    return utcValue.add(const Duration(hours: 7));
+  }
+
+  String _formatCreatedTimeUtcPlus7(DateTime value) {
+    return formatDateTime(_toUtcPlus7(value)).split(' ').last;
+  }
+
+  Future<void> _showSwitchBackToSelfAlert() async {
+    final viewingLabel = widget.viewerLabel;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Không thể thêm khi đang xem $viewingLabel'),
+        content: Text(
+          'Bạn đang ở view $viewingLabel. Vui lòng quay về view của tài khoản đăng nhập để thêm giao dịch.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).maybePop(),
+            child: const Text('Đóng'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(dialogContext).maybePop();
+              widget.onToggleViewer?.call();
+            },
+            child: const Text('Chuyển về tôi'),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -97,10 +133,36 @@ class _TransferListScreenState extends State<TransferListScreen> {
     try {
       final items = await _service.getTransfers(
         widget.coupleId,
-        createdByUserId: widget.viewerUserId,
+        viewerUserId: widget.viewerUserId,
+        partnerUserId: widget.partnerUserId,
       );
       items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      if (mounted) setState(() => _items = items);
+      final userIds = <String>{
+        ...items.map((item) => item.fromUserId),
+        ...items.map((item) => item.toUserId),
+      };
+      final users = userIds.isEmpty
+          ? <Map<String, dynamic>>[]
+          : List<Map<String, dynamic>>.from(
+              await Supabase.instance.client
+                  .from('users')
+                  .select('id, display_name, email')
+                  .inFilter('id', userIds.toList()),
+            );
+      final userNameById = {
+        for (final row in users)
+          row['id'] as String:
+              ((row['display_name'] as String?)?.trim().isNotEmpty == true
+              ? (row['display_name'] as String).trim()
+              : ((row['email'] as String?) ?? 'Người kia')),
+      };
+
+      if (mounted) {
+        setState(() {
+          _items = items;
+          _userNameById = userNameById;
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
@@ -141,7 +203,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
 
   Future<void> _createTransferOptimistic(_TransferFormResult payload) async {
     final uid = Supabase.instance.client.auth.currentUser!.id;
-    final now = DateTime.now();
+    final now = DateTime.now().toUtc();
     final tempId = 'temp-transfer-${now.microsecondsSinceEpoch}';
     final optimistic = TransferModel(
       id: tempId,
@@ -252,7 +314,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
 
     if (recipients.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Chua co partner trong couple.')),
+        const SnackBar(content: Text('Chua co nguoi kia trong couple.')),
       );
       return;
     }
@@ -261,6 +323,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
     final noteCtrl = TextEditingController();
     String selectedRecipientId = existing?.toUserId ?? recipients.first;
     DateTime selectedDate = existing?.date ?? DateTime.now();
+    var isClosingDialog = false;
     if (existing != null) {
       amountCtrl.text = existing.amount.toStringAsFixed(0);
       noteCtrl.text = existing.note ?? '';
@@ -307,7 +370,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
                         .map(
                           (id) => DropdownMenuItem(
                             value: id,
-                            child: Text(memberLabelById[id] ?? 'Partner'),
+                            child: Text(memberLabelById[id] ?? 'Người kia'),
                           ),
                         )
                         .toList(),
@@ -346,11 +409,19 @@ class _TransferListScreenState extends State<TransferListScreen> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.of(dialogContext).maybePop(),
+                onPressed: () {
+                  if (isClosingDialog) return;
+                  isClosingDialog = true;
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!dialogContext.mounted) return;
+                    Navigator.of(dialogContext).maybePop();
+                  });
+                },
                 child: const Text('Huy'),
               ),
               FilledButton(
                 onPressed: () async {
+                  if (isClosingDialog) return;
                   final amount = parseAmountInput(amountCtrl.text.trim());
                   if (amount == null || amount <= 0) {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -358,7 +429,9 @@ class _TransferListScreenState extends State<TransferListScreen> {
                     );
                     return;
                   }
-                  if (dialogContext.mounted) {
+                  isClosingDialog = true;
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!dialogContext.mounted) return;
                     Navigator.of(dialogContext).maybePop(
                       _TransferFormResult(
                         amount: amount,
@@ -369,7 +442,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
                         date: selectedDate,
                       ),
                     );
-                  }
+                  });
                 },
                 child: const Text('Luu'),
               ),
@@ -406,17 +479,20 @@ class _TransferListScreenState extends State<TransferListScreen> {
   }
 
   Future<void> _showItemActions(TransferModel item) async {
+    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+    final canEdit = currentUserId != null && item.fromUserId == currentUserId;
     final action = await showModalBottomSheet<String>(
       context: context,
       builder: (sheetContext) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              leading: const Icon(Icons.edit_outlined),
-              title: const Text('Edit'),
-              onTap: () => Navigator.pop(sheetContext, 'edit'),
-            ),
+            if (canEdit)
+              ListTile(
+                leading: const Icon(Icons.edit_outlined),
+                title: const Text('Edit'),
+                onTap: () => Navigator.pop(sheetContext, 'edit'),
+              ),
             ListTile(
               leading: const Icon(Icons.delete_outline, color: Colors.red),
               title: const Text('Delete'),
@@ -439,6 +515,19 @@ class _TransferListScreenState extends State<TransferListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final totalSent = _items
+        .where((item) => item.fromUserId == widget.viewerUserId)
+        .fold<double>(0, (sum, item) => sum + item.amount);
+    final totalReceived = _items
+        .where((item) => item.toUserId == widget.viewerUserId)
+        .fold<double>(0, (sum, item) => sum + item.amount);
+    final grouped = <String, List<TransferModel>>{};
+    for (final item in _items) {
+      final key =
+          '${item.date.year}-${item.date.month.toString().padLeft(2, '0')}';
+      grouped.putIfAbsent(key, () => <TransferModel>[]).add(item);
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Chuyển tiền'),
@@ -475,41 +564,141 @@ class _TransferListScreenState extends State<TransferListScreen> {
           : _items.isEmpty
           ? Center(
               child: Text(
-                'Chưa có lệnh chuyển tiền nào của ${widget.viewerLabel}.',
+                'Chưa có giao dịch chuyển tiền nào của ${widget.viewerLabel}.',
               ),
             )
-          : ListView.builder(
-              itemCount: _items.length,
-              itemBuilder: (context, index) {
-                final item = _items[index];
-                return Dismissible(
-                  key: ValueKey(item.id),
-                  direction: DismissDirection.endToStart,
-                  background: Container(
-                    color: Colors.red,
-                    alignment: Alignment.centerRight,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: const Icon(Icons.delete, color: Colors.white),
+          : ListView(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Tổng tiền đã chuyển',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  formatVnd(totalSent),
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Theme.of(context).colorScheme.error,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Tổng tiền đã nhận',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  formatVnd(totalReceived),
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.green[700],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  confirmDismiss: (_) => _confirmDeleteTransfer(item),
-                  onDismissed: (_) => _delete(item),
-                  child: ListTile(
-                    leading: const CircleAvatar(child: Icon(Icons.swap_horiz)),
-                    onLongPress: () => _showItemActions(item),
-                    title: Text(item.note ?? 'Chuyển tiền'),
-                    subtitle: Text(
-                      '${formatDate(item.date)} · ${formatDateTime(item.createdAt).split(' ').last}',
-                    ),
-                    trailing: Text(
-                      formatVnd(item.amount),
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
+                ),
+                for (final entry in grouped.entries) ...[
+                  Builder(
+                    builder: (context) {
+                      return Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                        child: Text(
+                          'Tháng ${entry.key.split('-')[1]}/${entry.key.split('-')[0]}',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                      );
+                    },
                   ),
-                );
-              },
+                  ...entry.value.map((item) {
+                    final isIncoming = item.toUserId == widget.viewerUserId;
+                    final counterpartyId = isIncoming
+                        ? item.fromUserId
+                        : item.toUserId;
+                    final partnerName =
+                        _userNameById[counterpartyId] ?? 'Người kia';
+                    final directionLabel = isIncoming
+                        ? 'Nhận từ'
+                        : 'Chuyển cho';
+                    final amountColor = isIncoming
+                        ? Colors.green[700]
+                        : Theme.of(context).colorScheme.error;
+                    return Dismissible(
+                      key: ValueKey(item.id),
+                      direction: DismissDirection.endToStart,
+                      background: Container(
+                        color: Colors.red,
+                        alignment: Alignment.centerRight,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: const Icon(Icons.delete, color: Colors.white),
+                      ),
+                      confirmDismiss: (_) => _confirmDeleteTransfer(item),
+                      onDismissed: (_) => _delete(item),
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: (amountColor ?? Colors.grey)
+                              .withOpacity(0.12),
+                          child: Icon(
+                            isIncoming
+                                ? Icons.south_west_rounded
+                                : Icons.north_east_rounded,
+                            color: amountColor,
+                          ),
+                        ),
+                        onLongPress: () => _showItemActions(item),
+                        title: Text(
+                          item.note ?? directionLabel + ' ' + partnerName,
+                        ),
+                        subtitle: Text(
+                          '${formatDate(item.date)} · ${_formatCreatedTimeUtcPlus7(item.createdAt)}',
+                        ),
+                        trailing: Text(
+                          '${isIncoming ? '+' : '-'} ${formatVnd(item.amount)}',
+                          style: TextStyle(
+                            color: amountColor,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              ],
             ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
+          if (widget.viewerUserId != widget.currentUserId) {
+            await _showSwitchBackToSelfAlert();
+            return;
+          }
           await _openTransferPopup();
         },
         child: const Icon(Icons.add),

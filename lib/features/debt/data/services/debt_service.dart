@@ -6,6 +6,12 @@ import 'package:flutter_app_demo/features/debt/data/models/debt_payment_model.da
 class DebtService {
   SupabaseClient get _db => Supabase.instance.client;
 
+  bool _isMissingSortOrderColumn(Object error) {
+    return error is PostgrestException &&
+        error.code == '42703' &&
+        error.message.contains('sort_order');
+  }
+
   bool _isMissingQuickAddColumn(Object error) {
     return error is PostgrestException &&
         error.code == '42703' &&
@@ -31,13 +37,42 @@ class DebtService {
   static const String _debtDeleteIncomeSource = 'Xoa cho muon dieu chinh';
 
   Future<List<DebtModel>> getDebts(String coupleId) async {
-    final rows = await _db
-        .from('debts')
-        .select()
-        .eq('couple_id', coupleId)
-        .eq('is_deleted', false)
-        .order('due_date');
-    return rows.map((r) => DebtModel.fromJson(r)).toList();
+    try {
+      final rows = await _db
+          .from('debts')
+          .select()
+          .eq('couple_id', coupleId)
+          .eq('is_deleted', false)
+          .order('sort_order')
+          .order('created_at');
+      return rows.map((r) => DebtModel.fromJson(r)).toList();
+    } catch (e) {
+      if (!_isMissingSortOrderColumn(e)) rethrow;
+      final rows = await _db
+          .from('debts')
+          .select()
+          .eq('couple_id', coupleId)
+          .eq('is_deleted', false)
+          .order('due_date');
+      return rows.map((r) => DebtModel.fromJson(r)).toList();
+    }
+  }
+
+  Future<int> _nextSortOrder(String coupleId) async {
+    try {
+      final rows = await _db
+          .from('debts')
+          .select('sort_order')
+          .eq('couple_id', coupleId)
+          .eq('is_deleted', false)
+          .order('sort_order', ascending: false)
+          .limit(1);
+      if (rows.isEmpty) return 0;
+      return ((rows.first['sort_order'] as num?)?.toInt() ?? 0) + 1;
+    } catch (e) {
+      if (!_isMissingSortOrderColumn(e)) rethrow;
+      return 0;
+    }
   }
 
   Future<DebtModel> createDebt({
@@ -54,26 +89,32 @@ class DebtService {
     String? note,
     int? reminderDaysBefore,
   }) async {
-    final row = await _db
-        .from('debts')
-        .insert({
-          'couple_id': coupleId,
-          'user_id': userId,
-          'debt_type_id': debtTypeId,
-          'debt_kind': debtKind,
-          'record_to_income': recordToIncome,
-          'name': name,
-          'original_amount': originalAmount,
-          'remaining_amount': originalAmount,
-          'creditor_name': creditorName,
-          'start_date': startDate.toIso8601String().substring(0, 10),
-          'due_date': dueDate?.toIso8601String().substring(0, 10),
-          'note': note,
-          'reminder_days_before': reminderDaysBefore,
-          'is_closed': false,
-        })
-        .select()
-        .single();
+    final payload = {
+      'couple_id': coupleId,
+      'user_id': userId,
+      'debt_type_id': debtTypeId,
+      'debt_kind': debtKind,
+      'record_to_income': recordToIncome,
+      'name': name,
+      'original_amount': originalAmount,
+      'remaining_amount': originalAmount,
+      'creditor_name': creditorName,
+      'start_date': startDate.toIso8601String().substring(0, 10),
+      'due_date': dueDate?.toIso8601String().substring(0, 10),
+      'note': note,
+      'reminder_days_before': reminderDaysBefore,
+      'is_closed': false,
+      'sort_order': await _nextSortOrder(coupleId),
+    };
+
+    late final Map<String, dynamic> row;
+    try {
+      row = await _db.from('debts').insert(payload).select().single();
+    } catch (e) {
+      if (!_isMissingSortOrderColumn(e)) rethrow;
+      payload.remove('sort_order');
+      row = await _db.from('debts').insert(payload).select().single();
+    }
 
     final debtId = row['id'] as String;
     String? createdIncomeId;
@@ -533,6 +574,47 @@ class DebtService {
         .select()
         .single();
     return Map<String, dynamic>.from(row);
+  }
+
+  Future<void> updateDebtOrder(List<String> orderedIds) async {
+    if (orderedIds.isEmpty) return;
+
+    for (var i = 0; i < orderedIds.length; i++) {
+      try {
+        await _db
+            .from('debts')
+            .update({'sort_order': i})
+            .eq('id', orderedIds[i]);
+      } catch (e) {
+        if (_isMissingSortOrderColumn(e)) {
+          return;
+        }
+        rethrow;
+      }
+    }
+  }
+
+  Future<Map<String, dynamic>> updateDebtType({
+    required String debtTypeId,
+    required String name,
+  }) async {
+    final row = await _db
+        .from('debt_types')
+        .update({'name': name})
+        .eq('id', debtTypeId)
+        .select()
+        .single();
+    return Map<String, dynamic>.from(row);
+  }
+
+  Future<void> deleteDebtType(String debtTypeId) async {
+    await _db
+        .from('debt_types')
+        .update({
+          'is_deleted': true,
+          'deleted_at': DateTime.now().toUtc().toIso8601String(),
+        })
+        .eq('id', debtTypeId);
   }
 
   Future<DebtPaymentModel> createPayment({
