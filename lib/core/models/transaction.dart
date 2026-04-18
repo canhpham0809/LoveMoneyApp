@@ -7,6 +7,7 @@ class Transaction {
   final DateTime date;
   final DateTime createdAt;
   final String title;
+  final bool? isIncomingTransfer;
 
   Transaction({
     required this.id,
@@ -15,6 +16,7 @@ class Transaction {
     required this.date,
     required this.createdAt,
     required this.title,
+    this.isIncomingTransfer,
   });
 
   factory Transaction.fromJson(Map<String, dynamic> json) {
@@ -32,6 +34,7 @@ class Transaction {
       title: (json['title'] as String?)?.trim().isNotEmpty == true
           ? (json['title'] as String).trim()
           : 'Giao dịch',
+      isIncomingTransfer: json['is_incoming_transfer'] as bool?,
     );
   }
 }

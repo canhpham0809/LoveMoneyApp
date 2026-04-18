@@ -338,7 +338,12 @@ class TransactionService {
       final title = ((row['note'] as String?)?.trim().isNotEmpty ?? false)
           ? (row['note'] as String).trim()
           : '$directionLabel $partnerName';
-      return Transaction.fromJson({...row, 'type': 'transfer', 'title': title});
+      return Transaction.fromJson({
+        ...row,
+        'type': 'transfer',
+        'title': title,
+        'is_incoming_transfer': isIncoming,
+      });
     });
 
     final transactions = <Transaction>[

@@ -26,12 +26,14 @@ class TransactionList extends StatelessWidget {
       itemCount: transactions.length,
       itemBuilder: (context, idx) {
         final tx = transactions[idx];
+        final inferredIncomingFromTitle = tx.title.startsWith('Nhận từ');
+        final inferredOutgoingFromTitle = tx.title.startsWith('Chuyển cho');
         final isIncomingTransfer =
             tx.type == TransactionType.transfer &&
-            tx.title.startsWith('Nhận từ');
+            (tx.isIncomingTransfer ?? inferredIncomingFromTitle);
         final isOutgoingTransfer =
             tx.type == TransactionType.transfer &&
-            tx.title.startsWith('Chuyển cho');
+            (tx.isIncomingTransfer == false || inferredOutgoingFromTitle);
         final iconData = _iconForType(tx.type, isIncomingTransfer);
         final color = _colorForType(
           tx.type,
