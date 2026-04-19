@@ -169,6 +169,15 @@ class TransactionService {
       for (final c in categories) c['id'] as String: c['name'] as String,
     };
 
+    final incomeSources = await supabase
+        .from('income_sources')
+        .select('id, name')
+        .eq('couple_id', coupleId)
+        .eq('is_deleted', false);
+    final incomeSourceNameById = {
+      for (final s in incomeSources) s['id'] as String: s['name'] as String,
+    };
+
     final funds = await supabase
         .from('funds')
         .select('id, name')
@@ -189,7 +198,7 @@ class TransactionService {
 
     var incomesQuery = supabase
         .from('incomes')
-        .select('id, amount, date, created_at, description')
+        .select('id, amount, date, created_at, description, income_source_id')
         .eq('couple_id', coupleId)
         .eq('is_deleted', false)
         .or('is_from_transfer.is.null,is_from_transfer.eq.false')
@@ -246,16 +255,18 @@ class TransactionService {
       transfersQuery.order('created_at', ascending: false).limit(20),
     ]);
 
-    final incomes = (results[0] as List).map(
-      (json) => Transaction.fromJson({
-        ...json,
+    final incomes = (results[0] as List).map((json) {
+      final row = Map<String, dynamic>.from(json);
+      final sourceId = row['income_source_id'] as String?;
+      row['resolved_category_name'] = sourceId != null
+          ? incomeSourceNameById[sourceId]
+          : null;
+      return Transaction.fromJson({
+        ...row,
         'type': 'income',
-        'title': _pickTitle(
-          row: Map<String, dynamic>.from(json),
-          fallback: 'Thu nhập',
-        ),
-      }),
-    );
+        'title': _pickTitle(row: row, fallback: 'Thu nhập'),
+      });
+    });
     final expenses = (results[1] as List).map((json) {
       final row = Map<String, dynamic>.from(json);
       final categoryId = row['category_id'] as String?;

@@ -81,6 +81,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
   List<_ExpenseFeedItem> _externalItems = [];
   Map<String, String> _categoryNameById = {};
   bool _isLoading = true;
+  bool _isDeleting = false;
   String? _error;
 
   Future<void> _showSwitchBackToSelfAlert() async {
@@ -313,6 +314,24 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
   }
 
   Future<void> _delete(ExpenseModel item) async {
+    if (_isDeleting) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Dang xoa giao dich truoc, vui long cho.'),
+          ),
+        );
+      }
+      return;
+    }
+    if (mounted) {
+      setState(() {
+        _isDeleting = true;
+      });
+    } else {
+      _isDeleting = true;
+    }
+
     final removedIndex = _items.indexWhere((e) => e.id == item.id);
     final removedItem = removedIndex >= 0 ? _items[removedIndex] : item;
     if (removedIndex >= 0 && mounted) {
@@ -335,6 +354,14 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Lỗi xóa: $e')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isDeleting = false;
+        });
+      } else {
+        _isDeleting = false;
       }
     }
   }
@@ -792,32 +819,21 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                     }
 
                     final expense = item.editableExpense!;
-                    return Dismissible(
+                    return ListTile(
                       key: ValueKey(expense.id),
-                      direction: DismissDirection.endToStart,
-                      background: Container(
-                        color: Colors.red,
-                        alignment: Alignment.centerRight,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: const Icon(Icons.delete, color: Colors.white),
+                      leading: const CircleAvatar(
+                        child: Icon(Icons.shopping_bag_outlined),
                       ),
-                      confirmDismiss: (_) => _confirmDeleteExpense(expense),
-                      onDismissed: (_) => _delete(expense),
-                      child: ListTile(
-                        leading: const CircleAvatar(
-                          child: Icon(Icons.shopping_bag_outlined),
-                        ),
-                        onLongPress: () => _showItemActions(expense),
-                        title: Text(item.title),
-                        subtitle: Text(
-                          '${formatDate(item.date)} · ${formatTimeUtcPlus7(item.createdAt)}',
-                        ),
-                        trailing: Text(
-                          formatVnd(item.amount),
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.error,
-                            fontWeight: FontWeight.bold,
-                          ),
+                      onLongPress: () => _showItemActions(expense),
+                      title: Text(item.title),
+                      subtitle: Text(
+                        '${formatDate(item.date)} · ${formatTimeUtcPlus7(item.createdAt)}',
+                      ),
+                      trailing: Text(
+                        formatVnd(item.amount),
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
                     );

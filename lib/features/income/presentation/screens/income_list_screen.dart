@@ -96,6 +96,7 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
   List<_IncomeFeedItem> _externalItems = [];
   Map<String, String> _sourceNameById = {};
   bool _isLoading = true;
+  bool _isDeleting = false;
   String? _error;
 
   Future<void> _showSwitchBackToSelfAlert() async {
@@ -358,6 +359,24 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
   }
 
   Future<void> _delete(IncomeModel item) async {
+    if (_isDeleting) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Dang xoa giao dich truoc, vui long cho.'),
+          ),
+        );
+      }
+      return;
+    }
+    if (mounted) {
+      setState(() {
+        _isDeleting = true;
+      });
+    } else {
+      _isDeleting = true;
+    }
+
     final removedIndex = _items.indexWhere((e) => e.id == item.id);
     final removedItem = removedIndex >= 0 ? _items[removedIndex] : item;
     if (removedIndex >= 0 && mounted) {
@@ -380,6 +399,14 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Loi xoa: $e')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isDeleting = false;
+        });
+      } else {
+        _isDeleting = false;
       }
     }
   }
@@ -831,32 +858,21 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                     }
 
                     final income = item.editableIncome!;
-                    return Dismissible(
+                    return ListTile(
                       key: ValueKey(income.id),
-                      direction: DismissDirection.endToStart,
-                      background: Container(
-                        color: Colors.red,
-                        alignment: Alignment.centerRight,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: const Icon(Icons.delete, color: Colors.white),
+                      leading: const CircleAvatar(
+                        child: Icon(Icons.attach_money),
                       ),
-                      confirmDismiss: (_) => _confirmDeleteIncome(income),
-                      onDismissed: (_) => _delete(income),
-                      child: ListTile(
-                        leading: const CircleAvatar(
-                          child: Icon(Icons.attach_money),
-                        ),
-                        onLongPress: () => _showItemActions(income),
-                        title: Text(item.title),
-                        subtitle: Text(
-                          '${formatDate(item.date)} · ${formatTimeUtcPlus7(item.createdAt)}',
-                        ),
-                        trailing: Text(
-                          formatVnd(item.amount),
-                          style: TextStyle(
-                            color: Colors.green[700],
-                            fontWeight: FontWeight.bold,
-                          ),
+                      onLongPress: () => _showItemActions(income),
+                      title: Text(item.title),
+                      subtitle: Text(
+                        '${formatDate(item.date)} · ${formatTimeUtcPlus7(item.createdAt)}',
+                      ),
+                      trailing: Text(
+                        formatVnd(item.amount),
+                        style: TextStyle(
+                          color: Colors.green[700],
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
                     );

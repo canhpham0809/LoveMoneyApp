@@ -88,18 +88,48 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
     }
     try {
-      final summaries = await _transactionService.fetchMonthlySummaries(
-        coupleId: widget.coupleId,
-        viewerUserId: widget.viewerUserId,
-      );
+      final now = DateTime.now();
+      final futures = await Future.wait<dynamic>([
+        _transactionService.fetchMonthlySummaries(
+          coupleId: widget.coupleId,
+          viewerUserId: widget.viewerUserId,
+        ),
+        _transactionService.fetchRecentTransactions(
+          coupleId: widget.coupleId,
+          year: now.year,
+          month: now.month,
+          viewerUserId: widget.viewerUserId,
+        ),
+      ]);
+
+      final summaries = List<MonthlySummary>.from(futures[0] as List);
+      var recentTransactions = List<Transaction>.from(futures[1] as List);
+
+      if (summaries.isNotEmpty) {
+        final firstSummary = summaries.first;
+        final isCurrentMonth =
+            firstSummary.year == now.year && firstSummary.month == now.month;
+        if (!isCurrentMonth) {
+          recentTransactions = await _transactionService
+              .fetchRecentTransactions(
+                coupleId: widget.coupleId,
+                year: firstSummary.year,
+                month: firstSummary.month,
+                viewerUserId: widget.viewerUserId,
+              );
+        }
+      } else {
+        recentTransactions = const <Transaction>[];
+      }
+
       setState(() {
         _monthlySummaries = summaries;
         _selectedMonthIndex = 0;
+        _recentTransactions = recentTransactions;
       });
       if (_monthPageController.hasClients) {
         _monthPageController.jumpToPage(0);
       }
-      await _loadRecentTransactions();
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {

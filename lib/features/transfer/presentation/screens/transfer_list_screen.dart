@@ -54,6 +54,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
   List<TransferModel> _items = [];
   Map<String, String> _userNameById = {};
   bool _isLoading = true;
+  bool _isDeleting = false;
   String? _error;
 
   DateTime _toUtcPlus7(DateTime value) {
@@ -171,6 +172,24 @@ class _TransferListScreenState extends State<TransferListScreen> {
   }
 
   Future<void> _delete(TransferModel item) async {
+    if (_isDeleting) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Dang xoa giao dich truoc, vui long cho.'),
+          ),
+        );
+      }
+      return;
+    }
+    if (mounted) {
+      setState(() {
+        _isDeleting = true;
+      });
+    } else {
+      _isDeleting = true;
+    }
+
     final removedIndex = _items.indexWhere((e) => e.id == item.id);
     final removedItem = removedIndex >= 0 ? _items[removedIndex] : item;
     if (removedIndex >= 0 && mounted) {
@@ -197,6 +216,14 @@ class _TransferListScreenState extends State<TransferListScreen> {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Lỗi xóa: $e')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isDeleting = false;
+        });
+      } else {
+        _isDeleting = false;
       }
     }
   }
@@ -651,41 +678,28 @@ class _TransferListScreenState extends State<TransferListScreen> {
                     final amountColor = isIncoming
                         ? Colors.green[700]
                         : Theme.of(context).colorScheme.error;
-                    return Dismissible(
+                    return ListTile(
                       key: ValueKey(item.id),
-                      direction: DismissDirection.endToStart,
-                      background: Container(
-                        color: Colors.red,
-                        alignment: Alignment.centerRight,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: const Icon(Icons.delete, color: Colors.white),
+                      leading: CircleAvatar(
+                        backgroundColor: (amountColor ?? Colors.grey)
+                            .withOpacity(0.12),
+                        child: Icon(
+                          isIncoming
+                              ? Icons.south_west_rounded
+                              : Icons.north_east_rounded,
+                          color: amountColor,
+                        ),
                       ),
-                      confirmDismiss: (_) => _confirmDeleteTransfer(item),
-                      onDismissed: (_) => _delete(item),
-                      child: ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: (amountColor ?? Colors.grey)
-                              .withOpacity(0.12),
-                          child: Icon(
-                            isIncoming
-                                ? Icons.south_west_rounded
-                                : Icons.north_east_rounded,
-                            color: amountColor,
-                          ),
-                        ),
-                        onLongPress: () => _showItemActions(item),
-                        title: Text(
-                          item.note ?? directionLabel + ' ' + partnerName,
-                        ),
-                        subtitle: Text(
-                          '${formatDate(item.date)} · ${_formatCreatedTimeUtcPlus7(item.createdAt)}',
-                        ),
-                        trailing: Text(
-                          '${isIncoming ? '+' : '-'} ${formatVnd(item.amount)}',
-                          style: TextStyle(
-                            color: amountColor,
-                            fontWeight: FontWeight.bold,
-                          ),
+                      onLongPress: () => _showItemActions(item),
+                      title: Text(item.note ?? '$directionLabel $partnerName'),
+                      subtitle: Text(
+                        '${formatDate(item.date)} · ${_formatCreatedTimeUtcPlus7(item.createdAt)}',
+                      ),
+                      trailing: Text(
+                        '${isIncoming ? '+' : '-'} ${formatVnd(item.amount)}',
+                        style: TextStyle(
+                          color: amountColor,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
                     );

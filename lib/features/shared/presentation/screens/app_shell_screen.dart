@@ -63,11 +63,13 @@ class _AppShellScreenState extends State<AppShellScreen> {
   }
 
   void _markFundChanged() {
+    _dashboardRefreshBus.value += 1;
     _expenseRefreshBus.value += 1;
     _incomeRefreshBus.value += 1;
   }
 
   void _markDebtChanged() {
+    _dashboardRefreshBus.value += 1;
     _expenseRefreshBus.value += 1;
     _incomeRefreshBus.value += 1;
   }
