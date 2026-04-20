@@ -1,99 +1,109 @@
-name: iOS-ipa-build
+name: Build IPA for iOS Không Ký
 
 on:
-  workflow_dispatch:
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  push:
+    branches:
+      - main
+  workflow_dispatch: # Cho phép kích hoạt thủ công
 
 jobs:
-  build-ios:
-    name: 🎉 iOS Build
-    runs-on: macos-latest
+  build:
+    runs-on: macos-latest # Bắt buộc phải dùng macOS để build iOS
+
     steps:
-      - uses: actions/checkout@v5
+      # 1. Tải mã nguồn
+      - name: ⬇️ Tải Mã Nguồn (Checkout)
+        uses: actions/checkout@v4
 
-      - uses: subosito/flutter-action@v2
+      # 2. Thiết lập Flutter
+      - name: 🎯 Thiết Lập Flutter
+        uses: subosito/flutter-action@v2
         with:
-          channel: 'stable'
-          architecture: x64
+          channel: stable
 
-      - run: flutter pub get
-
-      - name: Install signing certificate and provisioning profile
-        env:
-          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
-          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
-          BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+      # 3. Clean & Tải Pub
+      - name: 🧹 Dọn Dẹp và Tải Gói (Pub Get)
         run: |
-          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
-          PP_PATH=$RUNNER_TEMP/build_pp.mobileprovision
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          flutter clean
+          flutter pub get
 
-          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
-          echo -n "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode -o $PP_PATH
-
-          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-
-          security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-          security list-keychain -d user -s $KEYCHAIN_PATH
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-
-          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          cp $PP_PATH ~/Library/MobileDevice/Provisioning\ Profiles
-
-      - run: pod install --repo-update
-        working-directory: ios
-
-      - name: Create export options plist
-        env:
-          IOS_BUNDLE_ID: ${{ secrets.IOS_BUNDLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          PROVISIONING_PROFILE_NAME: ${{ secrets.PROVISIONING_PROFILE_NAME }}
+      # 4. Sửa Podfile & Deployment Target (iOS 13)
+      - name: ⚙️ Cập Nhật Podfile và Deployment Target
         run: |
-          cat > ios/ExportOptions.plist <<EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>method</key>
-            <string>ad-hoc</string>
-            <key>signingStyle</key>
-            <string>manual</string>
-            <key>teamID</key>
-            <string>$APPLE_TEAM_ID</string>
-            <key>provisioningProfiles</key>
-            <dict>
-              <key>$IOS_BUNDLE_ID</key>
-              <string>$PROVISIONING_PROFILE_NAME</string>
-            </dict>
-          </dict>
-          </plist>
-          EOF
+          PODFILE_PATH="ios/Podfile"
+          PROJECT_FILE="ios/Runner.xcodeproj/project.pbxproj"
 
-      - name: Build signed IPA
-        env:
-          CODE_SIGN_IDENTITY: ${{ secrets.CODE_SIGN_IDENTITY }}
-          PROVISIONING_PROFILE_NAME: ${{ secrets.PROVISIONING_PROFILE_NAME }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          echo "--- Cập nhật Podfile ---"
+          # Đảm bảo platform :ios, '13.0'
+          sed -i '' "s/^# *platform :ios.*/platform :ios, '13.0'/g" "$PODFILE_PATH"
+          sed -i '' "s/^platform :ios.*/platform :ios, '13.0'/g" "$PODFILE_PATH"
+
+          echo "--- Cập nhật Deployment Target trong Xcode project ---"
+          perl -i -pe 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]+;/IPHONEOS_DEPLOYMENT_TARGET = 13.0;/g' "$PROJECT_FILE"
+
+      # 5. Cài đặt Pods
+      - name: 📦 Cài Đặt và Cập Nhật Pods
         run: |
-          flutter build ipa --release \
-            --export-options-plist=ios/ExportOptions.plist \
-            --build-name=1.0.${{ github.run_number }} \
-            --build-number=${{ github.run_number }} \
-            --dart-define=CI=true
+          cd ios
+          pod install --repo-update
+          cd ..
 
-      - name: Copy ipa to predictable name
+      # 6. Xây dựng iOS Không Ký
+      - name: 🔨 Xây Dựng iOS (Không Ký Tên)
         run: |
-          cp build/ios/ipa/*.ipa build/ios/ipa/FlutterIpaExport.ipa
+          PROJECT_FILE="ios/Runner.xcodeproj/project.pbxproj"
 
-      - name: Upload IPA artifact
+          echo "--- Vô hiệu hóa Code Signing ---"
+          # Tắt Code Signing bằng cách sửa project.pbxproj
+          perl -i -pe 's/DEVELOPMENT_TEAM = .*;/DEVELOPMENT_TEAM = "";/g' "$PROJECT_FILE"
+          perl -i -pe 's/CODE_SIGN_IDENTITY = .*;/CODE_SIGN_IDENTITY = "";/g' "$PROJECT_FILE"
+          perl -i -pe 's/PROVISIONING_PROFILE_SPECIFIER = .*;/PROVISIONING_PROFILE_SPECIFIER = "";/g' "$PROJECT_FILE"
+          perl -i -pe 's/ProvisioningStyle = Automatic;/ProvisioningStyle = Manual;/g' "$PROJECT_FILE"
+          perl -i -pe 's/CODE_SIGN_STYLE = .*;/CODE_SIGN_STYLE = Manual;/g' "$PROJECT_FILE"
+          perl -i -pe 's/CODE_SIGNING_ALLOWED = .*/CODE_SIGNING_ALLOWED = NO/g' "$PROJECT_FILE"
+          perl -i -pe 's/CODE_SIGNING_REQUIRED = .*/CODE_SIGNING_REQUIRED = NO/g' "$PROJECT_FILE"
+
+          echo "--- Bắt đầu Build bằng xcodebuild ---"
+          # Lệnh build chính
+          xcodebuild \
+            -workspace ios/Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/ios_derived \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            ONLY_ACTIVE_ARCH=NO \
+            build
+
+      # 7. Đóng gói IPA
+      - name: 🎁 Đóng Gói thành IPA
+        run: |
+          echo "--- Đang đóng gói IPA ---"
+          # Sử dụng derivedDataPath đã định nghĩa ở bước trước
+          APP_PATH="build/ios_derived/Build/Products/Release-iphoneos/Runner.app"
+
+          if [ ! -d "$APP_PATH" ]; then
+            echo "❌ Không tìm thấy Runner.app!"
+            exit 1
+          fi
+
+          IPA_DIR="build/ipa_output"
+          mkdir -p "$IPA_DIR/Payload"
+          cp -R "$APP_PATH" "$IPA_DIR/Payload/"
+
+          # Nén file .ipa
+          (cd "$IPA_DIR" && zip -qry bdpos_smart.ipa Payload)
+
+          rm -rf "$IPA_DIR/Payload"
+
+          echo "--- File IPA đã được tạo tại: $IPA_DIR/bdpos_smart.ipa ---"
+
+      # 8. Tải lên Artifact
+      - name: 📤 Tải Lên Artifact (File IPA)
         uses: actions/upload-artifact@v4
         with:
-          name: ios-ipa-ad-hoc-${{ github.run_number }}
-          path: build/ios/ipa/FlutterIpaExport.ipa
-          if-no-files-found: error
+          name: bdpos_smart-ipa
+          path: build/ipa_output/bdpos_smart.ipa
           retention-days: 7
