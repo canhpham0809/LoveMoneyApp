@@ -5,8 +5,8 @@ import 'package:flutter_app_demo/features/fund/data/models/fund_contribution_mod
 
 class FundService {
   SupabaseClient get _db => Supabase.instance.client;
-  static const String _fundWithdrawIncomeSourceName = 'Rut quy';
-  static const String _fundDeleteIncomeSourceName = 'Xoa quy hoan tien';
+  static const String _fundWithdrawIncomeSourceName = 'Rút quỹ';
+  static const String _fundDeleteIncomeSourceName = 'Xóa quỹ';
 
   bool _isMissingSortOrderColumn(Object error) {
     return error is PostgrestException &&
@@ -18,6 +18,12 @@ class FundService {
     return error is PostgrestException &&
         error.code == '42703' &&
         error.message.contains('show_in_income_form');
+  }
+
+  bool _isMissingCreatorUserIdColumn(Object error) {
+    return error is PostgrestException &&
+        error.code == '42703' &&
+        error.message.contains('creator_user_id');
   }
 
   Future<List<FundModel>> getFunds(String coupleId) async {
@@ -67,8 +73,14 @@ class FundService {
     String? icon,
     String? color,
   }) async {
+    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+    if (currentUserId == null) {
+      throw Exception('Không tìm thấy phiên đăng nhập.');
+    }
+
     final payload = {
       'couple_id': coupleId,
+      'creator_user_id': currentUserId,
       'name': name,
       'target_amount': targetAmount,
       'deadline': deadline?.toIso8601String().substring(0, 10),
@@ -82,7 +94,11 @@ class FundService {
       final row = await _db.from('funds').insert(payload).select().single();
       return FundModel.fromJson(row);
     } catch (e) {
-      if (!_isMissingSortOrderColumn(e)) rethrow;
+      if (_isMissingCreatorUserIdColumn(e)) {
+        payload.remove('creator_user_id');
+      } else if (!_isMissingSortOrderColumn(e)) {
+        rethrow;
+      }
       payload.remove('sort_order');
       final row = await _db.from('funds').insert(payload).select().single();
       return FundModel.fromJson(row);
@@ -142,11 +158,35 @@ class FundService {
   }
 
   Future<void> deleteFund(String fundId) async {
-    final fundRow = await _db
-        .from('funds')
-        .select('couple_id, name, current_amount')
-        .eq('id', fundId)
-        .single();
+    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+    if (currentUserId == null) {
+      throw Exception('Không tìm thấy phiên đăng nhập.');
+    }
+
+    late final Map<String, dynamic> fundRow;
+    try {
+      fundRow = await _db
+          .from('funds')
+          .select(
+            'couple_id, name, current_amount, creator_user_id, updated_by',
+          )
+          .eq('id', fundId)
+          .single();
+    } catch (e) {
+      if (!_isMissingCreatorUserIdColumn(e)) rethrow;
+      fundRow = await _db
+          .from('funds')
+          .select('couple_id, name, current_amount, updated_by')
+          .eq('id', fundId)
+          .single();
+    }
+
+    final creatorUserId =
+        fundRow['creator_user_id'] as String? ??
+        fundRow['updated_by'] as String?;
+    if (creatorUserId != null && creatorUserId != currentUserId) {
+      throw Exception('Chỉ người tạo quỹ mới có quyền xóa.');
+    }
 
     final currentAmount = (fundRow['current_amount'] as num?)?.toDouble() ?? 0;
     if (currentAmount > 0) {
@@ -251,7 +291,7 @@ class FundService {
     final fundName = (fund['name'] as String?)?.trim() ?? 'Quy';
     final currentAmount = (fund['current_amount'] as num?)?.toDouble() ?? 0;
     if (amount > currentAmount) {
-      throw Exception('So tien rut vuot qua so du quy hien tai.');
+      throw Exception('Số tiền rut vuot qua so du quy hien tai.');
     }
 
     final row = await _db
@@ -351,7 +391,7 @@ class FundService {
     if (contributionType == 'withdrawal') {
       final maxAllowed = currentAmount + previousAmount;
       if (amount > maxAllowed) {
-        throw Exception('So tien rut vuot qua so du quy hien tai.');
+        throw Exception('Số tiền rut vuot qua so du quy hien tai.');
       }
     }
 

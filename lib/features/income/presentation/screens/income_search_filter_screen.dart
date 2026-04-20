@@ -85,7 +85,7 @@ class _IncomeSearchFilterScreenState extends State<IncomeSearchFilterScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Search & Filter thu nhap')),
+      appBar: AppBar(title: const Text('Tìm kiếm & Lọc thu nhập')),
       body: Column(
         children: [
           Padding(
@@ -96,7 +96,7 @@ class _IncomeSearchFilterScreenState extends State<IncomeSearchFilterScreen> {
                   controller: _searchCtrl,
                   decoration: const InputDecoration(
                     prefixIcon: Icon(Icons.search),
-                    hintText: 'Tim theo mo ta thu nhap',
+                    hintText: 'Tìm theo mô tả thu nhập',
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -119,7 +119,7 @@ class _IncomeSearchFilterScreenState extends State<IncomeSearchFilterScreen> {
                           setState(() => _month = null);
                           _applyFilter();
                         },
-                        child: const Text('Bo loc'),
+                        child: const Text('Bỏ lọc'),
                       ),
                   ],
                 ),
@@ -130,7 +130,7 @@ class _IncomeSearchFilterScreenState extends State<IncomeSearchFilterScreen> {
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _filtered.isEmpty
-                ? const Center(child: Text('Khong tim thay giao dich phu hop.'))
+                ? const Center(child: Text('Không tìm thấy giao dịch phù hợp.'))
                 : ListView.builder(
                     itemCount: _filtered.length,
                     itemBuilder: (context, index) {
@@ -139,7 +139,7 @@ class _IncomeSearchFilterScreenState extends State<IncomeSearchFilterScreen> {
                         leading: const CircleAvatar(
                           child: Icon(Icons.attach_money),
                         ),
-                        title: Text(item.description ?? 'Thu nhap'),
+                        title: Text(item.description ?? 'Thu nhập'),
                         subtitle: Text(formatDate(item.date)),
                         trailing: Text(
                           formatVnd(item.amount),
@@ -157,3 +157,4 @@ class _IncomeSearchFilterScreenState extends State<IncomeSearchFilterScreen> {
     );
   }
 }
+

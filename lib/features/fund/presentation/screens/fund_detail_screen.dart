@@ -33,6 +33,32 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
   Map<String, String> _memberNameById = {};
   bool _isLoading = true;
 
+  String _normalizeUserId(String userId) => userId.trim().toLowerCase();
+
+  String _resolveMemberName(String userId) {
+    final name = _memberNameById[_normalizeUserId(userId)]?.trim();
+    if (name != null && name.isNotEmpty) return name;
+    return 'Thành viên';
+  }
+
+  Future<Map<String, String>> _loadMemberNamesByIds(Set<String> userIds) async {
+    if (userIds.isEmpty) return {};
+    final users = List<Map<String, dynamic>>.from(
+      await Supabase.instance.client
+          .from('users')
+          .select('id, display_name, email')
+          .inFilter('id', userIds.toList()),
+    );
+    return {
+      for (final u in users)
+        _normalizeUserId(
+          u['id'] as String,
+        ): ((u['display_name'] as String?)?.trim().isNotEmpty == true
+            ? (u['display_name'] as String).trim()
+            : ((u['email'] as String?) ?? 'Thành viên')),
+    };
+  }
+
   @override
   void initState() {
     super.initState();
@@ -49,31 +75,11 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
         coupleId: widget.coupleId,
         fundId: widget.fundId,
       );
-      final members = await Supabase.instance.client
-          .from('couple_members')
-          .select('user_id')
-          .eq('couple_id', widget.coupleId)
-          .eq('is_deleted', false);
-      final memberIds = members
-          .map((m) => m['user_id'] as String)
-          .toSet()
-          .toList();
-
-      final users = memberIds.isEmpty
-          ? <Map<String, dynamic>>[]
-          : List<Map<String, dynamic>>.from(
-              await Supabase.instance.client
-                  .from('users')
-                  .select('id, display_name, email')
-                  .inFilter('id', memberIds),
-            );
-      final memberNameById = {
-        for (final u in users)
-          u['id'] as String:
-              ((u['display_name'] as String?)?.trim().isNotEmpty == true
-              ? (u['display_name'] as String).trim()
-              : ((u['email'] as String?) ?? 'User')),
+      final memberIds = <String>{
+        if (fund.creatorUserId != null) fund.creatorUserId!,
+        ...contributions.map((c) => c.userId),
       };
+      final memberNameById = await _loadMemberNamesByIds(memberIds);
 
       if (!mounted) return;
       setState(() {
@@ -97,7 +103,7 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
     if (walletList.isEmpty) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Chua co vi de gop quy.')));
+      ).showSnackBar(const SnackBar(content: Text('Chưa có ví để góp quỹ.')));
       return;
     }
 
@@ -126,8 +132,8 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
           builder: (dialogContext, setDialogState) => AlertDialog(
             title: Text(
               existing == null
-                  ? (isWithdrawalTx ? 'Rut quy' : 'Gop quy')
-                  : (isWithdrawalTx ? 'Sua dot rut' : 'Sua dot gop'),
+                  ? (isWithdrawalTx ? 'Rút quỹ' : 'Góp quỹ')
+                  : (isWithdrawalTx ? 'Sửa đợt rút' : 'Sửa đợt góp'),
             ),
             content: SingleChildScrollView(
               child: Column(
@@ -141,7 +147,7 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                       ThousandsSeparatorInputFormatter(),
                     ],
                     decoration: const InputDecoration(
-                      labelText: 'So tien',
+                      labelText: 'Số tiền',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -155,7 +161,7 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                   TextField(
                     controller: noteCtrl,
                     decoration: const InputDecoration(
-                      labelText: 'Ghi chu',
+                      labelText: 'Ghi chú',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -173,7 +179,7 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                       }
                     },
                     icon: const Icon(Icons.calendar_today),
-                    label: Text('Ngay: ${formatDate(selectedDate)}'),
+                    label: Text('Ngày: ${formatDate(selectedDate)}'),
                   ),
                 ],
               ),
@@ -188,7 +194,7 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                     Navigator.of(dialogContext).maybePop(false);
                   });
                 },
-                child: const Text('Huy'),
+                child: const Text('Hủy'),
               ),
               FilledButton(
                 onPressed: () async {
@@ -196,7 +202,7 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                   final amount = parseAmountInput(amountCtrl.text.trim());
                   if (amount == null || amount <= 0) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('So tien khong hop le.')),
+                      const SnackBar(content: Text('Số tiền không hợp lệ.')),
                     );
                     return;
                   }
@@ -244,7 +250,7 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                     Navigator.of(dialogContext).maybePop(true);
                   });
                 },
-                child: const Text('Luu'),
+                child: const Text('Lưu'),
               ),
             ],
           ),
@@ -293,28 +299,28 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
       String message;
       if (impact < 0) {
         message =
-            'Neu xac nhan xoa giao dich nay, so du vi se bi tru lai ${formatVnd(impact.abs())}. He thong dong thoi huy giao dich thu nhap lien ket.';
+            'Nếu xác nhận xóa giao dịch này, số dư ví sẽ bị trừ lại ${formatVnd(impact.abs())}. Hệ thống đồng thời hủy giao dịch thu nhập liên kết.';
       } else if (impact > 0) {
         message =
-            'Neu xac nhan xoa giao dich nay, ban se duoc cong them ${formatVnd(impact)}.';
+            'Nếu xác nhận xóa giao dịch này, bạn sẽ được cộng thêm ${formatVnd(impact)}.';
       } else {
         message =
-            'Neu xac nhan xoa giao dich nay, he thong khong phat sinh giao dich bu tru moi.';
+            'Nếu xác nhận xóa giao dịch này, hệ thống không phát sinh giao dịch bù trừ mới.';
       }
 
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: const Text('Xac nhan xoa giao dich quy'),
+          title: const Text('Xác nhận xóa giao dịch quỹ'),
           content: Text(message),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Huy'),
+              child: const Text('Hủy'),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Xoa'),
+              child: const Text('Xóa'),
             ),
           ],
         ),
@@ -333,11 +339,11 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
   Widget build(BuildContext context) {
     final fund = _fund;
     return Scaffold(
-      appBar: AppBar(title: const Text('Chi tiet Quy')),
+      appBar: AppBar(title: const Text('Chi tiết Quỹ')),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : fund == null
-          ? const Center(child: Text('Khong tim thay quy.'))
+          ? const Center(child: Text('Không tìm thấy quỹ.'))
           : Column(
               children: [
                 Card(
@@ -355,9 +361,13 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                           ),
                         ),
                         const SizedBox(height: 8),
-                        Text('Da gop: ${formatVnd(fund.currentAmount)}'),
+                        Text('Đã góp: ${formatVnd(fund.currentAmount)}'),
                         if (fund.targetAmount != null)
-                          Text('Muc tieu: ${formatVnd(fund.targetAmount!)}'),
+                          Text('Mục tiêu: ${formatVnd(fund.targetAmount!)}'),
+                        if (fund.creatorUserId != null)
+                          Text(
+                            'Người tạo: ${_resolveMemberName(fund.creatorUserId!)}',
+                          ),
                       ],
                     ),
                   ),
@@ -367,7 +377,7 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                   child: Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      'Lich su giao dich quy',
+                      'Lịch sử giao dịch góp/rút quỹ',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
@@ -375,7 +385,7 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                 const SizedBox(height: 8),
                 Expanded(
                   child: _contributions.isEmpty
-                      ? const Center(child: Text('Chua co dot gop nao.'))
+                      ? const Center(child: Text('Chưa có đợt góp nào.'))
                       : ListView.builder(
                           itemCount: _contributions.length,
                           itemBuilder: (context, index) {
@@ -402,7 +412,7 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                                 ),
                               ),
                               subtitle: Text(
-                                '${isWithdrawal ? 'Rut quy' : 'Gop quy'} · ${formatDate(c.date)} · ${formatTimeUtcPlus7(c.createdAt)} · ${_memberNameById[c.userId] ?? c.userId}${c.note != null ? ' · ${c.note}' : ''}',
+                                '${isWithdrawal ? 'Rút quỹ' : 'Góp quỹ'} · ${formatDate(c.date)} · ${formatTimeUtcPlus7(c.createdAt)} · ${_memberNameById[c.userId] ?? c.userId}${c.note != null ? ' · ${c.note}' : ''}',
                               ),
                             );
                           },

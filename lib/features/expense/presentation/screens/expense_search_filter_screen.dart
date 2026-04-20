@@ -60,8 +60,7 @@ class _ExpenseSearchFilterScreenState extends State<ExpenseSearchFilterScreen> {
           _month == null ||
           (item.date.year == _month!.year && item.date.month == _month!.month);
       return matchQuery && matchMonth;
-    }).toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    }).toList()..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
     if (mounted) {
       setState(() => _filtered = filtered);
@@ -86,7 +85,7 @@ class _ExpenseSearchFilterScreenState extends State<ExpenseSearchFilterScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Search & Filter chi tieu')),
+      appBar: AppBar(title: const Text('Tìm kiếm & Lọc chi tiêu')),
       body: Column(
         children: [
           Padding(
@@ -97,7 +96,7 @@ class _ExpenseSearchFilterScreenState extends State<ExpenseSearchFilterScreen> {
                   controller: _searchCtrl,
                   decoration: const InputDecoration(
                     prefixIcon: Icon(Icons.search),
-                    hintText: 'Tim theo mo ta, danh muc',
+                    hintText: 'Tìm theo mô tả, danh mục',
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -109,8 +108,8 @@ class _ExpenseSearchFilterScreenState extends State<ExpenseSearchFilterScreen> {
                       icon: const Icon(Icons.calendar_month),
                       label: Text(
                         _month == null
-                            ? 'Loc theo thang'
-                            : 'Thang ${_month!.month.toString().padLeft(2, '0')}/${_month!.year}',
+                            ? 'Lọc theo tháng'
+                            : 'Tháng ${_month!.month.toString().padLeft(2, '0')}/${_month!.year}',
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -120,7 +119,7 @@ class _ExpenseSearchFilterScreenState extends State<ExpenseSearchFilterScreen> {
                           setState(() => _month = null);
                           _applyFilter();
                         },
-                        child: const Text('Bo loc'),
+                        child: const Text('Bỏ lọc'),
                       ),
                   ],
                 ),
@@ -131,7 +130,7 @@ class _ExpenseSearchFilterScreenState extends State<ExpenseSearchFilterScreen> {
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _filtered.isEmpty
-                ? const Center(child: Text('Khong tim thay giao dich phu hop.'))
+                ? const Center(child: Text('Không tìm thấy giao dịch phù hợp.'))
                 : ListView.builder(
                     itemCount: _filtered.length,
                     itemBuilder: (context, index) {
@@ -140,7 +139,7 @@ class _ExpenseSearchFilterScreenState extends State<ExpenseSearchFilterScreen> {
                         leading: const CircleAvatar(
                           child: Icon(Icons.shopping_bag_outlined),
                         ),
-                        title: Text(item.categoryName ?? 'Chi tieu'),
+                        title: Text(item.categoryName ?? 'Chi tiêu'),
                         subtitle: Text(
                           '${item.description ?? ''} · ${formatDate(item.date)}',
                         ),

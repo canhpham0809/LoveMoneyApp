@@ -89,21 +89,21 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text('Khong the them khi dang xem $viewingLabel'),
+        title: Text('Không thể thêm khi đang xem $viewingLabel'),
         content: Text(
-          'Ban dang o view $viewingLabel. Vui long quay ve view cua tai khoan dang nhap de them giao dich.',
+          'Bạn đang ở view $viewingLabel. Vui lòng quay về view của tài khoản đăng nhập để thêm giao dịch.',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).maybePop(),
-            child: const Text('Dong'),
+            child: const Text('Đóng'),
           ),
           FilledButton(
             onPressed: () {
               Navigator.of(dialogContext).maybePop();
               widget.onToggleViewer?.call();
             },
-            child: const Text('Chuyen ve toi'),
+            child: const Text('Chuyển về tôi'),
           ),
         ],
       ),
@@ -318,7 +318,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Dang xoa giao dich truoc, vui long cho.'),
+            content: Text('Đang xóa giao dịch trước, vui lòng chờ.'),
           ),
         );
       }
@@ -425,7 +425,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
       });
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Loi luu: $e')));
+      ).showSnackBar(SnackBar(content: Text('Lỗi lưu: $e')));
     }
   }
 
@@ -433,18 +433,18 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Xac nhan xoa chi tieu'),
+        title: const Text('Xác nhận xóa chi tiêu'),
         content: Text(
-          'Neu xac nhan xoa, ban se duoc hoan lai ${formatVnd(item.amount)} vao so du vi. Khong phat sinh giao dich bu tru moi.',
+          'Nếu xác nhận xóa, bạn sẽ được hoàn lại ${formatVnd(item.amount)} vào số dư ví. Không phát sinh giao dịch bù trừ mới.',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).maybePop(false),
-            child: const Text('Huy'),
+            child: const Text('Hủy'),
           ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext).maybePop(true),
-            child: const Text('Xoa'),
+            child: const Text('Xóa'),
           ),
         ],
       ),
@@ -467,7 +467,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
     if (!mounted) return;
     if (categories.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Chua co danh muc chi tieu.')),
+        const SnackBar(content: Text('Chưa có danh mục chi tiêu.')),
       );
       return;
     }
@@ -476,7 +476,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
     if (walletId == null) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Chua co vi de ghi nhan.')));
+      ).showSnackBar(const SnackBar(content: Text('Chưa có ví để ghi nhận.')));
       return;
     }
 
@@ -494,7 +494,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (dialogContext, setDialogState) => AlertDialog(
-            title: Text(existing == null ? 'Them chi tieu' : 'Sua chi tieu'),
+            title: Text(existing == null ? 'Thêm chi tiêu' : 'Sửa chi tiêu'),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -507,7 +507,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                       ThousandsSeparatorInputFormatter(),
                     ],
                     decoration: const InputDecoration(
-                      labelText: 'So tien',
+                      labelText: 'Số tiền',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -555,7 +555,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                   TextField(
                     controller: noteCtrl,
                     decoration: const InputDecoration(
-                      labelText: 'Ghi chu',
+                      labelText: 'Ghi chú',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -573,7 +573,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                       }
                     },
                     icon: const Icon(Icons.calendar_today),
-                    label: Text('Ngay: ${formatDate(selectedDate)}'),
+                    label: Text('Ngày: ${formatDate(selectedDate)}'),
                   ),
                 ],
               ),
@@ -581,14 +581,14 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(dialogContext).maybePop(),
-                child: const Text('Huy'),
+                child: const Text('Hủy'),
               ),
               FilledButton(
                 onPressed: () async {
                   final amount = parseAmountInput(amountCtrl.text.trim());
                   if (amount == null || amount <= 0) {
                     ScaffoldMessenger.of(dialogContext).showSnackBar(
-                      const SnackBar(content: Text('So tien khong hop le.')),
+                      const SnackBar(content: Text('Số tiền không hợp lệ.')),
                     );
                     return;
                   }
@@ -606,7 +606,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                     );
                   }
                 },
-                child: const Text('Luu'),
+                child: const Text('Lưu'),
               ),
             ],
           ),
@@ -636,7 +636,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Loi luu: $e')));
+      ).showSnackBar(SnackBar(content: Text('Lỗi lưu: $e')));
     }
   }
 

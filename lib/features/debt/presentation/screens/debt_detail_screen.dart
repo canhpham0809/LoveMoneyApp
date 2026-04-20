@@ -32,6 +32,32 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
   Map<String, String> _memberNameById = {};
   bool _isLoading = true;
 
+  String _normalizeUserId(String userId) => userId.trim().toLowerCase();
+
+  String _resolveMemberName(String userId) {
+    final name = _memberNameById[_normalizeUserId(userId)]?.trim();
+    if (name != null && name.isNotEmpty) return name;
+    return 'Thành viên';
+  }
+
+  Future<Map<String, String>> _loadMemberNamesByIds(Set<String> userIds) async {
+    if (userIds.isEmpty) return {};
+    final users = List<Map<String, dynamic>>.from(
+      await Supabase.instance.client
+          .from('users')
+          .select('id, display_name, email')
+          .inFilter('id', userIds.toList()),
+    );
+    return {
+      for (final u in users)
+        _normalizeUserId(
+          u['id'] as String,
+        ): ((u['display_name'] as String?)?.trim().isNotEmpty == true
+            ? (u['display_name'] as String).trim()
+            : ((u['email'] as String?) ?? 'Thành viên')),
+    };
+  }
+
   @override
   void initState() {
     super.initState();
@@ -48,31 +74,11 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
         coupleId: widget.coupleId,
         debtId: widget.debtId,
       );
-      final members = await Supabase.instance.client
-          .from('couple_members')
-          .select('user_id')
-          .eq('couple_id', widget.coupleId)
-          .eq('is_deleted', false);
-      final memberIds = members
-          .map((m) => m['user_id'] as String)
-          .toSet()
-          .toList();
-
-      final users = memberIds.isEmpty
-          ? <Map<String, dynamic>>[]
-          : List<Map<String, dynamic>>.from(
-              await Supabase.instance.client
-                  .from('users')
-                  .select('id, display_name, email')
-                  .inFilter('id', memberIds),
-            );
-      final memberNameById = {
-        for (final u in users)
-          u['id'] as String:
-              ((u['display_name'] as String?)?.trim().isNotEmpty == true
-              ? (u['display_name'] as String).trim()
-              : ((u['email'] as String?) ?? 'User')),
+      final memberIds = <String>{
+        debt.userId,
+        ...payments.map((p) => p.updatedBy).whereType<String>(),
       };
+      final memberNameById = await _loadMemberNamesByIds(memberIds);
 
       if (!mounted) return;
       setState(() {
@@ -93,7 +99,7 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
     if (wallets.isEmpty) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Chua co vi de tra no.')));
+      ).showSnackBar(const SnackBar(content: Text('Chưa có ví để trả nợ.')));
       return;
     }
 
@@ -120,7 +126,7 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
             title: Text(
               existing == null
                   ? (isLend ? 'Thu hoi no' : 'Tra no')
-                  : (isLend ? 'Sua dot thu hoi' : 'Sua dot tra no'),
+                  : (isLend ? 'Sửa đợt thu hồi' : 'Sửa đợt trả nợ'),
             ),
             content: SingleChildScrollView(
               child: Column(
@@ -134,7 +140,7 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                       ThousandsSeparatorInputFormatter(),
                     ],
                     decoration: const InputDecoration(
-                      labelText: 'So tien',
+                      labelText: 'Số tiền',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -148,7 +154,7 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                   TextField(
                     controller: noteCtrl,
                     decoration: const InputDecoration(
-                      labelText: 'Ghi chu',
+                      labelText: 'Ghi chú',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -166,7 +172,7 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                       }
                     },
                     icon: const Icon(Icons.calendar_today),
-                    label: Text('Ngay: ${formatDate(selectedDate)}'),
+                    label: Text('Ngày: ${formatDate(selectedDate)}'),
                   ),
                 ],
               ),
@@ -174,14 +180,14 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogContext, false),
-                child: const Text('Huy'),
+                child: const Text('Hủy'),
               ),
               FilledButton(
                 onPressed: () async {
                   final amount = parseAmountInput(amountCtrl.text.trim());
                   if (amount == null || amount <= 0) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('So tien khong hop le.')),
+                      const SnackBar(content: Text('Số tiền không hợp lệ.')),
                     );
                     return;
                   }
@@ -211,7 +217,7 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                     Navigator.pop(dialogContext, true);
                   }
                 },
-                child: const Text('Luu'),
+                child: const Text('Lưu'),
               ),
             ],
           ),
@@ -255,28 +261,28 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
       String message;
       if (impact < 0) {
         message =
-            'Neu xac nhan xoa dot nay, so du vi se bi tru lai ${formatVnd(impact.abs())}. He thong dong thoi huy giao dich thu nhap lien ket.';
+            'Nếu xác nhận xóa đợt này, số dư ví sẽ bị trừ lại ${formatVnd(impact.abs())}. Hệ thống đồng thời hủy giao dịch thu nhập liên kết.';
       } else if (impact > 0) {
         message =
-            'Neu xac nhan xoa dot nay, ban se duoc cong them ${formatVnd(impact)}.';
+            'Nếu xác nhận xóa đợt này, bạn sẽ được cộng thêm ${formatVnd(impact)}.';
       } else {
         message =
-            'Neu xac nhan xoa dot nay, he thong khong phat sinh giao dich bu tru moi.';
+            'Nếu xác nhận xóa đợt này, hệ thống không phát sinh giao dịch bù trừ mới.';
       }
 
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: const Text('Xac nhan xoa dot giao dich no'),
+          title: const Text('Xác nhận xóa đợt giao dịch nợ'),
           content: Text(message),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Huy'),
+              child: const Text('Hủy'),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Xoa'),
+              child: const Text('Xóa'),
             ),
           ],
         ),
@@ -296,11 +302,11 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
     final debt = _debt;
     final isLend = debt?.debtKind == 'lend';
     return Scaffold(
-      appBar: AppBar(title: Text(isLend ? 'Chi tiet Cho muon' : 'Chi tiet No')),
+      appBar: AppBar(title: Text(isLend ? 'Chi tiết Cho mượn' : 'Chi tiết Nợ')),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : debt == null
-          ? const Center(child: Text('Khong tim thay khoan no.'))
+          ? const Center(child: Text('Không tìm thấy khoản nợ.'))
           : Column(
               children: [
                 Card(
@@ -318,11 +324,12 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                           ),
                         ),
                         const SizedBox(height: 8),
-                        Text('Tong no: ${formatVnd(debt.originalAmount)}'),
+                        Text('Tổng nợ: ${formatVnd(debt.originalAmount)}'),
                         Text(
-                          '${isLend ? 'Con phai thu' : 'Con lai'}: ${formatVnd(debt.remainingAmount)}',
+                          '${isLend ? 'Còn phải thu' : 'Còn lại'}: ${formatVnd(debt.remainingAmount)}',
                         ),
-                        Text('Chu no: ${debt.creditorName}'),
+                        Text('Người nợ: ${debt.creditorName}'),
+                        Text('Người tạo: ${_resolveMemberName(debt.userId)}'),
                       ],
                     ),
                   ),
@@ -332,7 +339,7 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                   child: Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      isLend ? 'Timeline dot thu hoi' : 'Timeline dot tra no',
+                      isLend ? 'Lịch sử trả nợ' : 'Lịch sử trả nợ',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
@@ -343,8 +350,8 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                       ? Center(
                           child: Text(
                             isLend
-                                ? 'Chua co dot thu hoi nao.'
-                                : 'Chua co dot tra no nao.',
+                                ? 'Chưa có đợt thu hồi nào.'
+                                : 'Chưa có đợt trả nợ nào.',
                           ),
                         )
                       : ListView.builder(

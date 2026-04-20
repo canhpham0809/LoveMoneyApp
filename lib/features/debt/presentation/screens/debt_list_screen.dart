@@ -32,6 +32,7 @@ class _DebtFormPayload {
   final String debtTypeId;
   final String debtKind;
   final bool recordToIncome;
+  final bool recordToExpense;
   final String name;
   final double originalAmount;
   final String creditorName;
@@ -43,6 +44,7 @@ class _DebtFormPayload {
     required this.debtTypeId,
     required this.debtKind,
     required this.recordToIncome,
+    required this.recordToExpense,
     required this.name,
     required this.originalAmount,
     required this.creditorName,
@@ -55,6 +57,7 @@ class _DebtFormPayload {
 class _DebtListScreenState extends State<DebtListScreen> {
   final _service = DebtService();
   List<DebtModel> _items = [];
+  Map<String, String> _memberNameById = {};
   List<String> _manualOrderIds = [];
   String _selectedDebtKind = 'debt';
   bool _isLoading = true;
@@ -62,6 +65,32 @@ class _DebtListScreenState extends State<DebtListScreen> {
 
   List<DebtModel> get _filteredItems =>
       _items.where((item) => item.debtKind == _selectedDebtKind).toList();
+
+  String _normalizeUserId(String userId) => userId.trim().toLowerCase();
+
+  String _resolveMemberName(String userId) {
+    final name = _memberNameById[_normalizeUserId(userId)]?.trim();
+    if (name != null && name.isNotEmpty) return name;
+    return 'Thành viên';
+  }
+
+  Future<Map<String, String>> _loadMemberNamesByIds(Set<String> userIds) async {
+    if (userIds.isEmpty) return {};
+    final users = List<Map<String, dynamic>>.from(
+      await Supabase.instance.client
+          .from('users')
+          .select('id, display_name, email')
+          .inFilter('id', userIds.toList()),
+    );
+    return {
+      for (final u in users)
+        _normalizeUserId(
+          u['id'] as String,
+        ): ((u['display_name'] as String?)?.trim().isNotEmpty == true
+            ? (u['display_name'] as String).trim()
+            : ((u['email'] as String?) ?? 'Thành viên')),
+    };
+  }
 
   void _sortDebtsByDueDate(List<DebtModel> items) {
     items.sort((a, b) {
@@ -137,7 +166,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
       });
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Khong luu duoc thu tu no: $e')));
+      ).showSnackBar(SnackBar(content: Text('Không lưu được thứ tự nợ: $e')));
     }
   }
 
@@ -177,7 +206,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
     if (debtTypes.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Chua co loai no. Vui long tao loai no truoc.'),
+          content: Text('Chưa có loại nợ. Vui lòng tạo loại nợ trước.'),
         ),
       );
       return;
@@ -190,6 +219,9 @@ class _DebtListScreenState extends State<DebtListScreen> {
     );
     final shouldRecordToIncome = ValueNotifier<bool>(
       existing?.recordToIncome ?? false,
+    );
+    final shouldRecordToExpense = ValueNotifier<bool>(
+      existing?.linkedExpenseId != null,
     );
     DateTime? dueDate = existing?.dueDate;
     var isClosingDialog = false;
@@ -206,7 +238,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (dialogContext, setDialogState) => AlertDialog(
-            title: Text(existing == null ? 'Them no' : 'Sua no'),
+            title: Text(existing == null ? 'Thêm nợ' : 'Sửa nợ'),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -214,7 +246,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
                   TextField(
                     controller: personCtrl,
                     decoration: const InputDecoration(
-                      labelText: 'Nguoi lien quan',
+                      labelText: 'Người liên quan',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -227,7 +259,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
                       ThousandsSeparatorInputFormatter(),
                     ],
                     decoration: const InputDecoration(
-                      labelText: 'So tien',
+                      labelText: 'Số tiền',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -245,7 +277,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
                       children: [
                         const Align(
                           alignment: Alignment.centerLeft,
-                          child: Text('Loai no'),
+                          child: Text('Loại nợ'),
                         ),
                         const SizedBox(height: 8),
                         Wrap(
@@ -284,7 +316,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
                   const SizedBox(height: 8),
                   ValueListenableBuilder<String>(
                     valueListenable: selectedDebtKind,
-                    builder: (_, value, __) => Row(
+                    builder: (_, value, _) => Row(
                       children: [
                         GestureDetector(
                           onTap: () => selectedDebtKind.value = 'debt',
@@ -336,19 +368,26 @@ class _DebtListScreenState extends State<DebtListScreen> {
                   ValueListenableBuilder<String>(
                     valueListenable: selectedDebtKind,
                     builder: (_, debtKind, child) {
-                      if (debtKind != 'debt') {
-                        return const ListTile(
-                          dense: true,
-                          visualDensity: VisualDensity(
-                            horizontal: -2,
-                            vertical: -2,
+                      if (debtKind == 'debt') {
+                        return ValueListenableBuilder<bool>(
+                          valueListenable: shouldRecordToIncome,
+                          builder: (_, value, child) => CheckboxListTile(
+                            dense: true,
+                            visualDensity: const VisualDensity(
+                              horizontal: -2,
+                              vertical: -2,
+                            ),
+                            contentPadding: EdgeInsets.zero,
+                            value: value,
+                            onChanged: (v) {
+                              shouldRecordToIncome.value = v ?? false;
+                            },
+                            title: const Text('Ghi nhận vào Thu'),
                           ),
-                          contentPadding: EdgeInsets.zero,
-                          title: Text('Cho muon se phat sinh giao dich.'),
                         );
                       }
                       return ValueListenableBuilder<bool>(
-                        valueListenable: shouldRecordToIncome,
+                        valueListenable: shouldRecordToExpense,
                         builder: (_, value, child) => CheckboxListTile(
                           dense: true,
                           visualDensity: const VisualDensity(
@@ -358,9 +397,9 @@ class _DebtListScreenState extends State<DebtListScreen> {
                           contentPadding: EdgeInsets.zero,
                           value: value,
                           onChanged: (v) {
-                            shouldRecordToIncome.value = v ?? false;
+                            shouldRecordToExpense.value = v ?? false;
                           },
-                          title: const Text('Ghi nhan vao chi'),
+                          title: const Text('Ghi nhận vào Chi'),
                         ),
                       );
                     },
@@ -369,7 +408,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
                   TextField(
                     controller: noteCtrl,
                     decoration: const InputDecoration(
-                      labelText: 'Ghi chu',
+                      labelText: 'Ghi chú',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -389,8 +428,8 @@ class _DebtListScreenState extends State<DebtListScreen> {
                     icon: const Icon(Icons.calendar_today),
                     label: Text(
                       dueDate == null
-                          ? 'Chon han thanh toan'
-                          : 'Han: ${formatDate(dueDate!)}',
+                          ? 'Chọn hạn thanh toán'
+                          : 'Hạn: ${formatDate(dueDate!)}',
                     ),
                   ),
                 ],
@@ -406,7 +445,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
                     Navigator.of(dialogContext).maybePop();
                   });
                 },
-                child: const Text('Huy'),
+                child: const Text('Hủy'),
               ),
               FilledButton(
                 onPressed: () async {
@@ -417,7 +456,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
                       amount <= 0) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('Nhap du thong tin hop le.'),
+                        content: Text('Nhập đủ thông tin hợp lệ.'),
                       ),
                     );
                     return;
@@ -426,7 +465,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
                   if (uid == null) {
                     ScaffoldMessenger.of(dialogContext).showSnackBar(
                       const SnackBar(
-                        content: Text('Khong tim thay phien dang nhap.'),
+                        content: Text('Không tìm thấy phiên đăng nhập.'),
                       ),
                     );
                     return;
@@ -441,6 +480,9 @@ class _DebtListScreenState extends State<DebtListScreen> {
                         recordToIncome: selectedDebtKind.value == 'debt'
                             ? shouldRecordToIncome.value
                             : false,
+                        recordToExpense: selectedDebtKind.value == 'lend'
+                            ? shouldRecordToExpense.value
+                            : false,
                         name: personCtrl.text.trim(),
                         originalAmount: amount,
                         creditorName: personCtrl.text.trim(),
@@ -453,7 +495,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
                     );
                   });
                 },
-                child: const Text('Luu'),
+                child: const Text('Lưu'),
               ),
             ],
           ),
@@ -464,6 +506,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
     selectedDebtTypeId.dispose();
     selectedDebtKind.dispose();
     shouldRecordToIncome.dispose();
+    shouldRecordToExpense.dispose();
 
     if (payload == null) return;
 
@@ -471,7 +514,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
     if (uid == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Khong tim thay phien dang nhap.')),
+        const SnackBar(content: Text('Không tìm thấy phiên đăng nhập.')),
       );
       return;
     }
@@ -484,6 +527,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
           debtTypeId: payload.debtTypeId,
           debtKind: payload.debtKind,
           recordToIncome: payload.recordToIncome,
+          recordToExpense: payload.recordToExpense,
           name: payload.name,
           originalAmount: payload.originalAmount,
           creditorName: payload.creditorName,
@@ -504,6 +548,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
           debtTypeId: payload.debtTypeId,
           debtKind: payload.debtKind,
           recordToIncome: payload.recordToIncome,
+          recordToExpense: payload.recordToExpense,
           name: payload.name,
           originalAmount: payload.originalAmount,
           creditorName: payload.creditorName,
@@ -526,7 +571,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Loi luu: $e')));
+      ).showSnackBar(SnackBar(content: Text('Lỗi lưu: $e')));
     }
   }
 
@@ -560,47 +605,80 @@ class _DebtListScreenState extends State<DebtListScreen> {
       return;
     }
     if (action == 'delete') {
-      final impact = await _service.previewDeleteDebtImpact(item.id);
-      if (!mounted) return;
-      String message;
-      if (impact < 0) {
-        message =
-            'Neu xac nhan xoa khoan no, ban se bi tru lai ${formatVnd(impact.abs())}.';
-      } else if (impact > 0) {
-        message =
-            'Neu xac nhan xoa khoan no, ban se duoc cong them ${formatVnd(impact)}.';
-      } else {
-        message =
-            'Neu xac nhan xoa khoan no, he thong khong phat sinh giao dich tien.';
-      }
-
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('Xac nhan xoa khoan no'),
-          content: Text(message),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Huy'),
+      try {
+        final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+        if (currentUserId == null) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Không tìm thấy phiên đăng nhập.')),
+          );
+          return;
+        }
+        if (item.userId != currentUserId) {
+          if (!mounted) return;
+          await showDialog<void>(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              title: const Text('Không có quyền xóa'),
+              content: const Text('Chỉ người tạo khoản nợ mới có quyền xóa.'),
+              actions: [
+                FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Đã hiểu'),
+                ),
+              ],
             ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Xoa'),
-            ),
-          ],
-        ),
-      );
-      if (confirmed != true) return;
+          );
+          return;
+        }
 
-      await _service.deleteDebt(item.id);
-      if (mounted) {
-        setState(() {
-          _items.removeWhere((d) => d.id == item.id);
-          _manualOrderIds.remove(item.id);
-        });
+        final impact = await _service.previewDeleteDebtImpact(item.id);
+        if (!mounted) return;
+        String message;
+        if (impact < 0) {
+          message =
+              'Nếu xác nhận xóa khoản nợ, bạn sẽ bị trừ lại ${formatVnd(impact.abs())}.';
+        } else if (impact > 0) {
+          message =
+              'Nếu xác nhận xóa khoản nợ, bạn sẽ được cộng thêm ${formatVnd(impact)}.';
+        } else {
+          message =
+              'Nếu xác nhận xóa khoản nợ, hệ thống không phát sinh giao dịch tiền.';
+        }
+
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Xác nhận xóa khoản nợ'),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Hủy'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Xóa'),
+              ),
+            ],
+          ),
+        );
+        if (confirmed != true) return;
+
+        await _service.deleteDebt(item.id);
+        if (mounted) {
+          setState(() {
+            _items.removeWhere((d) => d.id == item.id);
+            _manualOrderIds.remove(item.id);
+          });
+        }
+        widget.onDataChanged?.call();
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Không thể xóa: $e')));
       }
-      widget.onDataChanged?.call();
     }
   }
 
@@ -611,9 +689,12 @@ class _DebtListScreenState extends State<DebtListScreen> {
     });
     try {
       final items = await _service.getDebts(widget.coupleId);
+      final creatorIds = items.map((item) => item.userId).toSet();
+      final memberNameById = await _loadMemberNamesByIds(creatorIds);
       if (mounted) {
         setState(() {
           _items = _applyDebtOrder(items);
+          _memberNameById = memberNameById;
         });
       }
     } catch (e) {
@@ -635,7 +716,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Khoan no va cho muon'),
+        title: const Text('Khoản nợ và cho mượn'),
         actions: [
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
         ],
@@ -754,7 +835,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    isLend ? 'Cho muon' : 'Dang no',
+                                    isLend ? 'Cho mượn' : 'Đang nợ',
                                     style: TextStyle(
                                       color: isLend
                                           ? Colors.blue
@@ -772,8 +853,9 @@ class _DebtListScreenState extends State<DebtListScreen> {
                                               : Colors.orange),
                                   ),
                                   Text(
-                                    'Con lai: ${formatVnd(item.remainingAmount)}'
-                                    '${item.dueDate != null ? '\nHan: ${formatDate(item.dueDate!)}' : ''}',
+                                    'Còn lại: ${formatVnd(item.remainingAmount)}'
+                                    '${item.dueDate != null ? '\nHạn: ${formatDate(item.dueDate!)}' : ''}'
+                                    '\nNgười tạo: ${_resolveMemberName(item.userId)}',
                                     style: const TextStyle(fontSize: 12),
                                   ),
                                 ],

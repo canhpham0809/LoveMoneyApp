@@ -104,21 +104,21 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text('Khong the them khi dang xem $viewingLabel'),
+        title: Text('Không thể thêm khi đang xem $viewingLabel'),
         content: Text(
-          'Ban dang o view $viewingLabel. Vui long quay ve view cua tai khoan dang nhap de them giao dich.',
+          'Bạn đang ở view $viewingLabel. Vui lòng quay về view của tài khoản đăng nhập để thêm giao dịch.',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).maybePop(),
-            child: const Text('Dong'),
+            child: const Text('Đóng'),
           ),
           FilledButton(
             onPressed: () {
               Navigator.of(dialogContext).maybePop();
               widget.onToggleViewer?.call();
             },
-            child: const Text('Chuyen ve toi'),
+            child: const Text('Chuyển về tôi'),
           ),
         ],
       ),
@@ -363,7 +363,7 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Dang xoa giao dich truoc, vui long cho.'),
+            content: Text('Đang xóa giao dịch trước, vui lòng chờ.'),
           ),
         );
       }
@@ -398,7 +398,7 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Loi xoa: $e')));
+        ).showSnackBar(SnackBar(content: Text('Lỗi xóa: $e')));
       }
     } finally {
       if (mounted) {
@@ -470,7 +470,7 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
       });
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Loi luu: $e')));
+      ).showSnackBar(SnackBar(content: Text('Lỗi lưu: $e')));
     }
   }
 
@@ -478,18 +478,18 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Xac nhan xoa thu nhap'),
+        title: const Text('Xác nhận xóa thu nhập'),
         content: Text(
-          'Neu xac nhan xoa, so du vi se bi tru lai ${formatVnd(item.amount)}. Khong phat sinh giao dich bu tru moi.',
+          'Nếu xác nhận xóa, số dư ví sẽ bị trừ lại ${formatVnd(item.amount)}. Không phát sinh giao dịch bù trừ mới.',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).maybePop(false),
-            child: const Text('Huy'),
+            child: const Text('Hủy'),
           ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext).maybePop(true),
-            child: const Text('Xoa'),
+            child: const Text('Xóa'),
           ),
         ],
       ),
@@ -513,7 +513,7 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
     if (sources.isEmpty) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Chua co nguon thu nhap.')));
+      ).showSnackBar(const SnackBar(content: Text('Chưa có nguồn thu nhập.')));
       return;
     }
     final walletId = await _resolveDefaultWalletId();
@@ -521,7 +521,7 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
     if (walletId == null) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Chua co vi de ghi nhan.')));
+      ).showSnackBar(const SnackBar(content: Text('Chưa có ví để ghi nhận.')));
       return;
     }
 
@@ -539,7 +539,7 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (dialogContext, setDialogState) => AlertDialog(
-            title: Text(existing == null ? 'Them thu nhap' : 'Sua thu nhap'),
+            title: Text(existing == null ? 'Thêm thu nhập' : 'Sửa thu nhập'),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -552,7 +552,7 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                       ThousandsSeparatorInputFormatter(),
                     ],
                     decoration: const InputDecoration(
-                      labelText: 'So tien',
+                      labelText: 'Số tiền',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -600,7 +600,7 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                   TextField(
                     controller: noteCtrl,
                     decoration: const InputDecoration(
-                      labelText: 'Ghi chu',
+                      labelText: 'Ghi chú',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -618,7 +618,7 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                       }
                     },
                     icon: const Icon(Icons.calendar_today),
-                    label: Text('Ngay: ${formatDate(selectedDate)}'),
+                    label: Text('Ngày: ${formatDate(selectedDate)}'),
                   ),
                 ],
               ),
@@ -626,14 +626,14 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(dialogContext).maybePop(),
-                child: const Text('Huy'),
+                child: const Text('Hủy'),
               ),
               FilledButton(
                 onPressed: () async {
                   final amount = parseAmountInput(amountCtrl.text.trim());
                   if (amount == null || amount <= 0) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('So tien khong hop le.')),
+                      const SnackBar(content: Text('Số tiền không hợp lệ.')),
                     );
                     return;
                   }
@@ -651,7 +651,7 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                     );
                   }
                 },
-                child: const Text('Luu'),
+                child: const Text('Lưu'),
               ),
             ],
           ),
@@ -681,7 +681,7 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Loi luu: $e')));
+      ).showSnackBar(SnackBar(content: Text('Lỗi lưu: $e')));
     }
   }
 

@@ -32,9 +32,9 @@ class DebtService {
 
   static const String _debtInitIncomeSource = 'Nhan tien no';
   static const String _debtRepaymentIncomeSource = 'Thu hoi cho muon';
-  static const String _debtLendExpenseCategory = 'Cho muon no';
-  static const String _debtDeleteExpenseCategory = 'Xoa no dieu chinh';
-  static const String _debtDeleteIncomeSource = 'Xoa cho muon dieu chinh';
+  static const String _debtLendExpenseCategory = 'Cho mượn no';
+  static const String _debtDeleteExpenseCategory = 'Xóa no dieu chinh';
+  static const String _debtDeleteIncomeSource = 'Xóa cho muon dieu chinh';
 
   Future<List<DebtModel>> getDebts(String coupleId) async {
     try {
@@ -81,6 +81,7 @@ class DebtService {
     required String debtTypeId,
     required String debtKind,
     required bool recordToIncome,
+    required bool recordToExpense,
     required String name,
     required double originalAmount,
     required String creditorName,
@@ -151,7 +152,7 @@ class DebtService {
         createdIncomeId = incomeRow['id'] as String;
       }
 
-      if (debtKind == 'lend') {
+      if (debtKind == 'lend' && recordToExpense) {
         if (defaultWalletId == null) {
           throw Exception('Chua co vi mac dinh de ghi nhan cho muon.');
         }
@@ -171,7 +172,7 @@ class DebtService {
               'amount': originalAmount,
               'description': note?.trim().isNotEmpty == true
                   ? note!.trim()
-                  : 'Cho muon: $name',
+                  : 'Cho mượn: $name',
               'date': startDate.toIso8601String().substring(0, 10),
             })
             .select('id')
@@ -217,6 +218,7 @@ class DebtService {
     required String debtTypeId,
     required String debtKind,
     required bool recordToIncome,
+    required bool recordToExpense,
     required String name,
     required double originalAmount,
     required String creditorName,
@@ -238,7 +240,7 @@ class DebtService {
         : 'Nhan no: $name';
     final expenseDescription = note?.trim().isNotEmpty == true
         ? note!.trim()
-        : 'Cho muon: $name';
+        : 'Cho mượn: $name';
 
     final payments = await _db
         .from('debt_payments')
@@ -344,7 +346,7 @@ class DebtService {
       linkedIncomeId = null;
     }
 
-    if (debtKind == 'lend') {
+    if (debtKind == 'lend' && recordToExpense) {
       final categoryId = await _ensureExpenseCategory(
         existingDebt['couple_id'] as String,
         _debtLendExpenseCategory,
@@ -433,21 +435,29 @@ class DebtService {
   }
 
   Future<void> deleteDebt(String debtId) async {
+    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+    if (currentUserId == null) {
+      throw Exception('Không tìm thấy phiên đăng nhập.');
+    }
+
     final debt = await _db
         .from('debts')
-        .select(
-          'couple_id, user_id, name, debt_kind, record_to_income, remaining_amount',
-        )
+        .select('couple_id, user_id, name, linked_income_id, linked_expense_id')
         .eq('id', debtId)
         .single();
 
+    final creatorUserId = debt['user_id'] as String?;
+    if (creatorUserId != null && creatorUserId != currentUserId) {
+      throw Exception('Chỉ người tạo khoản nợ mới có quyền xóa.');
+    }
+
     final nowIso = DateTime.now().toUtc().toIso8601String();
+    final adjustment = await _calculateDeleteDebtAdjustment(
+      debtId,
+      debtRow: debt,
+    );
 
-    final remainingAmount = (debt['remaining_amount'] as num?)?.toDouble() ?? 0;
-    final debtKind = (debt['debt_kind'] as String?) ?? 'debt';
-    final recordToIncome = (debt['record_to_income'] as bool?) ?? false;
-
-    if (remainingAmount > 0 && debtKind == 'debt' && recordToIncome) {
+    if (adjustment < 0) {
       final defaultWalletId = await _resolveDefaultWalletId(
         debt['couple_id'] as String,
       );
@@ -463,7 +473,7 @@ class DebtService {
           'user_id': debt['user_id'] as String,
           'wallet_id': defaultWalletId,
           'category_id': categoryId,
-          'amount': remainingAmount,
+          'amount': adjustment.abs(),
           'description':
               'Dieu chinh khi xoa khoan no ${(debt['name'] as String?) ?? ''}'
                   .trim(),
@@ -472,7 +482,7 @@ class DebtService {
       }
     }
 
-    if (remainingAmount > 0 && debtKind == 'lend') {
+    if (adjustment > 0) {
       final defaultWalletId = await _resolveDefaultWalletId(
         debt['couple_id'] as String,
       );
@@ -487,7 +497,7 @@ class DebtService {
           'user_id': debt['user_id'] as String,
           'wallet_id': defaultWalletId,
           'income_source_id': incomeSourceId,
-          'amount': remainingAmount,
+          'amount': adjustment,
           'description':
               'Dieu chinh khi xoa cho muon ${(debt['name'] as String?) ?? ''}'
                   .trim(),
@@ -506,22 +516,96 @@ class DebtService {
   Future<double> previewDeleteDebtImpact(String debtId) async {
     final debt = await _db
         .from('debts')
-        .select('debt_kind, record_to_income, remaining_amount')
+        .select('linked_income_id, linked_expense_id')
         .eq('id', debtId)
         .single();
 
-    final remainingAmount = (debt['remaining_amount'] as num?)?.toDouble() ?? 0;
-    final debtKind = (debt['debt_kind'] as String?) ?? 'debt';
-    final recordToIncome = (debt['record_to_income'] as bool?) ?? false;
+    return _calculateDeleteDebtAdjustment(debtId, debtRow: debt);
+  }
 
-    if (remainingAmount <= 0) return 0;
-    if (debtKind == 'debt' && recordToIncome) {
-      return -remainingAmount;
-    }
-    if (debtKind == 'lend') {
-      return remainingAmount;
-    }
-    return 0;
+  Future<double> _calculateDeleteDebtAdjustment(
+    String debtId, {
+    required Map<String, dynamic> debtRow,
+  }) async {
+    final linkedIncomeAmount = await _getActiveIncomeAmount(
+      debtRow['linked_income_id'] as String?,
+    );
+    final linkedExpenseAmount = await _getActiveExpenseAmount(
+      debtRow['linked_expense_id'] as String?,
+    );
+
+    final paymentRows = await _db
+        .from('debt_payments')
+        .select('linked_income_id')
+        .eq('debt_id', debtId)
+        .eq('is_deleted', false)
+        .not('linked_income_id', 'is', null);
+    final paymentIncomeIds = paymentRows
+        .map((row) => row['linked_income_id'] as String?)
+        .whereType<String>()
+        .toSet()
+        .toList();
+    final paymentIncomeTotal = await _getActiveIncomeTotalByIds(
+      paymentIncomeIds,
+    );
+    final paymentExpenseTotal = await _getActiveDebtPaymentExpenseTotal(debtId);
+
+    // Positive: add money back. Negative: subtract money.
+    return linkedExpenseAmount +
+        paymentExpenseTotal -
+        linkedIncomeAmount -
+        paymentIncomeTotal;
+  }
+
+  Future<double> _getActiveDebtPaymentExpenseTotal(String debtId) async {
+    final rows = await _db
+        .from('debt_payments')
+        .select('amount')
+        .eq('debt_id', debtId)
+        .eq('is_deleted', false)
+        .isFilter('linked_income_id', null);
+
+    return rows.fold<double>(
+      0,
+      (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0),
+    );
+  }
+
+  Future<double> _getActiveIncomeAmount(String? incomeId) async {
+    if (incomeId == null) return 0;
+    final rows = await _db
+        .from('incomes')
+        .select('amount')
+        .eq('id', incomeId)
+        .eq('is_deleted', false)
+        .limit(1);
+    if (rows.isEmpty) return 0;
+    return (rows.first['amount'] as num?)?.toDouble() ?? 0;
+  }
+
+  Future<double> _getActiveExpenseAmount(String? expenseId) async {
+    if (expenseId == null) return 0;
+    final rows = await _db
+        .from('expenses')
+        .select('amount')
+        .eq('id', expenseId)
+        .eq('is_deleted', false)
+        .limit(1);
+    if (rows.isEmpty) return 0;
+    return (rows.first['amount'] as num?)?.toDouble() ?? 0;
+  }
+
+  Future<double> _getActiveIncomeTotalByIds(List<String> incomeIds) async {
+    if (incomeIds.isEmpty) return 0;
+    final rows = await _db
+        .from('incomes')
+        .select('amount')
+        .inFilter('id', incomeIds)
+        .eq('is_deleted', false);
+    return rows.fold<double>(
+      0,
+      (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0),
+    );
   }
 
   Future<double> previewDeletePaymentImpact(String paymentId) async {
@@ -990,3 +1074,4 @@ class DebtService {
         .eq('id', debtId);
   }
 }
+

@@ -3,6 +3,7 @@ import 'package:equatable/equatable.dart';
 class FundModel extends Equatable {
   final String id;
   final String coupleId;
+  final String? creatorUserId;
   final String name;
   final String? icon;
   final int sortOrder;
@@ -20,6 +21,7 @@ class FundModel extends Equatable {
   const FundModel({
     required this.id,
     required this.coupleId,
+    this.creatorUserId,
     required this.name,
     this.icon,
     required this.sortOrder,
@@ -39,6 +41,10 @@ class FundModel extends Equatable {
     return FundModel(
       id: json['id'] as String,
       coupleId: json['couple_id'] as String,
+      creatorUserId:
+          json['creator_user_id'] as String? ??
+          json['user_id'] as String? ??
+          json['updated_by'] as String?,
       name: json['name'] as String,
       icon: json['icon'] as String?,
       sortOrder: (json['sort_order'] as num?)?.toInt() ?? 0,
@@ -65,6 +71,7 @@ class FundModel extends Equatable {
     return {
       'id': id,
       'couple_id': coupleId,
+      'creator_user_id': creatorUserId,
       'name': name,
       'icon': icon,
       'sort_order': sortOrder,
@@ -85,6 +92,7 @@ class FundModel extends Equatable {
   List<Object?> get props => [
     id,
     coupleId,
+    creatorUserId,
     name,
     icon,
     sortOrder,

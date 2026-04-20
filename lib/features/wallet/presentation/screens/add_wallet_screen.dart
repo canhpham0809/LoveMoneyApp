@@ -48,7 +48,7 @@ class _AddWalletScreenState extends State<AddWalletScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Khong tao duoc vi: $e')));
+        ).showSnackBar(SnackBar(content: Text('Khï¿½ng t?o du?c vï¿½: $e')));
       }
     } finally {
       if (mounted) {
@@ -60,7 +60,7 @@ class _AddWalletScreenState extends State<AddWalletScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Them vi')),
+      appBar: AppBar(title: const Text('Thï¿½m vï¿½')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Form(
@@ -71,7 +71,7 @@ class _AddWalletScreenState extends State<AddWalletScreen> {
               TextFormField(
                 controller: _nameCtrl,
                 decoration: const InputDecoration(
-                  labelText: 'Ten vi',
+                  labelText: 'Tï¿½n vï¿½',
                   border: OutlineInputBorder(),
                 ),
                 validator: (v) {
@@ -85,14 +85,14 @@ class _AddWalletScreenState extends State<AddWalletScreen> {
               DropdownButtonFormField<String>(
                 initialValue: _type,
                 decoration: const InputDecoration(
-                  labelText: 'Loai vi',
+                  labelText: 'Lo?i vï¿½',
                   border: OutlineInputBorder(),
                 ),
                 items: const [
-                  DropdownMenuItem(value: 'cash', child: Text('Tien mat')),
-                  DropdownMenuItem(value: 'bank', child: Text('Ngan hang')),
+                  DropdownMenuItem(value: 'cash', child: Text('Ti?n m?t')),
+                  DropdownMenuItem(value: 'bank', child: Text('Ngï¿½n hï¿½ng')),
                   DropdownMenuItem(value: 'ewallet', child: Text('E-wallet')),
-                  DropdownMenuItem(value: 'other', child: Text('Khac')),
+                  DropdownMenuItem(value: 'other', child: Text('Khï¿½c')),
                 ],
                 onChanged: (v) => setState(() => _type = v ?? 'cash'),
               ),
@@ -100,7 +100,7 @@ class _AddWalletScreenState extends State<AddWalletScreen> {
               DropdownButtonFormField<String>(
                 initialValue: _currency,
                 decoration: const InputDecoration(
-                  labelText: 'Tien te',
+                  labelText: 'Ti?n t?',
                   border: OutlineInputBorder(),
                 ),
                 items: const [
@@ -113,7 +113,7 @@ class _AddWalletScreenState extends State<AddWalletScreen> {
               CheckboxListTile(
                 value: _isDefault,
                 onChanged: (v) => setState(() => _isDefault = v ?? false),
-                title: const Text('Dat lam vi mac dinh'),
+                title: const Text('ï¿½?t lï¿½m vï¿½ m?c d?nh'),
                 contentPadding: EdgeInsets.zero,
               ),
               const SizedBox(height: 16),
@@ -125,7 +125,7 @@ class _AddWalletScreenState extends State<AddWalletScreen> {
                         height: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text('Luu vi'),
+                    : const Text('Lưu vi'),
               ),
             ],
           ),
@@ -134,3 +134,4 @@ class _AddWalletScreenState extends State<AddWalletScreen> {
     );
   }
 }
+

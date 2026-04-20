@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:flutter_app_demo/core/utils/amount_input.dart';
 import 'package:flutter_app_demo/core/widgets/amount_suggestion_chips.dart';
@@ -30,9 +31,36 @@ class FundListScreen extends StatefulWidget {
 class _FundListScreenState extends State<FundListScreen> {
   final _service = FundService();
   List<FundModel> _items = [];
+  Map<String, String> _memberNameById = {};
   List<String> _manualOrderIds = [];
   bool _isLoading = true;
   String? _error;
+
+  String _normalizeUserId(String userId) => userId.trim().toLowerCase();
+
+  String _resolveMemberName(String userId) {
+    final name = _memberNameById[_normalizeUserId(userId)]?.trim();
+    if (name != null && name.isNotEmpty) return name;
+    return 'Thành viên';
+  }
+
+  Future<Map<String, String>> _loadMemberNamesByIds(Set<String> userIds) async {
+    if (userIds.isEmpty) return {};
+    final users = List<Map<String, dynamic>>.from(
+      await Supabase.instance.client
+          .from('users')
+          .select('id, display_name, email')
+          .inFilter('id', userIds.toList()),
+    );
+    return {
+      for (final u in users)
+        _normalizeUserId(
+          u['id'] as String,
+        ): ((u['display_name'] as String?)?.trim().isNotEmpty == true
+            ? (u['display_name'] as String).trim()
+            : ((u['email'] as String?) ?? 'Thành viên')),
+    };
+  }
 
   void _sortFundsByName(List<FundModel> items) {
     items.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
@@ -85,7 +113,7 @@ class _FundListScreenState extends State<FundListScreen> {
       });
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Khong luu duoc thu tu quy: $e')));
+      ).showSnackBar(SnackBar(content: Text('Không lưu được thứ tự quỹ: $e')));
     }
   }
 
@@ -135,7 +163,7 @@ class _FundListScreenState extends State<FundListScreen> {
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (dialogContext, setDialogState) => AlertDialog(
-            title: Text(existing == null ? 'Them quy' : 'Sua quy'),
+            title: Text(existing == null ? 'Thêm quỹ' : 'Sửa quỹ'),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -143,7 +171,7 @@ class _FundListScreenState extends State<FundListScreen> {
                   TextField(
                     controller: nameCtrl,
                     decoration: const InputDecoration(
-                      labelText: 'Ten quy',
+                      labelText: 'Tên quỹ',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -156,7 +184,7 @@ class _FundListScreenState extends State<FundListScreen> {
                       ThousandsSeparatorInputFormatter(),
                     ],
                     decoration: const InputDecoration(
-                      labelText: 'Muc tieu',
+                      labelText: 'Mục tiêu',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -183,7 +211,7 @@ class _FundListScreenState extends State<FundListScreen> {
                     label: Text(
                       deadline == null
                           ? 'Chon han'
-                          : 'Han: ${formatDate(deadline!)}',
+                          : 'Hạn: ${formatDate(deadline!)}',
                     ),
                   ),
                 ],
@@ -199,7 +227,7 @@ class _FundListScreenState extends State<FundListScreen> {
                     Navigator.of(dialogContext).maybePop();
                   });
                 },
-                child: const Text('Huy'),
+                child: const Text('Hủy'),
               ),
               FilledButton(
                 onPressed: () async {
@@ -207,7 +235,7 @@ class _FundListScreenState extends State<FundListScreen> {
                   final name = nameCtrl.text.trim();
                   if (name.isEmpty) {
                     ScaffoldMessenger.of(dialogContext).showSnackBar(
-                      const SnackBar(content: Text('Nhap ten quy.')),
+                      const SnackBar(content: Text('Nhập tên quỹ.')),
                     );
                     return;
                   }
@@ -224,7 +252,7 @@ class _FundListScreenState extends State<FundListScreen> {
                     });
                   });
                 },
-                child: const Text('Luu'),
+                child: const Text('Lưu'),
               ),
             ],
           ),
@@ -275,7 +303,7 @@ class _FundListScreenState extends State<FundListScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Loi luu: $e')));
+      ).showSnackBar(SnackBar(content: Text('Lỗi lưu: $e')));
     }
   }
 
@@ -305,39 +333,73 @@ class _FundListScreenState extends State<FundListScreen> {
       return;
     }
     if (action == 'delete') {
-      final amount = await _service.previewDeleteFundSettlement(item.id);
-      if (!mounted) return;
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('Xac nhan xoa quy'),
-          content: Text(
-            amount > 0
-                ? 'Neu xac nhan xoa quy, he thong se cong vao thu nhap ${formatVnd(amount)}.'
-                : 'Neu xac nhan xoa quy, he thong khong phat sinh giao dich tien.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Huy'),
+      try {
+        final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+        if (currentUserId == null) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Không tìm thấy phiên đăng nhập.')),
+          );
+          return;
+        }
+        final creatorUserId = item.creatorUserId;
+        if (creatorUserId != null && creatorUserId != currentUserId) {
+          if (!mounted) return;
+          await showDialog<void>(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              title: const Text('Không có quyền xóa'),
+              content: const Text('Chỉ người tạo quỹ mới có quyền xóa.'),
+              actions: [
+                FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Đã hiểu'),
+                ),
+              ],
             ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Xoa'),
-            ),
-          ],
-        ),
-      );
-      if (confirmed != true) return;
+          );
+          return;
+        }
 
-      await _service.deleteFund(item.id);
-      if (mounted) {
-        setState(() {
-          _items.removeWhere((f) => f.id == item.id);
-          _manualOrderIds.remove(item.id);
-        });
+        final amount = await _service.previewDeleteFundSettlement(item.id);
+        if (!mounted) return;
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Xác nhận xóa quỹ'),
+            content: Text(
+              amount > 0
+                  ? 'Nếu xác nhận xóa quỹ, hệ thống sẽ cộng vào thu nhập ${formatVnd(amount)}.'
+                  : 'Nếu xác nhận xóa quỹ, hệ thống không phát sinh giao dịch tiền.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Hủy'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Xóa'),
+              ),
+            ],
+          ),
+        );
+        if (confirmed != true) return;
+
+        await _service.deleteFund(item.id);
+        if (mounted) {
+          setState(() {
+            _items.removeWhere((f) => f.id == item.id);
+            _manualOrderIds.remove(item.id);
+          });
+        }
+        widget.onDataChanged?.call();
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Không thể xóa: $e')));
       }
-      widget.onDataChanged?.call();
     }
   }
 
@@ -348,9 +410,15 @@ class _FundListScreenState extends State<FundListScreen> {
     });
     try {
       final items = await _service.getFunds(widget.coupleId);
+      final creatorIds = items
+          .map((item) => item.creatorUserId)
+          .whereType<String>()
+          .toSet();
+      final memberNameById = await _loadMemberNamesByIds(creatorIds);
       if (mounted) {
         setState(() {
           _items = _applyFundOrder(items);
+          _memberNameById = memberNameById;
         });
       }
     } catch (e) {
@@ -511,6 +579,17 @@ class _FundListScreenState extends State<FundListScreen> {
                                       padding: const EdgeInsets.only(top: 4.0),
                                       child: Text(
                                         'Hạn: ${formatDate(item.deadline!)}',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                    ),
+                                  if (item.creatorUserId != null)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 2.0),
+                                      child: Text(
+                                        'Người tạo: ${_resolveMemberName(item.creatorUserId!)}',
                                         style: const TextStyle(
                                           fontSize: 12,
                                           color: Colors.grey,

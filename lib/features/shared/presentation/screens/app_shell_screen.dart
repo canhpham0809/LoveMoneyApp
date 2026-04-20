@@ -206,21 +206,21 @@ class _AppShellScreenState extends State<AppShellScreen> {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Khong the them'),
+        title: const Text('Không thể thêm'),
         content: Text(
-          'Ban dang o view $viewingLabel. Vui long quay ve view cua tai khoan dang nhap de them giao dich.',
+          'Bạn đang ở view $viewingLabel. Vui lòng quay về view của tài khoản đăng nhập để thêm giao dịch.',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).maybePop(),
-            child: const Text('Dong'),
+            child: const Text('Đóng'),
           ),
           FilledButton(
             onPressed: () {
               Navigator.of(dialogContext).maybePop();
               _toggleViewer();
             },
-            child: const Text('Chuyen ve toi'),
+            child: const Text('Chuyển về tôi'),
           ),
         ],
       ),
@@ -263,7 +263,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
                 const SizedBox(height: 6),
                 if (categories.isEmpty)
                   const Text(
-                    'Chua co danh muc chi tieu.',
+                    'Chưa có danh mục chi tiêu.',
                     style: TextStyle(fontSize: 12, color: Colors.grey),
                   )
                 else
@@ -330,7 +330,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Huy'),
+              child: const Text('Hủy'),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(dialogContext, {
@@ -338,7 +338,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
                 'categoryId': selectedCategoryId,
                 'categoryName': selectedCategoryName,
               }),
-              child: const Text('Luu'),
+              child: const Text('Lưu'),
             ),
           ],
         ),
@@ -367,7 +367,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              'Khong parse duoc Quick Add. Vui long qua man Chi tieu de nhap form.',
+              'Không parse được Quick Add. Vui lòng qua màn Chi tiêu để nhập form.',
             ),
           ),
         );
@@ -386,7 +386,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
             SnackBar(
               duration: const Duration(seconds: 3),
               content: Text(
-                'Da luu nhanh ${result.parsedAmount?.toStringAsFixed(0) ?? ''} vao ${result.suggestedCategoryName ?? 'danh muc mac dinh'}',
+                'Đã lưu nhanh ${result.parsedAmount?.toStringAsFixed(0) ?? ''} vào ${result.suggestedCategoryName ?? 'danh mục mặc định'}',
               ),
               action: SnackBarAction(
                 label: 'Undo',
@@ -410,7 +410,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Quick Add that bai: $e')));
+      ).showSnackBar(SnackBar(content: Text('Quick Add thất bại: $e')));
     }
   }
 

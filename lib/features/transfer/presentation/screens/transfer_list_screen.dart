@@ -176,7 +176,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Dang xoa giao dich truoc, vui long cho.'),
+            content: Text('Đang xóa giao dịch trước, vui lòng chờ.'),
           ),
         );
       }
@@ -203,7 +203,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
       widget.onDataChanged?.call();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Da xoa giao dich chuyen tien')),
+        const SnackBar(content: Text('Đã xóa giao dịch chuyển tiền')),
       );
     } catch (e) {
       if (mounted && removedIndex >= 0) {
@@ -283,7 +283,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
       });
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Loi luu: $e')));
+      ).showSnackBar(SnackBar(content: Text('Lỗi lưu: $e')));
     }
   }
 
@@ -293,18 +293,18 @@ class _TransferListScreenState extends State<TransferListScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Xac nhan xoa giao dich chuyen tien'),
+        title: const Text('Xác nhận xóa giao dịch chuyển tiền'),
         content: Text(
-          'Neu xac nhan xoa, ban se duoc hoan lai ${formatVnd(impact)} vao so du vi. He thong dong thoi huy giao dich thu nhap lien ket cua nguoi nhan.',
+          'Nếu xác nhận xóa, bạn sẽ được hoàn lại ${formatVnd(impact)} vào số dư ví. Hệ thống đồng thời hủy giao dịch thu nhập liên kết của người nhận.',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).maybePop(false),
-            child: const Text('Huy'),
+            child: const Text('Hủy'),
           ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext).maybePop(true),
-            child: const Text('Xoa'),
+            child: const Text('Xóa'),
           ),
         ],
       ),
@@ -341,7 +341,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
 
     if (recipients.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Chua co nguoi kia trong couple.')),
+        const SnackBar(content: Text('Chưa có người kia trong couple.')),
       );
       return;
     }
@@ -362,7 +362,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
         return StatefulBuilder(
           builder: (dialogContext, setDialogState) => AlertDialog(
             title: Text(
-              existing == null ? 'Them chuyen tien' : 'Sua chuyen tien',
+              existing == null ? 'Thêm chuyển tiền' : 'Sửa chuyển tiền',
             ),
             content: SingleChildScrollView(
               child: Column(
@@ -376,7 +376,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
                       ThousandsSeparatorInputFormatter(),
                     ],
                     decoration: const InputDecoration(
-                      labelText: 'So tien',
+                      labelText: 'Số tiền',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -390,7 +390,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
                   DropdownButtonFormField<String>(
                     initialValue: selectedRecipientId,
                     decoration: const InputDecoration(
-                      labelText: 'Nguoi nhan',
+                      labelText: 'Người nhận',
                       border: OutlineInputBorder(),
                     ),
                     items: recipients
@@ -411,7 +411,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
                   TextField(
                     controller: noteCtrl,
                     decoration: const InputDecoration(
-                      labelText: 'Ghi chu',
+                      labelText: 'Ghi chú',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -429,7 +429,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
                       }
                     },
                     icon: const Icon(Icons.calendar_today),
-                    label: Text('Ngay: ${formatDate(selectedDate)}'),
+                    label: Text('Ngày: ${formatDate(selectedDate)}'),
                   ),
                 ],
               ),
@@ -444,7 +444,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
                     Navigator.of(dialogContext).maybePop();
                   });
                 },
-                child: const Text('Huy'),
+                child: const Text('Hủy'),
               ),
               FilledButton(
                 onPressed: () async {
@@ -452,7 +452,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
                   final amount = parseAmountInput(amountCtrl.text.trim());
                   if (amount == null || amount <= 0) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('So tien khong hop le.')),
+                      const SnackBar(content: Text('Số tiền không hợp lệ.')),
                     );
                     return;
                   }
@@ -471,7 +471,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
                     );
                   });
                 },
-                child: const Text('Luu'),
+                child: const Text('Lưu'),
               ),
             ],
           ),
