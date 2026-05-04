@@ -242,7 +242,7 @@ class _IncomeSourceManagementScreenState
           ? const Center(child: Text('Chưa có danh mục Thu nào.'))
           : ListView.separated(
               itemCount: _items.length,
-              separatorBuilder: (_, __) => const Divider(height: 0),
+              separatorBuilder: (_, _) => const Divider(height: 0),
               itemBuilder: (context, index) {
                 final item = _items[index];
                 return ListTile(

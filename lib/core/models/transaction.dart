@@ -7,6 +7,7 @@ class Transaction {
   final DateTime date;
   final DateTime createdAt;
   final String title;
+  final String? iconKey;
   final bool? isIncomingTransfer;
 
   Transaction({
@@ -16,6 +17,7 @@ class Transaction {
     required this.date,
     required this.createdAt,
     required this.title,
+    this.iconKey,
     this.isIncomingTransfer,
   });
 
@@ -34,6 +36,7 @@ class Transaction {
       title: (json['title'] as String?)?.trim().isNotEmpty == true
           ? (json['title'] as String).trim()
           : 'Giao dịch',
+      iconKey: json['icon_key'] as String?,
       isIncomingTransfer: json['is_incoming_transfer'] as bool?,
     );
   }

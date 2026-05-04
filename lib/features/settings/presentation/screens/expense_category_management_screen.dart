@@ -303,7 +303,7 @@ class _ExpenseCategoryManagementScreenState
           ? const Center(child: Text('Chưa có danh mục Chi nào.'))
           : ListView.separated(
               itemCount: _categories.length,
-              separatorBuilder: (_, __) => const Divider(height: 0),
+              separatorBuilder: (_, _) => const Divider(height: 0),
               itemBuilder: (context, index) {
                 final item = _categories[index];
                 final color = colorFromHex(item.color);

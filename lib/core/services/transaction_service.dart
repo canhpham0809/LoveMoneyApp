@@ -162,20 +162,28 @@ class TransactionService {
 
     final categories = await supabase
         .from('categories')
-        .select('id, name')
+        .select('id, name, icon')
         .eq('couple_id', coupleId)
         .eq('is_deleted', false);
     final categoryNameById = {
       for (final c in categories) c['id'] as String: c['name'] as String,
     };
+    final categoryIconById = {
+      for (final c in categories)
+        c['id'] as String: ((c['icon'] as String?) ?? 'label'),
+    };
 
     final incomeSources = await supabase
         .from('income_sources')
-        .select('id, name')
+        .select('id, name, icon')
         .eq('couple_id', coupleId)
         .eq('is_deleted', false);
     final incomeSourceNameById = {
       for (final s in incomeSources) s['id'] as String: s['name'] as String,
+    };
+    final incomeSourceIconById = {
+      for (final s in incomeSources)
+        s['id'] as String: ((s['icon'] as String?) ?? 'payments'),
     };
 
     final funds = await supabase
@@ -248,11 +256,26 @@ class TransactionService {
     }
 
     final results = await Future.wait([
-      incomesQuery.order('created_at', ascending: false).limit(20),
-      expensesQuery.order('created_at', ascending: false).limit(20),
-      fundsQuery.order('created_at', ascending: false).limit(20),
-      debtsQuery.order('created_at', ascending: false).limit(20),
-      transfersQuery.order('created_at', ascending: false).limit(20),
+      incomesQuery
+          .order('date', ascending: false)
+          .order('created_at', ascending: false)
+          .limit(20),
+      expensesQuery
+          .order('date', ascending: false)
+          .order('created_at', ascending: false)
+          .limit(20),
+      fundsQuery
+          .order('date', ascending: false)
+          .order('created_at', ascending: false)
+          .limit(20),
+      debtsQuery
+          .order('date', ascending: false)
+          .order('created_at', ascending: false)
+          .limit(20),
+      transfersQuery
+          .order('date', ascending: false)
+          .order('created_at', ascending: false)
+          .limit(20),
     ]);
 
     final incomes = (results[0] as List).map((json) {
@@ -264,6 +287,7 @@ class TransactionService {
       return Transaction.fromJson({
         ...row,
         'type': 'income',
+        'icon_key': sourceId != null ? incomeSourceIconById[sourceId] : null,
         'title': _pickTitle(row: row, fallback: 'Thu nhập'),
       });
     });
@@ -276,6 +300,7 @@ class TransactionService {
       return Transaction.fromJson({
         ...row,
         'type': 'expense',
+        'icon_key': categoryId != null ? categoryIconById[categoryId] : null,
         'title': _pickTitle(row: row, fallback: 'Chi tiêu'),
       });
     });
@@ -365,7 +390,11 @@ class TransactionService {
       ...transfers,
     ];
 
-    transactions.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    transactions.sort((a, b) {
+      final dateCompare = b.date.compareTo(a.date);
+      if (dateCompare != 0) return dateCompare;
+      return b.createdAt.compareTo(a.createdAt);
+    });
     return transactions.take(20).toList();
   }
 }

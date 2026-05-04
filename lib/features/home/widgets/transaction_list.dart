@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/utils/formatters.dart';
+import '../../../core/utils/category_visuals.dart';
 import '../../../core/models/transaction.dart';
 
 class TransactionList extends StatelessWidget {
@@ -34,7 +35,9 @@ class TransactionList extends StatelessWidget {
         final isOutgoingTransfer =
             tx.type == TransactionType.transfer &&
             (tx.isIncomingTransfer == false || inferredOutgoingFromTitle);
-        final iconData = _iconForType(tx.type, isIncomingTransfer);
+        final iconData = tx.iconKey != null && tx.iconKey!.trim().isNotEmpty
+            ? iconFromKey(tx.iconKey!)
+            : _iconForType(tx.type, isIncomingTransfer);
         final color = _colorForType(
           tx.type,
           isIncomingTransfer: isIncomingTransfer,

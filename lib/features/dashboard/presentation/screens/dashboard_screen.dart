@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/services/transaction_service.dart';
 import '../../../../core/models/monthly_summary.dart';
 import '../../../../core/models/transaction.dart';
+import 'monthly_operations_dashboard_screen.dart';
 import '../../../home/widgets/monthly_card.dart';
 import '../../../home/widgets/transaction_list.dart';
 
@@ -167,6 +168,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
     await _loadRecentTransactions();
   }
 
+  Future<void> _openMonthlyDashboard(MonthlySummary summary) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => MonthlyOperationsDashboardScreen(
+          coupleId: widget.coupleId,
+          viewerUserId: widget.viewerUserId,
+          viewerLabel: widget.viewerLabel,
+          year: summary.year,
+          month: summary.month,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -241,6 +256,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           itemBuilder: (context, idx) => MonthlyCard(
                             summary: _monthlySummaries[idx],
                             isSelected: idx == _selectedMonthIndex,
+                            onTap: () async {
+                              await _openMonthlyDashboard(
+                                _monthlySummaries[idx],
+                              );
+                            },
                           ),
                         ),
                       ),

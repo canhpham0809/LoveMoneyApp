@@ -1,6 +1,7 @@
 /// Simple VND currency formatter (no external package needed).
 String formatVnd(num amount) {
-  final str = amount.toStringAsFixed(0);
+  final isNegative = amount < 0;
+  final str = amount.abs().toStringAsFixed(0);
   final buf = StringBuffer();
   int count = 0;
   for (int i = str.length - 1; i >= 0; i--) {
@@ -8,7 +9,8 @@ String formatVnd(num amount) {
     buf.write(str[i]);
     count++;
   }
-  return '${buf.toString().split('').reversed.join()}đ';
+  final formatted = buf.toString().split('').reversed.join();
+  return '${isNegative ? '-' : ''}$formattedđ';
 }
 
 /// Format date as dd/MM/yyyy.

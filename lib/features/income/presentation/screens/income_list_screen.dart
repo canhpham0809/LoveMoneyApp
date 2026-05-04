@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:flutter_app_demo/core/utils/amount_input.dart';
+import 'package:flutter_app_demo/core/utils/category_visuals.dart';
 import 'package:flutter_app_demo/core/widgets/amount_suggestion_chips.dart';
 import 'package:flutter_app_demo/core/utils/formatters.dart';
 import 'package:flutter_app_demo/features/income/data/models/income_model.dart';
@@ -94,10 +95,16 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
   final _walletService = WalletService();
   List<IncomeModel> _items = [];
   List<_IncomeFeedItem> _externalItems = [];
-  Map<String, String> _sourceNameById = {};
+  Map<String, IncomeSourceModel> _sourceById = {};
   bool _isLoading = true;
   bool _isDeleting = false;
   String? _error;
+
+  int _compareBySelectedDateDesc(_IncomeFeedItem a, _IncomeFeedItem b) {
+    final dateCompare = b.date.compareTo(a.date);
+    if (dateCompare != 0) return dateCompare;
+    return b.createdAt.compareTo(a.createdAt);
+  }
 
   Future<void> _showSwitchBackToSelfAlert() async {
     final viewingLabel = widget.viewerLabel;
@@ -185,12 +192,16 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
             .toList();
       }
 
-      items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      items.sort((a, b) {
+        final dateCompare = b.date.compareTo(a.date);
+        if (dateCompare != 0) return dateCompare;
+        return b.createdAt.compareTo(a.createdAt);
+      });
       if (mounted) {
         setState(() {
           _items = items;
           _externalItems = external.items;
-          _sourceNameById = {for (final s in sources) s.id: s.name};
+          _sourceById = {for (final s in sources) s.id: s};
         });
       }
     } catch (e) {
@@ -351,7 +362,7 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
       );
     }
 
-    items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    items.sort(_compareBySelectedDateDesc);
     return _IncomeExternalLoadResult(
       items: items,
       linkedIncomeIds: linkedIncomeIds,
@@ -460,7 +471,11 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
         } else {
           _items.insert(0, created);
         }
-        _items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        _items.sort((a, b) {
+          final dateCompare = b.date.compareTo(a.date);
+          if (dateCompare != 0) return dateCompare;
+          return b.createdAt.compareTo(a.createdAt);
+        });
       });
       widget.onDataChanged?.call();
     } catch (e) {
@@ -729,20 +744,25 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
               (income.description != null &&
                   income.description!.trim().isNotEmpty)
               ? income.description!
-              : (_sourceNameById[income.incomeSourceId ?? ''] ?? 'Giao dịch'),
+              : (_sourceById[income.incomeSourceId ?? '']?.name ?? 'Giao dịch'),
           date: income.date,
           createdAt: income.createdAt,
           editableIncome: income,
         ),
       ),
       ..._externalItems,
-    ]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    ]..sort(_compareBySelectedDateDesc);
 
-    final grouped = <String, List<_IncomeFeedItem>>{};
+    final grouped = <String, Map<String, List<_IncomeFeedItem>>>{};
     for (final item in mergedItems) {
-      final key =
+      final monthKey =
           '${item.date.year}-${item.date.month.toString().padLeft(2, '0')}';
-      grouped.putIfAbsent(key, () => <_IncomeFeedItem>[]).add(item);
+      final dayKey = '$monthKey-${item.date.day.toString().padLeft(2, '0')}';
+      final byDay = grouped.putIfAbsent(
+        monthKey,
+        () => <String, List<_IncomeFeedItem>>{},
+      );
+      byDay.putIfAbsent(dayKey, () => <_IncomeFeedItem>[]).add(item);
     }
 
     return Scaffold(
@@ -800,10 +820,9 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                 for (final entry in grouped.entries) ...[
                   Builder(
                     builder: (context) {
-                      final monthTotal = entry.value.fold<double>(
-                        0,
-                        (sum, row) => sum + row.amount,
-                      );
+                      final monthTotal = entry.value.values
+                          .expand((rows) => rows)
+                          .fold<double>(0, (sum, row) => sum + row.amount);
                       return Padding(
                         padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                         child: Row(
@@ -827,22 +846,79 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                       );
                     },
                   ),
-                  ...entry.value.map((item) {
-                    if (item.kind != _IncomeFeedKind.income ||
-                        item.editableIncome == null) {
-                      final icon = switch (item.kind) {
-                        _IncomeFeedKind.fundWithdrawal =>
-                          Icons.south_west_rounded,
-                        _IncomeFeedKind.debtCollection =>
-                          Icons.account_balance_wallet_outlined,
-                        _IncomeFeedKind.transferReceived => Icons.swap_horiz,
-                        _IncomeFeedKind.income => Icons.attach_money,
-                      };
+                  for (final dayEntry in entry.value.entries) ...[
+                    Builder(
+                      builder: (context) {
+                        final dayItems = dayEntry.value;
+                        final dayDate = DateTime.parse(dayEntry.key);
+                        final dayTotal = dayItems.fold<double>(
+                          0,
+                          (sum, row) => sum + row.amount,
+                        );
+                        return Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  formatDate(dayDate),
+                                  style: Theme.of(context).textTheme.bodyMedium
+                                      ?.copyWith(fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                              Text(
+                                formatVnd(dayTotal),
+                                style: TextStyle(
+                                  color: Colors.green[700],
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                    ...dayEntry.value.map((item) {
+                      if (item.kind != _IncomeFeedKind.income ||
+                          item.editableIncome == null) {
+                        final icon = switch (item.kind) {
+                          _IncomeFeedKind.fundWithdrawal =>
+                            Icons.south_west_rounded,
+                          _IncomeFeedKind.debtCollection =>
+                            Icons.account_balance_wallet_outlined,
+                          _IncomeFeedKind.transferReceived => Icons.swap_horiz,
+                          _IncomeFeedKind.income => Icons.attach_money,
+                        };
+                        return ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: Colors.green.withOpacity(0.12),
+                            child: Icon(icon, color: Colors.green[700]),
+                          ),
+                          title: Text(item.title),
+                          subtitle: Text(
+                            '${formatDate(item.date)} · ${formatTimeUtcPlus7(item.createdAt)}',
+                          ),
+                          trailing: Text(
+                            formatVnd(item.amount),
+                            style: TextStyle(
+                              color: Colors.green[700],
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        );
+                      }
+
+                      final income = item.editableIncome!;
+                      final source = _sourceById[income.incomeSourceId ?? ''];
+                      final iconKey = (source?.icon.trim().isNotEmpty ?? false)
+                          ? source!.icon
+                          : 'payments';
                       return ListTile(
+                        key: ValueKey(income.id),
                         leading: CircleAvatar(
-                          backgroundColor: Colors.green.withOpacity(0.12),
-                          child: Icon(icon, color: Colors.green[700]),
+                          child: Icon(iconFromKey(iconKey)),
                         ),
+                        onLongPress: () => _showItemActions(income),
                         title: Text(item.title),
                         subtitle: Text(
                           '${formatDate(item.date)} · ${formatTimeUtcPlus7(item.createdAt)}',
@@ -855,28 +931,8 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                           ),
                         ),
                       );
-                    }
-
-                    final income = item.editableIncome!;
-                    return ListTile(
-                      key: ValueKey(income.id),
-                      leading: const CircleAvatar(
-                        child: Icon(Icons.attach_money),
-                      ),
-                      onLongPress: () => _showItemActions(income),
-                      title: Text(item.title),
-                      subtitle: Text(
-                        '${formatDate(item.date)} · ${formatTimeUtcPlus7(item.createdAt)}',
-                      ),
-                      trailing: Text(
-                        formatVnd(item.amount),
-                        style: TextStyle(
-                          color: Colors.green[700],
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    );
-                  }),
+                    }),
+                  ],
                 ],
               ],
             ),

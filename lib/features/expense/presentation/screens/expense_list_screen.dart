@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:flutter_app_demo/core/utils/amount_input.dart';
+import 'package:flutter_app_demo/core/utils/category_visuals.dart';
 import 'package:flutter_app_demo/core/widgets/amount_suggestion_chips.dart';
 import 'package:flutter_app_demo/core/utils/formatters.dart';
 import 'package:flutter_app_demo/features/expense/data/models/category_model.dart';
@@ -79,10 +80,16 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
   final _walletService = WalletService();
   List<ExpenseModel> _items = [];
   List<_ExpenseFeedItem> _externalItems = [];
-  Map<String, String> _categoryNameById = {};
+  Map<String, CategoryModel> _categoryById = {};
   bool _isLoading = true;
   bool _isDeleting = false;
   String? _error;
+
+  int _compareBySelectedDateDesc(_ExpenseFeedItem a, _ExpenseFeedItem b) {
+    final dateCompare = b.date.compareTo(a.date);
+    if (dateCompare != 0) return dateCompare;
+    return b.createdAt.compareTo(a.createdAt);
+  }
 
   Future<void> _showSwitchBackToSelfAlert() async {
     final viewingLabel = widget.viewerLabel;
@@ -161,12 +168,16 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
       final categories = List<CategoryModel>.from(results[0] as List);
       final items = List<ExpenseModel>.from(results[1] as List);
       final externalItems = results[2] as List<_ExpenseFeedItem>;
-      items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      items.sort((a, b) {
+        final dateCompare = b.date.compareTo(a.date);
+        if (dateCompare != 0) return dateCompare;
+        return b.createdAt.compareTo(a.createdAt);
+      });
       if (mounted) {
         setState(() {
           _items = items;
           _externalItems = externalItems;
-          _categoryNameById = {for (final c in categories) c.id: c.name};
+          _categoryById = {for (final c in categories) c.id: c};
         });
       }
     } catch (e) {
@@ -309,7 +320,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
       );
     }
 
-    externalItems.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    externalItems.sort(_compareBySelectedDateDesc);
     return externalItems;
   }
 
@@ -379,7 +390,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
       userId: uid,
       walletId: walletId,
       categoryId: payload.categoryId,
-      categoryName: _categoryNameById[payload.categoryId],
+      categoryName: _categoryById[payload.categoryId]?.name,
       categoryIcon: null,
       amount: payload.amount,
       description: payload.description,
@@ -415,7 +426,11 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
         } else {
           _items.insert(0, created);
         }
-        _items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        _items.sort((a, b) {
+          final dateCompare = b.date.compareTo(a.date);
+          if (dateCompare != 0) return dateCompare;
+          return b.createdAt.compareTo(a.createdAt);
+        });
       });
       widget.onDataChanged?.call();
     } catch (e) {
@@ -684,7 +699,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
               (expense.description != null &&
                   expense.description!.trim().isNotEmpty)
               ? expense.description!
-              : (_categoryNameById[expense.categoryId] ??
+              : (_categoryById[expense.categoryId]?.name ??
                     expense.categoryName ??
                     'Giao dịch'),
           date: expense.date,
@@ -693,13 +708,18 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
         ),
       ),
       ..._externalItems,
-    ]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    ]..sort(_compareBySelectedDateDesc);
 
-    final grouped = <String, List<_ExpenseFeedItem>>{};
+    final grouped = <String, Map<String, List<_ExpenseFeedItem>>>{};
     for (final item in mergedItems) {
-      final key =
+      final monthKey =
           '${item.date.year}-${item.date.month.toString().padLeft(2, '0')}';
-      grouped.putIfAbsent(key, () => <_ExpenseFeedItem>[]).add(item);
+      final dayKey = '$monthKey-${item.date.day.toString().padLeft(2, '0')}';
+      final byDay = grouped.putIfAbsent(
+        monthKey,
+        () => <String, List<_ExpenseFeedItem>>{},
+      );
+      byDay.putIfAbsent(dayKey, () => <_ExpenseFeedItem>[]).add(item);
     }
 
     return Scaffold(
@@ -757,10 +777,9 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                 for (final entry in grouped.entries) ...[
                   Builder(
                     builder: (context) {
-                      final monthTotal = entry.value.fold<double>(
-                        0,
-                        (sum, row) => sum + row.amount,
-                      );
+                      final monthTotal = entry.value.values
+                          .expand((rows) => rows)
+                          .fold<double>(0, (sum, row) => sum + row.amount);
                       return Padding(
                         padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                         child: Row(
@@ -784,26 +803,87 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                       );
                     },
                   ),
-                  ...entry.value.map((item) {
-                    if (item.kind != _ExpenseFeedKind.expense ||
-                        item.editableExpense == null) {
-                      final icon = switch (item.kind) {
-                        _ExpenseFeedKind.fundContribution =>
-                          Icons.savings_outlined,
-                        _ExpenseFeedKind.debtPayment => Icons.credit_card,
-                        _ExpenseFeedKind.transferSent => Icons.swap_horiz,
-                        _ExpenseFeedKind.expense => Icons.shopping_bag_outlined,
-                      };
-                      return ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: Theme.of(
-                            context,
-                          ).colorScheme.error.withOpacity(0.12),
-                          child: Icon(
-                            icon,
-                            color: Theme.of(context).colorScheme.error,
+                  for (final dayEntry in entry.value.entries) ...[
+                    Builder(
+                      builder: (context) {
+                        final dayItems = dayEntry.value;
+                        final dayDate = DateTime.parse(dayEntry.key);
+                        final dayTotal = dayItems.fold<double>(
+                          0,
+                          (sum, row) => sum + row.amount,
+                        );
+                        return Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  formatDate(dayDate),
+                                  style: Theme.of(context).textTheme.bodyMedium
+                                      ?.copyWith(fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                              Text(
+                                formatVnd(dayTotal),
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.error,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
                           ),
+                        );
+                      },
+                    ),
+                    ...dayEntry.value.map((item) {
+                      if (item.kind != _ExpenseFeedKind.expense ||
+                          item.editableExpense == null) {
+                        final icon = switch (item.kind) {
+                          _ExpenseFeedKind.fundContribution =>
+                            Icons.savings_outlined,
+                          _ExpenseFeedKind.debtPayment => Icons.credit_card,
+                          _ExpenseFeedKind.transferSent => Icons.swap_horiz,
+                          _ExpenseFeedKind.expense =>
+                            Icons.shopping_bag_outlined,
+                        };
+                        return ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: Theme.of(
+                              context,
+                            ).colorScheme.error.withOpacity(0.12),
+                            child: Icon(
+                              icon,
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          ),
+                          title: Text(item.title),
+                          subtitle: Text(
+                            '${formatDate(item.date)} · ${formatTimeUtcPlus7(item.createdAt)}',
+                          ),
+                          trailing: Text(
+                            formatVnd(item.amount),
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        );
+                      }
+
+                      final expense = item.editableExpense!;
+                      final category = _categoryById[expense.categoryId];
+                      final iconKey =
+                          (category?.icon.trim().isNotEmpty ?? false)
+                          ? category!.icon
+                          : ((expense.categoryIcon?.trim().isNotEmpty ?? false)
+                                ? expense.categoryIcon!
+                                : 'shopping_bag');
+                      return ListTile(
+                        key: ValueKey(expense.id),
+                        leading: CircleAvatar(
+                          child: Icon(iconFromKey(iconKey)),
                         ),
+                        onLongPress: () => _showItemActions(expense),
                         title: Text(item.title),
                         subtitle: Text(
                           '${formatDate(item.date)} · ${formatTimeUtcPlus7(item.createdAt)}',
@@ -816,28 +896,8 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                           ),
                         ),
                       );
-                    }
-
-                    final expense = item.editableExpense!;
-                    return ListTile(
-                      key: ValueKey(expense.id),
-                      leading: const CircleAvatar(
-                        child: Icon(Icons.shopping_bag_outlined),
-                      ),
-                      onLongPress: () => _showItemActions(expense),
-                      title: Text(item.title),
-                      subtitle: Text(
-                        '${formatDate(item.date)} · ${formatTimeUtcPlus7(item.createdAt)}',
-                      ),
-                      trailing: Text(
-                        formatVnd(item.amount),
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    );
-                  }),
+                    }),
+                  ],
                 ],
               ],
             ),
