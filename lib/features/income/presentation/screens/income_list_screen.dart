@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:flutter_app_demo/core/utils/amount_input.dart';
+import 'package:flutter_app_demo/core/theme/app_colors.dart';
 import 'package:flutter_app_demo/core/utils/category_visuals.dart';
 import 'package:flutter_app_demo/core/widgets/amount_suggestion_chips.dart';
 import 'package:flutter_app_demo/core/utils/formatters.dart';
@@ -545,130 +546,205 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
     String selectedSourceId = existing?.incomeSourceId ?? sources.first.id;
     DateTime selectedDate = existing?.date ?? DateTime.now();
     if (existing != null) {
-      amountCtrl.text = existing.amount.toStringAsFixed(0);
+      amountCtrl.text = formatAmountInput(existing.amount.toStringAsFixed(0));
       noteCtrl.text = existing.description ?? '';
     }
 
     final payload = await showDialog<_IncomeFormResult>(
       context: context,
       builder: (dialogContext) {
+        final media = MediaQuery.of(dialogContext).size;
         return StatefulBuilder(
-          builder: (dialogContext, setDialogState) => AlertDialog(
-            title: Text(existing == null ? 'Thêm thu nhập' : 'Sửa thu nhập'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: amountCtrl,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [
-                      FilteringTextInputFormatter.digitsOnly,
-                      ThousandsSeparatorInputFormatter(),
+          builder: (dialogContext, setDialogState) => Dialog(
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 18,
+              vertical: 20,
+            ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 520,
+                maxHeight: media.height * 0.8,
+              ),
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        existing == null ? 'Thêm thu nhập' : 'Sửa thu nhập',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: amountCtrl,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          ThousandsSeparatorInputFormatter(),
+                        ],
+                        decoration: const InputDecoration(hintText: 'Số tiền'),
+                      ),
+                      const SizedBox(height: 10),
+                      AmountSuggestionChips(
+                        controller: amountCtrl,
+                        onSelected: (value) {
+                          amountCtrl.text = formatAmountInput(value.toString());
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          const spacing = 8.0;
+                          final tileWidth =
+                              (constraints.maxWidth - (spacing * 2)) / 3;
+                          return Wrap(
+                            spacing: spacing,
+                            runSpacing: spacing,
+                            children: sources.map((s) {
+                              final selected = selectedSourceId == s.id;
+                              return SizedBox(
+                                width: tileWidth,
+                                child: Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(14),
+                                    onTap: () {
+                                      setDialogState(() {
+                                        selectedSourceId = s.id;
+                                      });
+                                    },
+                                    child: Ink(
+                                      height: 72,
+                                      decoration: BoxDecoration(
+                                        color: selected
+                                            ? AppColors.successSoft
+                                            : Colors.white,
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(
+                                          color: selected
+                                              ? AppColors.success
+                                              : AppColors.border,
+                                          width: selected ? 1.8 : 1,
+                                        ),
+                                      ),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 4,
+                                        ),
+                                        child: Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            Icon(
+                                              iconFromKey(
+                                                s.icon.trim().isNotEmpty
+                                                    ? s.icon
+                                                    : 'payments',
+                                              ),
+                                              color: selected
+                                                  ? AppColors.success
+                                                  : Colors.black54,
+                                              size: 20,
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              s.name,
+                                              maxLines: 2,
+                                              textAlign: TextAlign.center,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: selected
+                                                    ? FontWeight.w700
+                                                    : FontWeight.w500,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: noteCtrl,
+                        maxLines: 2,
+                        minLines: 2,
+                        decoration: const InputDecoration(hintText: 'Ghi chú'),
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          final picked = await showDatePicker(
+                            context: dialogContext,
+                            initialDate: selectedDate,
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime.now(),
+                          );
+                          if (picked != null) {
+                            setDialogState(() => selectedDate = picked);
+                          }
+                        },
+                        icon: const Icon(Icons.calendar_month_outlined),
+                        label: Text('Ngày: ${formatDate(selectedDate)}'),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          onPressed: () async {
+                            final amount = parseAmountInput(
+                              amountCtrl.text.trim(),
+                            );
+                            if (amount == null || amount <= 0) {
+                              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Số tiền không hợp lệ.'),
+                                ),
+                              );
+                              return;
+                            }
+                            if (dialogContext.mounted) {
+                              Navigator.of(dialogContext).maybePop(
+                                _IncomeFormResult(
+                                  amount: amount,
+                                  incomeSourceId: selectedSourceId,
+                                  description: noteCtrl.text.trim().isEmpty
+                                      ? null
+                                      : noteCtrl.text.trim(),
+                                  date: selectedDate,
+                                ),
+                              );
+                            }
+                          },
+                          child: const Text('Lưu'),
+                        ),
+                      ),
+                      SizedBox(
+                        width: double.infinity,
+                        child: TextButton(
+                          onPressed: () =>
+                              Navigator.of(dialogContext).maybePop(),
+                          child: const Text('Hủy'),
+                        ),
+                      ),
                     ],
-                    decoration: const InputDecoration(
-                      labelText: 'Số tiền',
-                      border: OutlineInputBorder(),
-                    ),
                   ),
-                  AmountSuggestionChips(
-                    controller: amountCtrl,
-                    onSelected: (value) {
-                      amountCtrl.text = formatAmountInput(value.toString());
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: sources
-                        .map(
-                          (s) => ChoiceChip(
-                            label: Text(
-                              s.name,
-                              style: const TextStyle(
-                                fontSize: 10,
-                              ), // nhỏ font lại
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 0,
-                            ), // giảm padding
-                            visualDensity: const VisualDensity(
-                              horizontal: -4,
-                              vertical: -4,
-                            ), // bóp thêm
-                            materialTapTargetSize:
-                                MaterialTapTargetSize.shrinkWrap,
-                            showCheckmark: false,
-                            selected: selectedSourceId == s.id,
-                            onSelected: (_) {
-                              setDialogState(() {
-                                selectedSourceId = s.id;
-                              });
-                            },
-                          ),
-                        )
-                        .toList(),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: noteCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Ghi chú',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: () async {
-                      final picked = await showDatePicker(
-                        context: dialogContext,
-                        initialDate: selectedDate,
-                        firstDate: DateTime(2020),
-                        lastDate: DateTime.now(),
-                      );
-                      if (picked != null) {
-                        setDialogState(() => selectedDate = picked);
-                      }
-                    },
-                    icon: const Icon(Icons.calendar_today),
-                    label: Text('Ngày: ${formatDate(selectedDate)}'),
-                  ),
-                ],
+                ),
               ),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).maybePop(),
-                child: const Text('Hủy'),
-              ),
-              FilledButton(
-                onPressed: () async {
-                  final amount = parseAmountInput(amountCtrl.text.trim());
-                  if (amount == null || amount <= 0) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Số tiền không hợp lệ.')),
-                    );
-                    return;
-                  }
-
-                  if (dialogContext.mounted) {
-                    Navigator.of(dialogContext).maybePop(
-                      _IncomeFormResult(
-                        amount: amount,
-                        incomeSourceId: selectedSourceId,
-                        description: noteCtrl.text.trim().isEmpty
-                            ? null
-                            : noteCtrl.text.trim(),
-                        date: selectedDate,
-                      ),
-                    );
-                  }
-                },
-                child: const Text('Lưu'),
-              ),
-            ],
           ),
         );
       },
@@ -816,6 +892,7 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
               child: Text('Chưa có thu nhập nào của ${widget.viewerLabel}.'),
             )
           : ListView(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 90),
               children: [
                 for (final entry in grouped.entries) ...[
                   Builder(
@@ -824,7 +901,7 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                           .expand((rows) => rows)
                           .fold<double>(0, (sum, row) => sum + row.amount);
                       return Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                        padding: const EdgeInsets.fromLTRB(0, 14, 0, 6),
                         child: Row(
                           children: [
                             Expanded(
@@ -836,9 +913,10 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                             ),
                             Text(
                               formatVnd(monthTotal),
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.green[700],
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: Colors.black87,
+                                fontSize: 14,
                               ),
                             ),
                           ],
@@ -856,7 +934,7 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                           (sum, row) => sum + row.amount,
                         );
                         return Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+                          padding: const EdgeInsets.fromLTRB(0, 4, 0, 6),
                           child: Row(
                             children: [
                               Expanded(
@@ -868,9 +946,10 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                               ),
                               Text(
                                 formatVnd(dayTotal),
-                                style: TextStyle(
-                                  color: Colors.green[700],
+                                style: const TextStyle(
+                                  color: Colors.black54,
                                   fontWeight: FontWeight.w600,
+                                  fontSize: 13,
                                 ),
                               ),
                             ],
@@ -889,20 +968,52 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                           _IncomeFeedKind.transferReceived => Icons.swap_horiz,
                           _IncomeFeedKind.income => Icons.attach_money,
                         };
-                        return ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: Colors.green.withOpacity(0.12),
-                            child: Icon(icon, color: Colors.green[700]),
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            border: Border.all(color: AppColors.border),
+                            borderRadius: BorderRadius.circular(14),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.05),
+                                blurRadius: 8,
+                                offset: const Offset(0, 3),
+                              ),
+                            ],
                           ),
-                          title: Text(item.title),
-                          subtitle: Text(
-                            '${formatDate(item.date)} · ${formatTimeUtcPlus7(item.createdAt)}',
-                          ),
-                          trailing: Text(
-                            formatVnd(item.amount),
-                            style: TextStyle(
-                              color: Colors.green[700],
-                              fontWeight: FontWeight.bold,
+                          child: ListTile(
+                            minVerticalPadding: 6,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 4,
+                            ),
+                            leading: CircleAvatar(
+                              radius: 22,
+                              backgroundColor: AppColors.successSoft,
+                              child: Icon(
+                                icon,
+                                color: AppColors.success,
+                                size: 20,
+                              ),
+                            ),
+                            title: Text(
+                              item.title,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            subtitle: Text(
+                              '${formatDate(item.date)} · ${formatTimeUtcPlus7(item.createdAt)}',
+                            ),
+                            trailing: Text(
+                              '+${formatVnd(item.amount)}',
+                              style: const TextStyle(
+                                color: AppColors.success,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
                             ),
                           ),
                         );
@@ -913,21 +1024,54 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                       final iconKey = (source?.icon.trim().isNotEmpty ?? false)
                           ? source!.icon
                           : 'payments';
-                      return ListTile(
+                      return Container(
                         key: ValueKey(income.id),
-                        leading: CircleAvatar(
-                          child: Icon(iconFromKey(iconKey)),
+                        margin: const EdgeInsets.only(bottom: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          border: Border.all(color: AppColors.border),
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.05),
+                              blurRadius: 8,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
                         ),
-                        onLongPress: () => _showItemActions(income),
-                        title: Text(item.title),
-                        subtitle: Text(
-                          '${formatDate(item.date)} · ${formatTimeUtcPlus7(item.createdAt)}',
-                        ),
-                        trailing: Text(
-                          formatVnd(item.amount),
-                          style: TextStyle(
-                            color: Colors.green[700],
-                            fontWeight: FontWeight.bold,
+                        child: ListTile(
+                          minVerticalPadding: 6,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 4,
+                          ),
+                          leading: CircleAvatar(
+                            radius: 22,
+                            backgroundColor: AppColors.successSoft,
+                            child: Icon(
+                              iconFromKey(iconKey),
+                              color: AppColors.success,
+                              size: 20,
+                            ),
+                          ),
+                          onLongPress: () => _showItemActions(income),
+                          title: Text(
+                            item.title,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          subtitle: Text(
+                            '${formatDate(item.date)} · ${formatTimeUtcPlus7(item.createdAt)}',
+                          ),
+                          trailing: Text(
+                            '+${formatVnd(item.amount)}',
+                            style: const TextStyle(
+                              color: AppColors.success,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
                           ),
                         ),
                       );

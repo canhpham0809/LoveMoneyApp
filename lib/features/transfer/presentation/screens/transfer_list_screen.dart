@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:flutter_app_demo/core/theme/app_colors.dart';
+
 import 'package:flutter_app_demo/core/utils/amount_input.dart';
 import 'package:flutter_app_demo/core/widgets/amount_suggestion_chips.dart';
 import 'package:flutter_app_demo/core/utils/formatters.dart';
@@ -352,128 +354,155 @@ class _TransferListScreenState extends State<TransferListScreen> {
     DateTime selectedDate = existing?.date ?? DateTime.now();
     var isClosingDialog = false;
     if (existing != null) {
-      amountCtrl.text = existing.amount.toStringAsFixed(0);
+      amountCtrl.text = formatAmountInput(existing.amount.toStringAsFixed(0));
       noteCtrl.text = existing.note ?? '';
     }
 
     final payload = await showDialog<_TransferFormResult>(
       context: context,
       builder: (dialogContext) {
+        final media = MediaQuery.of(dialogContext).size;
         return StatefulBuilder(
-          builder: (dialogContext, setDialogState) => AlertDialog(
-            title: Text(
-              existing == null ? 'Thêm chuyển tiền' : 'Sửa chuyển tiền',
+          builder: (dialogContext, setDialogState) => Dialog(
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 18,
+              vertical: 20,
             ),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: amountCtrl,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [
-                      FilteringTextInputFormatter.digitsOnly,
-                      ThousandsSeparatorInputFormatter(),
-                    ],
-                    decoration: const InputDecoration(
-                      labelText: 'Số tiền',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  AmountSuggestionChips(
-                    controller: amountCtrl,
-                    onSelected: (value) {
-                      amountCtrl.text = formatAmountInput(value.toString());
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: selectedRecipientId,
-                    decoration: const InputDecoration(
-                      labelText: 'Người nhận',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: recipients
-                        .map(
-                          (id) => DropdownMenuItem(
-                            value: id,
-                            child: Text(memberLabelById[id] ?? 'Người kia'),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (v) {
-                      if (v != null) {
-                        setDialogState(() => selectedRecipientId = v);
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: noteCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Ghi chú',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: () async {
-                      final picked = await showDatePicker(
-                        context: dialogContext,
-                        initialDate: selectedDate,
-                        firstDate: DateTime(2020),
-                        lastDate: DateTime.now(),
-                      );
-                      if (picked != null) {
-                        setDialogState(() => selectedDate = picked);
-                      }
-                    },
-                    icon: const Icon(Icons.calendar_today),
-                    label: Text('Ngày: ${formatDate(selectedDate)}'),
-                  ),
-                ],
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 520,
+                maxHeight: media.height * 0.8,
               ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  if (isClosingDialog) return;
-                  isClosingDialog = true;
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (!dialogContext.mounted) return;
-                    Navigator.of(dialogContext).maybePop();
-                  });
-                },
-                child: const Text('Hủy'),
-              ),
-              FilledButton(
-                onPressed: () async {
-                  if (isClosingDialog) return;
-                  final amount = parseAmountInput(amountCtrl.text.trim());
-                  if (amount == null || amount <= 0) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Số tiền không hợp lệ.')),
-                    );
-                    return;
-                  }
-                  isClosingDialog = true;
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (!dialogContext.mounted) return;
-                    Navigator.of(dialogContext).maybePop(
-                      _TransferFormResult(
-                        amount: amount,
-                        toUserId: selectedRecipientId,
-                        note: noteCtrl.text.trim().isEmpty
-                            ? null
-                            : noteCtrl.text.trim(),
-                        date: selectedDate,
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        existing == null
+                            ? 'Thêm chuyển tiền'
+                            : 'Sửa chuyển tiền',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
-                    );
-                  });
-                },
-                child: const Text('Lưu'),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: amountCtrl,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          ThousandsSeparatorInputFormatter(),
+                        ],
+                        decoration: const InputDecoration(hintText: 'Số tiền'),
+                      ),
+                      AmountSuggestionChips(
+                        controller: amountCtrl,
+                        onSelected: (value) {
+                          amountCtrl.text = formatAmountInput(value.toString());
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      DropdownButtonFormField<String>(
+                        initialValue: selectedRecipientId,
+                        decoration: const InputDecoration(
+                          hintText: 'Người nhận',
+                        ),
+                        items: recipients
+                            .map(
+                              (id) => DropdownMenuItem(
+                                value: id,
+                                child: Text(memberLabelById[id] ?? 'Người kia'),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) {
+                          if (v != null) {
+                            setDialogState(() => selectedRecipientId = v);
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: noteCtrl,
+                        maxLines: 2,
+                        minLines: 2,
+                        decoration: const InputDecoration(hintText: 'Ghi chú'),
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          final picked = await showDatePicker(
+                            context: dialogContext,
+                            initialDate: selectedDate,
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime.now(),
+                          );
+                          if (picked != null) {
+                            setDialogState(() => selectedDate = picked);
+                          }
+                        },
+                        icon: const Icon(Icons.calendar_month_outlined),
+                        label: Text('Ngày: ${formatDate(selectedDate)}'),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          onPressed: () async {
+                            if (isClosingDialog) return;
+                            final amount = parseAmountInput(
+                              amountCtrl.text.trim(),
+                            );
+                            if (amount == null || amount <= 0) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Số tiền không hợp lệ.'),
+                                ),
+                              );
+                              return;
+                            }
+                            isClosingDialog = true;
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (!dialogContext.mounted) return;
+                              Navigator.of(dialogContext).maybePop(
+                                _TransferFormResult(
+                                  amount: amount,
+                                  toUserId: selectedRecipientId,
+                                  note: noteCtrl.text.trim().isEmpty
+                                      ? null
+                                      : noteCtrl.text.trim(),
+                                  date: selectedDate,
+                                ),
+                              );
+                            });
+                          },
+                          child: const Text('Lưu'),
+                        ),
+                      ),
+                      SizedBox(
+                        width: double.infinity,
+                        child: TextButton(
+                          onPressed: () {
+                            if (isClosingDialog) return;
+                            isClosingDialog = true;
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (!dialogContext.mounted) return;
+                              Navigator.of(dialogContext).maybePop();
+                            });
+                          },
+                          child: const Text('Hủy'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ],
+            ),
           ),
         );
       },
@@ -589,6 +618,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
               ),
             )
           : ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               children: [
                 for (final entry in grouped.entries) ...[
                   Builder(
@@ -602,7 +632,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
                           .where((item) => item.toUserId == widget.viewerUserId)
                           .fold<double>(0, (sum, item) => sum + item.amount);
                       return Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 16, 12, 6),
+                        padding: const EdgeInsets.fromLTRB(0, 16, 0, 6),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -696,28 +726,57 @@ class _TransferListScreenState extends State<TransferListScreen> {
                     final amountColor = isIncoming
                         ? Colors.green[700]
                         : Theme.of(context).colorScheme.error;
-                    return ListTile(
+                    return Container(
                       key: ValueKey(item.id),
-                      leading: CircleAvatar(
-                        backgroundColor: (amountColor ?? Colors.grey)
-                            .withOpacity(0.12),
-                        child: Icon(
-                          isIncoming
-                              ? Icons.south_west_rounded
-                              : Icons.north_east_rounded,
-                          color: amountColor,
+                      margin: const EdgeInsets.only(bottom: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: Border.all(color: AppColors.border),
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: ListTile(
+                        minVerticalPadding: 6,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 4,
                         ),
-                      ),
-                      onLongPress: () => _showItemActions(item),
-                      title: Text(item.note ?? '$directionLabel $partnerName'),
-                      subtitle: Text(
-                        '${formatDate(item.date)} · ${_formatCreatedTimeUtcPlus7(item.createdAt)}',
-                      ),
-                      trailing: Text(
-                        '${isIncoming ? '+' : '-'} ${formatVnd(item.amount)}',
-                        style: TextStyle(
-                          color: amountColor,
-                          fontWeight: FontWeight.bold,
+                        leading: CircleAvatar(
+                          radius: 22,
+                          backgroundColor: (amountColor ?? Colors.grey)
+                              .withValues(alpha: 0.12),
+                          child: Icon(
+                            isIncoming
+                                ? Icons.south_west_rounded
+                                : Icons.north_east_rounded,
+                            color: amountColor,
+                            size: 20,
+                          ),
+                        ),
+                        onLongPress: () => _showItemActions(item),
+                        title: Text(
+                          item.note ?? '$directionLabel $partnerName',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        subtitle: Text(
+                          '${formatDate(item.date)} · ${_formatCreatedTimeUtcPlus7(item.createdAt)}',
+                        ),
+                        trailing: Text(
+                          '${isIncoming ? '+' : '-'}${formatVnd(item.amount)}',
+                          style: TextStyle(
+                            color: amountColor,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
                         ),
                       ),
                     );

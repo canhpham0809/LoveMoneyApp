@@ -49,6 +49,28 @@ class _DebtTypeManagementScreenState extends State<DebtTypeManagementScreen> {
     }
   }
 
+  Future<void> _onReorder(int oldIndex, int newIndex) async {
+    if (newIndex > oldIndex) newIndex -= 1;
+
+    final reordered = List<Map<String, dynamic>>.from(_items);
+    final moved = reordered.removeAt(oldIndex);
+    reordered.insert(newIndex, moved);
+
+    setState(() => _items = reordered);
+
+    try {
+      await _service.updateDebtTypeOrder(
+        reordered.map((e) => e['id'] as String).toList(),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      await _load(showLoader: false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Không cập nhật được thứ tự danh mục Nợ: $e')),
+      );
+    }
+  }
+
   Future<void> _openDebtTypeDialog({Map<String, dynamic>? existing}) async {
     final nameCtrl = TextEditingController(
       text: (existing?['name'] as String?) ?? '',
@@ -170,32 +192,48 @@ class _DebtTypeManagementScreenState extends State<DebtTypeManagementScreen> {
             )
           : _items.isEmpty
           ? const Center(child: Text('Chưa có danh mục Nợ nào.'))
-          : ListView.separated(
+          : ReorderableListView.builder(
+              buildDefaultDragHandles: false,
               itemCount: _items.length,
-              separatorBuilder: (_, _) => const Divider(height: 0),
+              onReorder: _onReorder,
               itemBuilder: (context, index) {
                 final item = _items[index];
                 final name = (item['name'] as String?) ?? 'N/A';
-                return ListTile(
-                  leading: const CircleAvatar(
-                    child: Icon(Icons.credit_card_outlined),
+                return Container(
+                  key: ValueKey(item['id']),
+                  decoration: const BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(color: Color(0x14000000)),
+                    ),
                   ),
-                  title: Text(name),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.edit_outlined),
-                        onPressed: () => _openDebtTypeDialog(existing: item),
-                      ),
-                      IconButton(
-                        icon: const Icon(
-                          Icons.delete_outline,
-                          color: Colors.red,
+                  child: ListTile(
+                    leading: const CircleAvatar(
+                      child: Icon(Icons.credit_card_outlined),
+                    ),
+                    title: Text(name),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined),
+                          onPressed: () => _openDebtTypeDialog(existing: item),
                         ),
-                        onPressed: () => _deleteDebtType(item),
-                      ),
-                    ],
+                        IconButton(
+                          icon: const Icon(
+                            Icons.delete_outline,
+                            color: Colors.red,
+                          ),
+                          onPressed: () => _deleteDebtType(item),
+                        ),
+                        ReorderableDragStartListener(
+                          index: index,
+                          child: const Padding(
+                            padding: EdgeInsets.only(left: 4),
+                            child: Icon(Icons.drag_indicator),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 );
               },

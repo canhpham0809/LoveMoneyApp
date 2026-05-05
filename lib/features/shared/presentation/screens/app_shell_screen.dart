@@ -15,6 +15,8 @@ import 'package:flutter_app_demo/features/debt/presentation/screens/debt_list_sc
 import 'package:flutter_app_demo/features/shared/data/services/quick_add_service.dart';
 import 'package:flutter_app_demo/features/expense/data/services/expense_service.dart';
 import 'package:flutter_app_demo/features/expense/data/models/category_model.dart';
+import 'package:flutter_app_demo/core/theme/app_colors.dart';
+import 'package:flutter_app_demo/core/utils/category_visuals.dart';
 
 class AppShellScreen extends StatefulWidget {
   const AppShellScreen({super.key});
@@ -238,110 +240,168 @@ class _AppShellScreenState extends State<AppShellScreen> {
     if (!mounted) return;
 
     final ctrl = TextEditingController();
-    String? selectedCategoryId;
-    String? selectedCategoryName;
+    String? selectedCategoryId = categories.isNotEmpty
+        ? categories.first.id
+        : null;
+    String? selectedCategoryName = categories.isNotEmpty
+        ? categories.first.name
+        : null;
     final payload = await showDialog<Map<String, String?>>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          title: const Text('Quick Add'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  controller: ctrl,
-                  autofocus: true,
-                  decoration: const InputDecoration(
-                    hintText: 'Vi du: 50k breakfast',
-                    border: OutlineInputBorder(),
+        builder: (dialogContext, setDialogState) {
+          final media = MediaQuery.of(dialogContext).size;
+          return Dialog(
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 18,
+              vertical: 20,
+            ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 520,
+                maxHeight: media.height * 0.8,
+              ),
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Thêm nhanh chi tiêu',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: ctrl,
+                        autofocus: true,
+                        decoration: const InputDecoration(
+                          hintText: 'Vi du: 50k breakfast',
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      if (categories.isEmpty)
+                        const Text(
+                          'Chưa có danh mục chi tiêu.',
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                        )
+                      else
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            const spacing = 8.0;
+                            final tileWidth =
+                                (constraints.maxWidth - (spacing * 2)) / 3;
+                            return Wrap(
+                              spacing: spacing,
+                              runSpacing: spacing,
+                              children: categories.map((c) {
+                                final selected = selectedCategoryId == c.id;
+                                return SizedBox(
+                                  width: tileWidth,
+                                  child: Material(
+                                    color: Colors.transparent,
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(14),
+                                      onTap: () {
+                                        setDialogState(() {
+                                          if (selectedCategoryId == c.id) {
+                                            selectedCategoryId = null;
+                                            selectedCategoryName = null;
+                                          } else {
+                                            selectedCategoryId = c.id;
+                                            selectedCategoryName = c.name;
+                                          }
+                                        });
+                                      },
+                                      child: Ink(
+                                        height: 72,
+                                        decoration: BoxDecoration(
+                                          color: selected
+                                              ? AppColors.tealSoft.withValues(
+                                                  alpha: 0.32,
+                                                )
+                                              : Colors.white,
+                                          borderRadius: BorderRadius.circular(
+                                            14,
+                                          ),
+                                          border: Border.all(
+                                            color: selected
+                                                ? AppColors.tealDeep
+                                                : AppColors.border,
+                                            width: selected ? 1.8 : 1,
+                                          ),
+                                        ),
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 4,
+                                          ),
+                                          child: Column(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              Icon(
+                                                iconFromKey(c.icon),
+                                                color: selected
+                                                    ? AppColors.tealDeep
+                                                    : Colors.black54,
+                                                size: 20,
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                c.name,
+                                                maxLines: 2,
+                                                textAlign: TextAlign.center,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: selected
+                                                      ? FontWeight.w700
+                                                      : FontWeight.w500,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            );
+                          },
+                        ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          onPressed: () => Navigator.pop(dialogContext, {
+                            'input': ctrl.text.trim(),
+                            'categoryId': selectedCategoryId,
+                            'categoryName': selectedCategoryName,
+                          }),
+                          child: const Text('Lưu'),
+                        ),
+                      ),
+                      SizedBox(
+                        width: double.infinity,
+                        child: TextButton(
+                          onPressed: () => Navigator.pop(dialogContext),
+                          child: const Text('Hủy'),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 12),
-
-                const SizedBox(height: 6),
-                if (categories.isEmpty)
-                  const Text(
-                    'Chưa có danh mục chi tiêu.',
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
-                  )
-                else
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: categories
-                        .map(
-                          (c) => ConstrainedBox(
-                            constraints: const BoxConstraints(
-                              minHeight: 24,
-                            ), // ép chiều cao
-                            child: ChoiceChip(
-                              label: Text(
-                                c.name,
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  height: 1.0,
-                                ), // nhỏ + giảm line height
-                              ),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 0,
-                              ),
-                              visualDensity: const VisualDensity(
-                                horizontal: -4,
-                                vertical: -4,
-                              ),
-                              materialTapTargetSize:
-                                  MaterialTapTargetSize.shrinkWrap,
-                              showCheckmark: false,
-                              selected: selectedCategoryId == c.id,
-                              selectedColor: Colors.blue.withOpacity(
-                                0.12,
-                              ), // nhẹ nhàng hơn
-                              side: BorderSide(
-                                color: selectedCategoryId == c.id
-                                    ? Colors.blue
-                                    : Colors.grey.shade300,
-                                width: 0.8,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              onSelected: (_) {
-                                setDialogState(() {
-                                  if (selectedCategoryId == c.id) {
-                                    selectedCategoryId = null;
-                                    selectedCategoryName = null;
-                                  } else {
-                                    selectedCategoryId = c.id;
-                                    selectedCategoryName = c.name;
-                                  }
-                                });
-                              },
-                            ),
-                          ),
-                        )
-                        .toList(),
-                  ),
-              ],
+              ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Hủy'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, {
-                'input': ctrl.text.trim(),
-                'categoryId': selectedCategoryId,
-                'categoryName': selectedCategoryName,
-              }),
-              child: const Text('Lưu'),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
 
@@ -511,6 +571,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
         partnerUserId: counterpartyUserId,
         onToggleViewer: _toggleViewer,
         refreshSignal: _dashboardRefreshBus,
+        onDataChanged: _markIncomeChanged,
         onCreatePressed: () async {
           if (_viewerUserId != _currentUserId) {
             await _showSwitchBackToSelfAlert();
@@ -572,6 +633,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         type: BottomNavigationBarType.fixed,
+        showUnselectedLabels: true,
         onTap: (i) => setState(() => _selectedIndex = i),
         items: const [
           BottomNavigationBarItem(
@@ -602,7 +664,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
           BottomNavigationBarItem(
             icon: Icon(Icons.settings_outlined),
             activeIcon: Icon(Icons.settings),
-            label: 'Settings ',
+            label: 'Settings',
           ),
         ],
       ),

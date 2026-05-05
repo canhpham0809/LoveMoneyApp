@@ -5,6 +5,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/services/transaction_service.dart';
 import '../../../../core/models/monthly_summary.dart';
 import '../../../../core/models/transaction.dart';
+import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/formatters.dart';
+import '../../../income/data/services/income_service.dart';
 import 'monthly_operations_dashboard_screen.dart';
 import '../../../home/widgets/monthly_card.dart';
 import '../../../home/widgets/transaction_list.dart';
@@ -18,6 +21,7 @@ class DashboardScreen extends StatefulWidget {
   final VoidCallback? onToggleViewer;
   final ValueListenable<int>? refreshSignal;
   final Future<void> Function()? onCreatePressed;
+  final VoidCallback? onDataChanged;
 
   const DashboardScreen({
     super.key,
@@ -29,6 +33,7 @@ class DashboardScreen extends StatefulWidget {
     this.onToggleViewer,
     this.refreshSignal,
     this.onCreatePressed,
+    this.onDataChanged,
   });
 
   @override
@@ -37,6 +42,7 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   final _transactionService = TransactionService();
+  final _incomeService = IncomeService();
   final PageController _monthPageController = PageController(
     viewportFraction: 0.85,
   );
@@ -182,11 +188,171 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  Future<void> _showSwitchBackToSelfAlert() async {
+    final viewingLabel = widget.viewerLabel;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Không thể thao tác khi đang xem $viewingLabel'),
+        content: Text(
+          'Bạn đang ở view $viewingLabel. Vui lòng quay về view của tài khoản đăng nhập để thực hiện chuyển dư tháng.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).maybePop(),
+            child: const Text('Đóng'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(dialogContext).maybePop();
+              widget.onToggleViewer?.call();
+            },
+            child: const Text('Chuyển về tôi'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<String?> _resolveDefaultWalletId() async {
+    final rows = await Supabase.instance.client
+        .from('wallets')
+        .select('id')
+        .eq('couple_id', widget.coupleId)
+        .eq('is_deleted', false)
+        .eq('is_active', true)
+        .order('is_default', ascending: false)
+        .order('created_at', ascending: true)
+        .limit(1);
+
+    if (rows.isEmpty) return null;
+    return rows.first['id'] as String;
+  }
+
+  Future<String> _resolveOrCreateCarryOverIncomeSourceId() async {
+    const carryOverName = 'Dư tháng trước';
+    final rows = await Supabase.instance.client
+        .from('income_sources')
+        .select('id, name')
+        .eq('couple_id', widget.coupleId)
+        .eq('is_deleted', false)
+        .eq('name', carryOverName)
+        .limit(1);
+
+    if (rows.isNotEmpty) {
+      return rows.first['id'] as String;
+    }
+
+    final created = await _incomeService.createIncomeSource(
+      coupleId: widget.coupleId,
+      name: carryOverName,
+      icon: 'restart_alt',
+      type: 'other',
+      showInIncomeForm: true,
+    );
+    return created.id;
+  }
+
+  Future<void> _onCarryOverPressed(MonthlySummary summary) async {
+    if (widget.viewerUserId != widget.currentUserId) {
+      await _showSwitchBackToSelfAlert();
+      return;
+    }
+
+    final carryAmount = summary.balance;
+    if (carryAmount <= 0) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Tháng này không có dư để chuyển.')),
+      );
+      return;
+    }
+
+    final nextMonthDate = DateTime(summary.year, summary.month + 1, 1);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Chuyển dư sang tháng sau'),
+        content: Text(
+          'Bạn có muốn chuyển ${formatVnd(carryAmount)} sang tháng ${nextMonthDate.month.toString().padLeft(2, '0')}/${nextMonthDate.year} không?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).maybePop(false),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).maybePop(true),
+            child: const Text('Đồng ý'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Không xác định được người dùng hiện tại.'),
+        ),
+      );
+      return;
+    }
+
+    try {
+      final walletId = await _resolveDefaultWalletId();
+      if (walletId == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Chưa có ví mặc định để ghi nhận Thu.')),
+        );
+        return;
+      }
+
+      final incomeSourceId = await _resolveOrCreateCarryOverIncomeSourceId();
+      await _incomeService.createIncome(
+        coupleId: widget.coupleId,
+        userId: userId,
+        walletId: walletId,
+        incomeSourceId: incomeSourceId,
+        amount: carryAmount,
+        description:
+            'Dư tháng ${summary.month.toString().padLeft(2, '0')}/${summary.year}',
+        date: nextMonthDate,
+      );
+
+      widget.onDataChanged?.call();
+      await _load(showLoader: false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Đã ghi nhận ${formatVnd(carryAmount)} vào Thu tháng ${nextMonthDate.month.toString().padLeft(2, '0')}/${nextMonthDate.year}.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Không chuyển được dư tháng: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final selectedSummary = _monthlySummaries.isEmpty
+        ? null
+        : _monthlySummaries[_selectedMonthIndex];
+    final titleText = selectedSummary == null
+        ? 'Dashboard'
+        : 'Dashboard ${selectedSummary.month.toString().padLeft(2, '0')}/${selectedSummary.year}';
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Home'),
+        title: Text(titleText),
         actions: [
           if (widget.partnerUserId != null)
             IconButton(
@@ -233,45 +399,76 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: EdgeInsets.fromLTRB(
                   16,
-                  16,
+                  12,
                   16,
                   widget.onCreatePressed == null ? 16 : 96,
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Đang xem: ${widget.viewerLabel}',
-                      style: Theme.of(context).textTheme.bodyMedium,
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.tealSoft.withValues(alpha: 0.45),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        'Đang xem: ${widget.viewerLabel}',
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(
+                              color: AppColors.tealDeep,
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
                     ),
                     const SizedBox(height: 8),
                     // Monthly swipeable summary cards
                     if (_monthlySummaries.isNotEmpty)
                       SizedBox(
-                        height: 180,
+                        height: 172,
                         child: PageView.builder(
                           controller: _monthPageController,
                           itemCount: _monthlySummaries.length,
                           onPageChanged: _onMonthChanged,
-                          itemBuilder: (context, idx) => MonthlyCard(
-                            summary: _monthlySummaries[idx],
-                            isSelected: idx == _selectedMonthIndex,
-                            onTap: () async {
-                              await _openMonthlyDashboard(
-                                _monthlySummaries[idx],
-                              );
-                            },
+                          itemBuilder: (context, idx) => Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                            child: MonthlyCard(
+                              summary: _monthlySummaries[idx],
+                              isSelected: idx == _selectedMonthIndex,
+                              onTap: () async {
+                                await _openMonthlyDashboard(
+                                  _monthlySummaries[idx],
+                                );
+                              },
+                              onCarryOverPressed: () async {
+                                await _onCarryOverPressed(
+                                  _monthlySummaries[idx],
+                                );
+                              },
+                            ),
                           ),
                         ),
                       ),
                     const SizedBox(height: 16),
-                    // Recent transactions (always current month)
-                    const Text(
-                      '20 giao dịch gần nhất',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    Row(
+                      children: [
+                        Text(
+                          '20 giao dịch gần nhất',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 16,
+                              ),
+                        ),
+                        const Spacer(),
+                        Icon(
+                          Icons.tune_rounded,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 8),
                     TransactionList(
@@ -287,8 +484,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ? null
           : FloatingActionButton.extended(
               onPressed: () async => widget.onCreatePressed!.call(),
-              icon: const Icon(Icons.flash_on_outlined),
-              label: const Text('Quick Add'),
+              label: const Text('Add'),
             ),
     );
   }

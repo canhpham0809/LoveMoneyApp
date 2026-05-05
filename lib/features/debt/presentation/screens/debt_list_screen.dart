@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:flutter_app_demo/core/theme/app_colors.dart';
 import 'package:flutter_app_demo/core/utils/amount_input.dart';
 import 'package:flutter_app_demo/core/widgets/amount_suggestion_chips.dart';
 import 'package:flutter_app_demo/core/utils/formatters.dart';
@@ -58,12 +59,18 @@ class _DebtListScreenState extends State<DebtListScreen> {
   final _service = DebtService();
   List<DebtModel> _items = [];
   List<String> _manualOrderIds = [];
+  Map<String, String> _memberNameById = {};
   String _selectedDebtKind = 'debt';
   bool _isLoading = true;
   String? _error;
 
   List<DebtModel> get _filteredItems =>
       _items.where((item) => item.debtKind == _selectedDebtKind).toList();
+
+  String _resolveMemberName(String? userId) {
+    if (userId == null || userId.isEmpty) return 'Không rõ';
+    return _memberNameById[userId] ?? userId;
+  }
 
   void _sortDebtsByDueDate(List<DebtModel> items) {
     items.sort((a, b) {
@@ -210,284 +217,314 @@ class _DebtListScreenState extends State<DebtListScreen> {
     final payload = await showDialog<_DebtFormPayload>(
       context: context,
       builder: (dialogContext) {
+        final media = MediaQuery.of(dialogContext).size;
         return StatefulBuilder(
-          builder: (dialogContext, setDialogState) => AlertDialog(
-            title: Text(existing == null ? 'Them no' : 'Sua no'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: personCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Nguoi lien quan',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: amountCtrl,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [
-                      FilteringTextInputFormatter.digitsOnly,
-                      ThousandsSeparatorInputFormatter(),
-                    ],
-                    decoration: const InputDecoration(
-                      labelText: 'So tien',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  AmountSuggestionChips(
-                    controller: amountCtrl,
-                    onSelected: (value) {
-                      amountCtrl.text = formatAmountInput(value.toString());
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  ValueListenableBuilder<String>(
-                    valueListenable: selectedDebtTypeId,
-                    builder: (_, value, _) => Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text('Loai no'),
+          builder: (dialogContext, setDialogState) => Dialog(
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 18,
+              vertical: 20,
+            ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 520,
+                maxHeight: media.height * 0.85,
+              ),
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        existing == null ? 'Thêm nợ' : 'Sửa nợ',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
                         ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: debtTypes
-                              .map(
-                                (item) => ChoiceChip(
-                                  label: Text(
-                                    item['name'] as String,
-                                    style: const TextStyle(fontSize: 10),
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 0,
-                                  ),
-                                  visualDensity: const VisualDensity(
-                                    horizontal: -4,
-                                    vertical: -4,
-                                  ),
-                                  materialTapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                  showCheckmark: false,
-                                  selected: value == item['id'] as String,
-                                  onSelected: (_) {
-                                    selectedDebtTypeId.value =
-                                        item['id'] as String;
-                                  },
-                                ),
-                              )
-                              .toList(),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: personCtrl,
+                        decoration: const InputDecoration(
+                          hintText: 'Người liên quan',
                         ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  ValueListenableBuilder<String>(
-                    valueListenable: selectedDebtKind,
-                    builder: (_, value, _) => Row(
-                      children: [
-                        GestureDetector(
-                          onTap: () => selectedDebtKind.value = 'debt',
-                          child: Row(
-                            children: [
-                              Radio<String>(
-                                value: 'debt',
-                                groupValue: value,
-                                visualDensity: const VisualDensity(
-                                  horizontal: -4,
-                                  vertical: -4,
-                                ),
-                                materialTapTargetSize:
-                                    MaterialTapTargetSize.shrinkWrap,
-                                onChanged: (v) {
-                                  if (v != null) selectedDebtKind.value = v;
-                                },
-                              ),
-                              const Text('Nợ'),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        GestureDetector(
-                          onTap: () => selectedDebtKind.value = 'lend',
-                          child: Row(
-                            children: [
-                              Radio<String>(
-                                value: 'lend',
-                                groupValue: value,
-                                visualDensity: const VisualDensity(
-                                  horizontal: -4,
-                                  vertical: -4,
-                                ),
-                                materialTapTargetSize:
-                                    MaterialTapTargetSize.shrinkWrap,
-                                onChanged: (v) {
-                                  if (v != null) selectedDebtKind.value = v;
-                                },
-                              ),
-                              const Text('Cho mượn'),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  ValueListenableBuilder<String>(
-                    valueListenable: selectedDebtKind,
-                    builder: (_, debtKind, child) {
-                      if (debtKind == 'lend') {
-                        return ValueListenableBuilder<bool>(
-                          valueListenable: shouldRecordToExpense,
-                          builder: (_, value, child) => CheckboxListTile(
-                            dense: true,
-                            visualDensity: const VisualDensity(
-                              horizontal: -2,
-                              vertical: -2,
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: amountCtrl,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          ThousandsSeparatorInputFormatter(),
+                        ],
+                        decoration: const InputDecoration(hintText: 'Số tiền'),
+                      ),
+                      AmountSuggestionChips(
+                        controller: amountCtrl,
+                        onSelected: (value) {
+                          amountCtrl.text = formatAmountInput(value.toString());
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      ValueListenableBuilder<String>(
+                        valueListenable: selectedDebtTypeId,
+                        builder: (_, value, _) => Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text('Loại nợ'),
                             ),
-                            contentPadding: EdgeInsets.zero,
-                            value: value,
-                            onChanged: (v) {
-                              shouldRecordToExpense.value = v ?? false;
-                            },
-                            title: const Text('Ghi nhan vao Chi'),
-                          ),
-                        );
-                      }
-                      return ValueListenableBuilder<bool>(
-                        valueListenable: shouldRecordToIncome,
-                        builder: (_, value, child) => CheckboxListTile(
-                          dense: true,
-                          visualDensity: const VisualDensity(
-                            horizontal: -2,
-                            vertical: -2,
-                          ),
-                          contentPadding: EdgeInsets.zero,
-                          value: value,
-                          onChanged: (v) {
-                            shouldRecordToIncome.value = v ?? false;
-                          },
-                          title: const Text('Ghi nhan vao Thu'),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: debtTypes
+                                  .map(
+                                    (item) => ChoiceChip(
+                                      label: Text(
+                                        item['name'] as String,
+                                        style: const TextStyle(fontSize: 10),
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                        vertical: 0,
+                                      ),
+                                      visualDensity: const VisualDensity(
+                                        horizontal: -4,
+                                        vertical: -4,
+                                      ),
+                                      materialTapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                      showCheckmark: false,
+                                      selected: value == item['id'] as String,
+                                      onSelected: (_) {
+                                        selectedDebtTypeId.value =
+                                            item['id'] as String;
+                                      },
+                                    ),
+                                  )
+                                  .toList(),
+                            ),
+                          ],
                         ),
-                      );
-                    },
+                      ),
+                      const SizedBox(height: 8),
+                      ValueListenableBuilder<String>(
+                        valueListenable: selectedDebtKind,
+                        builder: (_, value, _) => Row(
+                          children: [
+                            GestureDetector(
+                              onTap: () => selectedDebtKind.value = 'debt',
+                              child: Row(
+                                children: [
+                                  Radio<String>(
+                                    value: 'debt',
+                                    groupValue: value,
+                                    visualDensity: const VisualDensity(
+                                      horizontal: -4,
+                                      vertical: -4,
+                                    ),
+                                    materialTapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                    onChanged: (v) {
+                                      if (v != null) selectedDebtKind.value = v;
+                                    },
+                                  ),
+                                  const Text('Nợ'),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            GestureDetector(
+                              onTap: () => selectedDebtKind.value = 'lend',
+                              child: Row(
+                                children: [
+                                  Radio<String>(
+                                    value: 'lend',
+                                    groupValue: value,
+                                    visualDensity: const VisualDensity(
+                                      horizontal: -4,
+                                      vertical: -4,
+                                    ),
+                                    materialTapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                    onChanged: (v) {
+                                      if (v != null) selectedDebtKind.value = v;
+                                    },
+                                  ),
+                                  const Text('Cho mượn'),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      ValueListenableBuilder<String>(
+                        valueListenable: selectedDebtKind,
+                        builder: (_, debtKind, child) {
+                          if (debtKind == 'lend') {
+                            return ValueListenableBuilder<bool>(
+                              valueListenable: shouldRecordToExpense,
+                              builder: (_, value, child) => CheckboxListTile(
+                                dense: true,
+                                visualDensity: const VisualDensity(
+                                  horizontal: -2,
+                                  vertical: -2,
+                                ),
+                                contentPadding: EdgeInsets.zero,
+                                value: value,
+                                onChanged: (v) {
+                                  shouldRecordToExpense.value = v ?? false;
+                                },
+                                title: const Text('Ghi nhan vao Chi'),
+                              ),
+                            );
+                          }
+                          return ValueListenableBuilder<bool>(
+                            valueListenable: shouldRecordToIncome,
+                            builder: (_, value, child) => CheckboxListTile(
+                              dense: true,
+                              visualDensity: const VisualDensity(
+                                horizontal: -2,
+                                vertical: -2,
+                              ),
+                              contentPadding: EdgeInsets.zero,
+                              value: value,
+                              onChanged: (v) {
+                                shouldRecordToIncome.value = v ?? false;
+                              },
+                              title: const Text('Ghi nhan vao Thu'),
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: noteCtrl,
+                        maxLines: 2,
+                        minLines: 2,
+                        decoration: const InputDecoration(hintText: 'Ghi chú'),
+                      ),
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          final picked = await showDatePicker(
+                            context: dialogContext,
+                            initialDate: startDate,
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime(2100),
+                          );
+                          if (picked != null) {
+                            setDialogState(() => startDate = picked);
+                          }
+                        },
+                        icon: const Icon(Icons.calendar_month_outlined),
+                        label: Text('Ngày phát sinh: ${formatDate(startDate)}'),
+                      ),
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          final picked = await showDatePicker(
+                            context: dialogContext,
+                            initialDate: dueDate ?? startDate,
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime(2100),
+                          );
+                          if (picked != null) {
+                            setDialogState(() => dueDate = picked);
+                          }
+                        },
+                        icon: const Icon(Icons.event_outlined),
+                        label: Text(
+                          dueDate == null
+                              ? 'Chọn hạn thanh toán'
+                              : 'Hạn: ${formatDate(dueDate!)}',
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          onPressed: () async {
+                            if (isClosingDialog) return;
+                            final amount = parseAmountInput(
+                              amountCtrl.text.trim(),
+                            );
+                            if (personCtrl.text.trim().isEmpty ||
+                                amount == null ||
+                                amount <= 0) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Nhập đủ thông tin hợp lệ.'),
+                                ),
+                              );
+                              return;
+                            }
+                            final uid =
+                                Supabase.instance.client.auth.currentUser?.id;
+                            if (uid == null) {
+                              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Không tìm thấy phiên đăng nhập.',
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
+                            isClosingDialog = true;
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (!dialogContext.mounted) return;
+                              Navigator.of(dialogContext).maybePop(
+                                _DebtFormPayload(
+                                  debtTypeId: selectedDebtTypeId.value,
+                                  debtKind: selectedDebtKind.value,
+                                  recordToIncome:
+                                      selectedDebtKind.value == 'debt'
+                                      ? shouldRecordToIncome.value
+                                      : false,
+                                  recordToExpense:
+                                      selectedDebtKind.value == 'lend'
+                                      ? shouldRecordToExpense.value
+                                      : false,
+                                  name: personCtrl.text.trim(),
+                                  originalAmount: amount,
+                                  creditorName: personCtrl.text.trim(),
+                                  startDate: startDate,
+                                  dueDate: dueDate,
+                                  note: noteCtrl.text.trim().isEmpty
+                                      ? null
+                                      : noteCtrl.text.trim(),
+                                ),
+                              );
+                            });
+                          },
+                          child: const Text('Lưu'),
+                        ),
+                      ),
+                      SizedBox(
+                        width: double.infinity,
+                        child: TextButton(
+                          onPressed: () {
+                            if (isClosingDialog) return;
+                            isClosingDialog = true;
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (!dialogContext.mounted) return;
+                              Navigator.of(dialogContext).maybePop();
+                            });
+                          },
+                          child: const Text('Hủy'),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: noteCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Ghi chu',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  OutlinedButton.icon(
-                    onPressed: () async {
-                      final picked = await showDatePicker(
-                        context: dialogContext,
-                        initialDate: startDate,
-                        firstDate: DateTime(2000),
-                        lastDate: DateTime(2100),
-                      );
-                      if (picked != null) {
-                        setDialogState(() => startDate = picked);
-                      }
-                    },
-                    icon: const Icon(Icons.event_outlined),
-                    label: Text('Ngay phat sinh: ${formatDate(startDate)}'),
-                  ),
-                  const SizedBox(height: 8),
-                  OutlinedButton.icon(
-                    onPressed: () async {
-                      final picked = await showDatePicker(
-                        context: dialogContext,
-                        initialDate: dueDate ?? startDate,
-                        firstDate: DateTime(2000),
-                        lastDate: DateTime(2100),
-                      );
-                      if (picked != null) {
-                        setDialogState(() => dueDate = picked);
-                      }
-                    },
-                    icon: const Icon(Icons.calendar_today),
-                    label: Text(
-                      dueDate == null
-                          ? 'Chon han thanh toan'
-                          : 'Han: ${formatDate(dueDate!)}',
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  if (isClosingDialog) return;
-                  isClosingDialog = true;
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (!dialogContext.mounted) return;
-                    Navigator.of(dialogContext).maybePop();
-                  });
-                },
-                child: const Text('Huy'),
-              ),
-              FilledButton(
-                onPressed: () async {
-                  if (isClosingDialog) return;
-                  final amount = parseAmountInput(amountCtrl.text.trim());
-                  if (personCtrl.text.trim().isEmpty ||
-                      amount == null ||
-                      amount <= 0) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Nhap du thong tin hop le.'),
-                      ),
-                    );
-                    return;
-                  }
-                  final uid = Supabase.instance.client.auth.currentUser?.id;
-                  if (uid == null) {
-                    ScaffoldMessenger.of(dialogContext).showSnackBar(
-                      const SnackBar(
-                        content: Text('Khong tim thay phien dang nhap.'),
-                      ),
-                    );
-                    return;
-                  }
-                  isClosingDialog = true;
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (!dialogContext.mounted) return;
-                    Navigator.of(dialogContext).maybePop(
-                      _DebtFormPayload(
-                        debtTypeId: selectedDebtTypeId.value,
-                        debtKind: selectedDebtKind.value,
-                        recordToIncome: selectedDebtKind.value == 'debt'
-                            ? shouldRecordToIncome.value
-                            : false,
-                        recordToExpense: selectedDebtKind.value == 'lend'
-                            ? shouldRecordToExpense.value
-                            : false,
-                        name: personCtrl.text.trim(),
-                        originalAmount: amount,
-                        creditorName: personCtrl.text.trim(),
-                        startDate: startDate,
-                        dueDate: dueDate,
-                        note: noteCtrl.text.trim().isEmpty
-                            ? null
-                            : noteCtrl.text.trim(),
-                      ),
-                    );
-                  });
-                },
-                child: const Text('Luu'),
-              ),
-            ],
           ),
         );
       },
@@ -504,7 +541,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
     if (uid == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Khong tim thay phien dang nhap.')),
+        const SnackBar(content: Text('Không tìm thấy phiên đăng nhập.')),
       );
       return;
     }
@@ -646,9 +683,29 @@ class _DebtListScreenState extends State<DebtListScreen> {
     });
     try {
       final items = await _service.getDebts(widget.coupleId);
+      final userIds = items.map((item) => item.userId).toSet().toList();
+      final userNameById = <String, String>{};
+      if (userIds.isNotEmpty) {
+        final rows = List<Map<String, dynamic>>.from(
+          await Supabase.instance.client
+              .from('users')
+              .select('id, display_name, email')
+              .inFilter('id', userIds),
+        );
+        for (final row in rows) {
+          final id = row['id'] as String?;
+          if (id == null || id.isEmpty) continue;
+          final displayName = (row['display_name'] as String?)?.trim();
+          final email = (row['email'] as String?)?.trim();
+          userNameById[id] = (displayName != null && displayName.isNotEmpty)
+              ? displayName
+              : ((email != null && email.isNotEmpty) ? email : id);
+        }
+      }
       if (mounted) {
         setState(() {
           _items = _applyDebtOrder(items);
+          _memberNameById = userNameById;
         });
       }
     } catch (e) {
@@ -670,7 +727,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Khoan no va cho muon'),
+        title: const Text('Khoản nợ và cho mượn'),
         actions: [
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
         ],
@@ -731,7 +788,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
                 else
                   Expanded(
                     child: ReorderableListView.builder(
-                      padding: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.fromLTRB(0, 4, 0, 80),
                       itemCount: visibleItems.length,
                       onReorder: _onReorder,
                       buildDefaultDragHandles: false,
@@ -741,97 +798,159 @@ class _DebtListScreenState extends State<DebtListScreen> {
                         final pct = item.originalAmount > 0
                             ? 1 - (item.remainingAmount / item.originalAmount)
                             : 1.0;
-                        return Card(
+                        final accentColor = item.isClosed
+                            ? AppColors.success
+                            : (isLend ? AppColors.tealDeep : AppColors.danger);
+                        final accentSoft = item.isClosed
+                            ? AppColors.successSoft
+                            : (isLend
+                                  ? AppColors.tealSoft
+                                  : AppColors.dangerSoft);
+                        final leadingIcon = item.isClosed
+                            ? Icons.check_circle_outline
+                            : (isLend
+                                  ? Icons.account_balance_wallet_outlined
+                                  : Icons.credit_card_outlined);
+                        return Container(
                           key: ValueKey(item.id),
-                          margin: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
+                          margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            border: Border.all(color: AppColors.border),
+                            borderRadius: BorderRadius.circular(18),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.05),
+                                blurRadius: 10,
+                                offset: const Offset(0, 3),
+                              ),
+                            ],
                           ),
-                          child: InkWell(
-                            onTap: () async {
-                              await Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => DebtDetailScreen(
-                                    coupleId: widget.coupleId,
-                                    debtId: item.id,
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(18),
+                              onTap: () async {
+                                await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => DebtDetailScreen(
+                                      coupleId: widget.coupleId,
+                                      debtId: item.id,
+                                    ),
                                   ),
+                                );
+                                if (mounted) {
+                                  await _load();
+                                  widget.onDataChanged?.call();
+                                }
+                              },
+                              onLongPress: () => _showDebtActions(item),
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Container(
+                                          height: 56,
+                                          width: 56,
+                                          decoration: BoxDecoration(
+                                            color: accentSoft,
+                                            borderRadius: BorderRadius.circular(
+                                              16,
+                                            ),
+                                          ),
+                                          child: Icon(
+                                            leadingIcon,
+                                            color: accentColor,
+                                            size: 26,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 14),
+                                        Expanded(
+                                          child: Text(
+                                            item.name,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 18,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          formatVnd(item.originalAmount),
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 16,
+                                            color: accentColor,
+                                          ),
+                                        ),
+                                        ReorderableDragStartListener(
+                                          index: index,
+                                          child: const Padding(
+                                            padding: EdgeInsets.only(left: 8),
+                                            child: Icon(Icons.drag_indicator),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 10),
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(999),
+                                      child: LinearProgressIndicator(
+                                        value: pct.clamp(0.0, 1.0),
+                                        minHeight: 10,
+                                        backgroundColor: accentSoft,
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                              accentColor,
+                                            ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      'Tiến độ: ${(pct.clamp(0.0, 1.0) * 100).toStringAsFixed(0)}%',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: accentColor,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Còn lại: ${formatVnd(item.remainingAmount)}',
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.black87,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    if (item.dueDate != null)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 2),
+                                        child: Text(
+                                          'Hạn: ${formatDate(item.dueDate!)}',
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            color: Colors.black54,
+                                          ),
+                                        ),
+                                      ),
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 2),
+                                      child: Text(
+                                        'Người tạo: ${_resolveMemberName(item.userId)}',
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          color: Colors.black54,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              );
-                              if (mounted) {
-                                await _load();
-                                widget.onDataChanged?.call();
-                              }
-                            },
-                            onLongPress: () => _showDebtActions(item),
-                            borderRadius: BorderRadius.circular(12),
-                            child: ListTile(
-                              dense: true,
-                              visualDensity: const VisualDensity(
-                                horizontal: -1,
-                                vertical: -1,
                               ),
-                              leading: CircleAvatar(
-                                backgroundColor: item.isClosed
-                                    ? Colors.green
-                                    : (isLend ? Colors.blue : Colors.orange),
-                                child: Icon(
-                                  item.isClosed
-                                      ? Icons.check
-                                      : (isLend
-                                            ? Icons.account_balance_wallet
-                                            : Icons.credit_card),
-                                  color: Colors.white,
-                                ),
-                              ),
-                              title: Text(item.name),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    isLend ? 'Cho muon' : 'Dang no',
-                                    style: TextStyle(
-                                      color: isLend
-                                          ? Colors.blue
-                                          : Colors.orange,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  LinearProgressIndicator(
-                                    value: pct.clamp(0.0, 1.0),
-                                    backgroundColor: Colors.grey[200],
-                                    color: item.isClosed
-                                        ? Colors.green
-                                        : (isLend
-                                              ? Colors.blue
-                                              : Colors.orange),
-                                  ),
-                                  Text(
-                                    'Con lai: ${formatVnd(item.remainingAmount)}'
-                                    '${item.dueDate != null ? '\nHan: ${formatDate(item.dueDate!)}' : ''}',
-                                    style: const TextStyle(fontSize: 12),
-                                  ),
-                                ],
-                              ),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    formatVnd(item.originalAmount),
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  ReorderableDragStartListener(
-                                    index: index,
-                                    child: const Padding(
-                                      padding: EdgeInsets.only(left: 8),
-                                      child: Icon(Icons.drag_indicator),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              isThreeLine: true,
                             ),
                           ),
                         );
@@ -863,34 +982,53 @@ class _DebtSummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final selectedColor = theme.colorScheme.primaryContainer;
-    final selectedBorder = theme.colorScheme.primary;
-
-    return Card(
-      color: selected ? selectedColor : null,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: selected ? selectedBorder : Colors.transparent,
-          width: 1.2,
+    return Container(
+      decoration: BoxDecoration(
+        color: selected
+            ? AppColors.tealSoft.withValues(alpha: 0.32)
+            : Colors.white,
+        border: Border.all(
+          color: selected ? AppColors.tealDeep : AppColors.border,
+          width: selected ? 1.6 : 1,
         ),
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: const TextStyle(fontSize: 12)),
-              const SizedBox(height: 6),
-              Text(
-                amountText,
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ],
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: selected ? AppColors.tealDeep : Colors.black54,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  amountText,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: selected ? AppColors.tealDeep : Colors.black87,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

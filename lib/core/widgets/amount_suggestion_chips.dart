@@ -71,14 +71,10 @@ class AmountSuggestionChips extends StatelessWidget {
   }
 
   List<int> _buildSuggestions(int base) {
-    const int maxMillionScale = 99999999;
     if (base < 1000) {
-      final list = <int>[base * 1000, base * 10000, base * 100000];
-      return list.where((v) => v <= maxMillionScale).toList();
+      return [base * 1000, base * 10000, base * 100000];
     }
-
-    final list = <int>[base, base * 100];
-    return list.where((v) => v <= maxMillionScale).toList();
+    return [base * 10, base * 100, base * 1000];
   }
 
   int? _parseBase(String text) {

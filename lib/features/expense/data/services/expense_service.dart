@@ -6,6 +6,12 @@ import 'package:flutter_app_demo/features/expense/data/models/category_model.dar
 class ExpenseService {
   SupabaseClient get _db => Supabase.instance.client;
 
+  bool _isMissingSortOrderColumn(Object error) {
+    return error is PostgrestException &&
+        error.code == '42703' &&
+        error.message.contains('sort_order');
+  }
+
   bool _isMissingQuickAddColumn(Object error) {
     return error is PostgrestException &&
         error.code == '42703' &&
@@ -99,13 +105,25 @@ class ExpenseService {
   }
 
   Future<List<CategoryModel>> getCategories(String coupleId) async {
-    final rows = await _db
-        .from('categories')
-        .select()
-        .eq('couple_id', coupleId)
-        .eq('is_deleted', false)
-        .order('name');
-    return rows.map((r) => CategoryModel.fromJson(r)).toList();
+    try {
+      final rows = await _db
+          .from('categories')
+          .select()
+          .eq('couple_id', coupleId)
+          .eq('is_deleted', false)
+          .order('sort_order')
+          .order('name');
+      return rows.map((r) => CategoryModel.fromJson(r)).toList();
+    } catch (e) {
+      if (!_isMissingSortOrderColumn(e)) rethrow;
+      final rows = await _db
+          .from('categories')
+          .select()
+          .eq('couple_id', coupleId)
+          .eq('is_deleted', false)
+          .order('name');
+      return rows.map((r) => CategoryModel.fromJson(r)).toList();
+    }
   }
 
   Future<List<CategoryModel>> getQuickAddCategories(String coupleId) async {
@@ -116,17 +134,20 @@ class ExpenseService {
           .eq('couple_id', coupleId)
           .eq('is_deleted', false)
           .eq('show_in_quick_add', true)
+          .order('sort_order')
           .order('name');
       return rows.map((r) => CategoryModel.fromJson(r)).toList();
     } catch (e) {
-      if (!_isMissingQuickAddColumn(e)) rethrow;
-      final rows = await _db
-          .from('categories')
-          .select()
-          .eq('couple_id', coupleId)
-          .eq('is_deleted', false)
-          .order('name');
-      return rows.map((r) => CategoryModel.fromJson(r)).toList();
+      if (_isMissingQuickAddColumn(e) || _isMissingSortOrderColumn(e)) {
+        final rows = await _db
+            .from('categories')
+            .select()
+            .eq('couple_id', coupleId)
+            .eq('is_deleted', false)
+            .order('name');
+        return rows.map((r) => CategoryModel.fromJson(r)).toList();
+      }
+      rethrow;
     }
   }
 
@@ -138,17 +159,37 @@ class ExpenseService {
           .eq('couple_id', coupleId)
           .eq('is_deleted', false)
           .eq('show_in_expense_form', true)
+          .order('sort_order')
           .order('name');
       return rows.map((r) => CategoryModel.fromJson(r)).toList();
     } catch (e) {
-      if (!_isMissingExpenseFormColumn(e)) rethrow;
+      if (_isMissingExpenseFormColumn(e) || _isMissingSortOrderColumn(e)) {
+        final rows = await _db
+            .from('categories')
+            .select()
+            .eq('couple_id', coupleId)
+            .eq('is_deleted', false)
+            .order('name');
+        return rows.map((r) => CategoryModel.fromJson(r)).toList();
+      }
+      rethrow;
+    }
+  }
+
+  Future<int> _nextCategorySortOrder(String coupleId) async {
+    try {
       final rows = await _db
           .from('categories')
-          .select()
+          .select('sort_order')
           .eq('couple_id', coupleId)
           .eq('is_deleted', false)
-          .order('name');
-      return rows.map((r) => CategoryModel.fromJson(r)).toList();
+          .order('sort_order', ascending: false)
+          .limit(1);
+      if (rows.isEmpty) return 0;
+      return ((rows.first['sort_order'] as num?)?.toInt() ?? 0) + 1;
+    } catch (e) {
+      if (!_isMissingSortOrderColumn(e)) rethrow;
+      return 0;
     }
   }
 
@@ -165,7 +206,7 @@ class ExpenseService {
       'name': name,
       'icon': icon,
       'color': color,
-      'sort_order': 0,
+      'sort_order': await _nextCategorySortOrder(coupleId),
       'show_in_quick_add': showInQuickAdd,
       'show_in_expense_form': showInExpenseForm,
     };
@@ -177,9 +218,12 @@ class ExpenseService {
           .single();
       return CategoryModel.fromJson(row);
     } catch (e) {
-      if (!_isMissingQuickAddColumn(e) && !_isMissingExpenseFormColumn(e)) {
+      if (!_isMissingQuickAddColumn(e) &&
+          !_isMissingExpenseFormColumn(e) &&
+          !_isMissingSortOrderColumn(e)) {
         rethrow;
       }
+      payload.remove('sort_order');
       payload.remove('show_in_quick_add');
       payload.remove('show_in_expense_form');
       final row = await _db
@@ -243,5 +287,23 @@ class ExpenseService {
           'deleted_at': DateTime.now().toUtc().toIso8601String(),
         })
         .eq('id', categoryId);
+  }
+
+  Future<void> updateCategoryOrder(List<String> orderedIds) async {
+    if (orderedIds.isEmpty) return;
+
+    for (var i = 0; i < orderedIds.length; i++) {
+      try {
+        await _db
+            .from('categories')
+            .update({'sort_order': i})
+            .eq('id', orderedIds[i]);
+      } catch (e) {
+        if (_isMissingSortOrderColumn(e)) {
+          return;
+        }
+        rethrow;
+      }
+    }
   }
 }

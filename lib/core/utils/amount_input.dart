@@ -12,9 +12,28 @@ class ThousandsSeparatorInputFormatter extends TextInputFormatter {
     }
 
     final formatted = formatAmountInput(digits);
+
+    // Count digits before the cursor in the new (unformatted) value
+    final cursorPos = newValue.selection.end.clamp(0, newValue.text.length);
+    int digitsBeforeCursor = 0;
+    for (int i = 0; i < cursorPos; i++) {
+      if (newValue.text[i].contains(RegExp(r'[0-9]'))) digitsBeforeCursor++;
+    }
+
+    // Find where that many digits fall in the formatted string
+    int newCursorPos = formatted.length;
+    int seen = 0;
+    for (int i = 0; i < formatted.length; i++) {
+      if (seen == digitsBeforeCursor) {
+        newCursorPos = i;
+        break;
+      }
+      if (formatted[i].contains(RegExp(r'[0-9]'))) seen++;
+    }
+
     return TextEditingValue(
       text: formatted,
-      selection: TextSelection.collapsed(offset: formatted.length),
+      selection: TextSelection.collapsed(offset: newCursorPos),
     );
   }
 }

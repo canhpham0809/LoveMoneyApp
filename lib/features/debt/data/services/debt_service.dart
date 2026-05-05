@@ -628,24 +628,61 @@ class DebtService {
   }
 
   Future<List<Map<String, dynamic>>> getDebtTypes(String coupleId) async {
-    final rows = await _db
-        .from('debt_types')
-        .select()
-        .eq('couple_id', coupleId)
-        .eq('is_deleted', false)
-        .order('name');
-    return List<Map<String, dynamic>>.from(rows);
+    try {
+      final rows = await _db
+          .from('debt_types')
+          .select()
+          .eq('couple_id', coupleId)
+          .eq('is_deleted', false)
+          .order('sort_order')
+          .order('name');
+      return List<Map<String, dynamic>>.from(rows);
+    } catch (e) {
+      if (!_isMissingSortOrderColumn(e)) rethrow;
+      final rows = await _db
+          .from('debt_types')
+          .select()
+          .eq('couple_id', coupleId)
+          .eq('is_deleted', false)
+          .order('name');
+      return List<Map<String, dynamic>>.from(rows);
+    }
+  }
+
+  Future<int> _nextDebtTypeSortOrder(String coupleId) async {
+    try {
+      final rows = await _db
+          .from('debt_types')
+          .select('sort_order')
+          .eq('couple_id', coupleId)
+          .eq('is_deleted', false)
+          .order('sort_order', ascending: false)
+          .limit(1);
+      if (rows.isEmpty) return 0;
+      return ((rows.first['sort_order'] as num?)?.toInt() ?? 0) + 1;
+    } catch (e) {
+      if (!_isMissingSortOrderColumn(e)) rethrow;
+      return 0;
+    }
   }
 
   Future<Map<String, dynamic>> createDebtType({
     required String coupleId,
     required String name,
   }) async {
-    final row = await _db
-        .from('debt_types')
-        .insert({'couple_id': coupleId, 'name': name})
-        .select()
-        .single();
+    final payload = {
+      'couple_id': coupleId,
+      'name': name,
+      'sort_order': await _nextDebtTypeSortOrder(coupleId),
+    };
+    late final Map<String, dynamic> row;
+    try {
+      row = await _db.from('debt_types').insert(payload).select().single();
+    } catch (e) {
+      if (!_isMissingSortOrderColumn(e)) rethrow;
+      payload.remove('sort_order');
+      row = await _db.from('debt_types').insert(payload).select().single();
+    }
     return Map<String, dynamic>.from(row);
   }
 
@@ -688,6 +725,24 @@ class DebtService {
           'deleted_at': DateTime.now().toUtc().toIso8601String(),
         })
         .eq('id', debtTypeId);
+  }
+
+  Future<void> updateDebtTypeOrder(List<String> orderedIds) async {
+    if (orderedIds.isEmpty) return;
+
+    for (var i = 0; i < orderedIds.length; i++) {
+      try {
+        await _db
+            .from('debt_types')
+            .update({'sort_order': i})
+            .eq('id', orderedIds[i]);
+      } catch (e) {
+        if (_isMissingSortOrderColumn(e)) {
+          return;
+        }
+        rethrow;
+      }
+    }
   }
 
   Future<DebtPaymentModel> createPayment({

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/category_visuals.dart';
 import '../../../core/models/transaction.dart';
+import '../../../core/theme/app_colors.dart';
 
 class TransactionList extends StatelessWidget {
   final List<Transaction> transactions;
@@ -48,18 +49,41 @@ class TransactionList extends StatelessWidget {
             : tx.type == TransactionType.transfer
             ? (isIncomingTransfer ? '+' : (isOutgoingTransfer ? '-' : ''))
             : '-';
-        return ListTile(
-          leading: CircleAvatar(
-            backgroundColor: color.withValues(alpha: 0.15),
-            child: Icon(iconData, color: color),
+        return Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.border),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
-          title: Text(tx.title),
-          subtitle: Text(
-            '${formatDate(tx.date)} · ${formatTimeUtcPlus7(tx.createdAt)}',
-          ),
-          trailing: Text(
-            '$sign${formatVnd(tx.amount.abs())}',
-            style: TextStyle(color: color, fontWeight: FontWeight.bold),
+          child: ListTile(
+            leading: CircleAvatar(
+              backgroundColor: color.withValues(alpha: 0.16),
+              child: Icon(iconData, color: color),
+            ),
+            title: Text(
+              tx.title,
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+            ),
+            subtitle: Text(
+              '${formatDate(tx.date)} · ${formatTimeUtcPlus7(tx.createdAt)}',
+              style: const TextStyle(color: AppColors.textMuted),
+            ),
+            trailing: Text(
+              '$sign${formatVnd(tx.amount.abs())}',
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+              ),
+            ),
           ),
         );
       },

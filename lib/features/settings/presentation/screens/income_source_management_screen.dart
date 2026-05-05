@@ -52,6 +52,28 @@ class _IncomeSourceManagementScreenState
     }
   }
 
+  Future<void> _onReorder(int oldIndex, int newIndex) async {
+    if (newIndex > oldIndex) newIndex -= 1;
+
+    final reordered = List<IncomeSourceModel>.from(_items);
+    final moved = reordered.removeAt(oldIndex);
+    reordered.insert(newIndex, moved);
+
+    setState(() => _items = reordered);
+
+    try {
+      await _service.updateIncomeSourceOrder(
+        reordered.map((e) => e.id).toList(),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      await _load(showLoader: false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Không cập nhật được thứ tự danh mục Thu: $e')),
+      );
+    }
+  }
+
   Future<void> _openIncomeSourceDialog({IncomeSourceModel? existing}) async {
     final nameCtrl = TextEditingController(text: existing?.name ?? '');
     final typeCtrl = TextEditingController(text: existing?.type ?? 'other');
@@ -240,33 +262,49 @@ class _IncomeSourceManagementScreenState
             )
           : _items.isEmpty
           ? const Center(child: Text('Chưa có danh mục Thu nào.'))
-          : ListView.separated(
+          : ReorderableListView.builder(
+              buildDefaultDragHandles: false,
               itemCount: _items.length,
-              separatorBuilder: (_, _) => const Divider(height: 0),
+              onReorder: _onReorder,
               itemBuilder: (context, index) {
                 final item = _items[index];
-                return ListTile(
-                  leading: CircleAvatar(child: Icon(iconFromKey(item.icon))),
-                  title: Text(item.name),
-                  subtitle: Text(
-                    'Hiện tạo Thu: ${item.showInIncomeForm ? 'On' : 'Off'} · Active: ${item.isActive ? 'On' : 'Off'} · Type: ${item.type}',
+                return Container(
+                  key: ValueKey(item.id),
+                  decoration: const BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(color: Color(0x14000000)),
+                    ),
                   ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.edit_outlined),
-                        onPressed: () =>
-                            _openIncomeSourceDialog(existing: item),
-                      ),
-                      IconButton(
-                        icon: const Icon(
-                          Icons.delete_outline,
-                          color: Colors.red,
+                  child: ListTile(
+                    leading: CircleAvatar(child: Icon(iconFromKey(item.icon))),
+                    title: Text(item.name),
+                    subtitle: Text(
+                      'Hiện tạo Thu: ${item.showInIncomeForm ? 'On' : 'Off'} · Active: ${item.isActive ? 'On' : 'Off'} · Type: ${item.type}',
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined),
+                          onPressed: () =>
+                              _openIncomeSourceDialog(existing: item),
                         ),
-                        onPressed: () => _deleteIncomeSource(item),
-                      ),
-                    ],
+                        IconButton(
+                          icon: const Icon(
+                            Icons.delete_outline,
+                            color: Colors.red,
+                          ),
+                          onPressed: () => _deleteIncomeSource(item),
+                        ),
+                        ReorderableDragStartListener(
+                          index: index,
+                          child: const Padding(
+                            padding: EdgeInsets.only(left: 4),
+                            child: Icon(Icons.drag_indicator),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 );
               },

@@ -52,6 +52,26 @@ class _ExpenseCategoryManagementScreenState
     }
   }
 
+  Future<void> _onReorder(int oldIndex, int newIndex) async {
+    if (newIndex > oldIndex) newIndex -= 1;
+
+    final reordered = List<CategoryModel>.from(_categories);
+    final moved = reordered.removeAt(oldIndex);
+    reordered.insert(newIndex, moved);
+
+    setState(() => _categories = reordered);
+
+    try {
+      await _service.updateCategoryOrder(reordered.map((e) => e.id).toList());
+    } catch (e) {
+      if (!mounted) return;
+      await _load(showLoader: false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Không cập nhật được thứ tự danh mục: $e')),
+      );
+    }
+  }
+
   Future<void> _openCategoryDialog({CategoryModel? existing}) async {
     final nameCtrl = TextEditingController(text: existing?.name ?? '');
     var selectedIcon = existing?.icon ?? 'label';
@@ -301,36 +321,52 @@ class _ExpenseCategoryManagementScreenState
             )
           : _categories.isEmpty
           ? const Center(child: Text('Chưa có danh mục Chi nào.'))
-          : ListView.separated(
+          : ReorderableListView.builder(
+              buildDefaultDragHandles: false,
               itemCount: _categories.length,
-              separatorBuilder: (_, _) => const Divider(height: 0),
+              onReorder: _onReorder,
               itemBuilder: (context, index) {
                 final item = _categories[index];
                 final color = colorFromHex(item.color);
-                return ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: color.withOpacity(0.16),
-                    child: Icon(iconFromKey(item.icon), color: color),
+                return Container(
+                  key: ValueKey(item.id),
+                  decoration: const BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(color: Color(0x14000000)),
+                    ),
                   ),
-                  title: Text(item.name),
-                  subtitle: Text(
-                    'Màu: ${item.color.toUpperCase()} · Quick Add: ${item.showInQuickAdd ? 'On' : 'Off'} · Tạo Chi: ${item.showInExpenseForm ? 'On' : 'Off'} · Active: ${item.isActive ? 'On' : 'Off'}',
-                  ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.edit_outlined),
-                        onPressed: () => _openCategoryDialog(existing: item),
-                      ),
-                      IconButton(
-                        icon: const Icon(
-                          Icons.delete_outline,
-                          color: Colors.red,
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: color.withOpacity(0.16),
+                      child: Icon(iconFromKey(item.icon), color: color),
+                    ),
+                    title: Text(item.name),
+                    subtitle: Text(
+                      'Màu: ${item.color.toUpperCase()} · Quick Add: ${item.showInQuickAdd ? 'On' : 'Off'} · Tạo Chi: ${item.showInExpenseForm ? 'On' : 'Off'} · Active: ${item.isActive ? 'On' : 'Off'}',
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined),
+                          onPressed: () => _openCategoryDialog(existing: item),
                         ),
-                        onPressed: () => _deleteCategory(item),
-                      ),
-                    ],
+                        IconButton(
+                          icon: const Icon(
+                            Icons.delete_outline,
+                            color: Colors.red,
+                          ),
+                          onPressed: () => _deleteCategory(item),
+                        ),
+                        ReorderableDragStartListener(
+                          index: index,
+                          child: const Padding(
+                            padding: EdgeInsets.only(left: 4),
+                            child: Icon(Icons.drag_indicator),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 );
               },

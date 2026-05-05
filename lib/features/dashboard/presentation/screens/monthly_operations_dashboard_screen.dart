@@ -181,7 +181,7 @@ class _MonthlyOperationsDashboardScreenState
                   ),
                   const SizedBox(height: 12),
                   _BreakdownSection(
-                    title: 'Tổng tiền đã góp Quỹ (theo item quỹ)',
+                    title: 'Tổng tiền đã góp Quỹ',
                     emptyText: 'Không có giao dịch góp quỹ trong tháng.',
                     rows: _fundContributionByItem,
                     amountColor: Colors.orange[700]!,
@@ -193,7 +193,7 @@ class _MonthlyOperationsDashboardScreenState
                   ),
                   const SizedBox(height: 12),
                   _BreakdownSection(
-                    title: 'Tổng tiền Mượn Nợ (theo item nợ)',
+                    title: 'Tổng tiền Mượn Nợ',
                     emptyText: 'Không có khoản mượn nợ trong tháng.',
                     rows: _debtBorrowedByItem,
                     amountColor: Colors.blue[700]!,
@@ -201,7 +201,7 @@ class _MonthlyOperationsDashboardScreenState
                   ),
                   const SizedBox(height: 12),
                   _BreakdownSection(
-                    title: 'Tổng tiền cho người khác mượn Nợ',
+                    title: 'Tổng tiền Cho mượn',
                     emptyText: 'Không có khoản cho mượn trong tháng.',
                     rows: _debtLentByItem,
                     amountColor: Colors.deepPurple[700]!,
@@ -285,7 +285,7 @@ class _SummaryHeader extends StatelessWidget {
               children: [
                 Expanded(
                   child: _miniTile(
-                    'Nhận từ',
+                    'Nhận tiền',
                     transferReceived,
                     Colors.green[700]!,
                     Icons.arrow_downward,
@@ -294,7 +294,7 @@ class _SummaryHeader extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: _miniTile(
-                    'Chuyển cho',
+                    'Chuyển tiền',
                     transferSent,
                     Colors.red[700]!,
                     Icons.arrow_upward,
