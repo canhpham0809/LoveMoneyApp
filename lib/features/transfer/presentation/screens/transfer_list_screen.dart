@@ -542,12 +542,6 @@ class _TransferListScreenState extends State<TransferListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final totalSent = _items
-        .where((item) => item.fromUserId == widget.viewerUserId)
-        .fold<double>(0, (sum, item) => sum + item.amount);
-    final totalReceived = _items
-        .where((item) => item.toUserId == widget.viewerUserId)
-        .fold<double>(0, (sum, item) => sum + item.amount);
     final grouped = <String, List<TransferModel>>{};
     for (final item in _items) {
       final key =
@@ -596,71 +590,95 @@ class _TransferListScreenState extends State<TransferListScreen> {
             )
           : ListView(
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Tổng tiền đã chuyển',
-                                  style: TextStyle(fontSize: 12),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  formatVnd(totalSent),
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: Theme.of(context).colorScheme.error,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Tổng tiền đã nhận',
-                                  style: TextStyle(fontSize: 12),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  formatVnd(totalReceived),
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.green[700],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
                 for (final entry in grouped.entries) ...[
                   Builder(
                     builder: (context) {
+                      final monthSent = entry.value
+                          .where(
+                            (item) => item.fromUserId == widget.viewerUserId,
+                          )
+                          .fold<double>(0, (sum, item) => sum + item.amount);
+                      final monthReceived = entry.value
+                          .where((item) => item.toUserId == widget.viewerUserId)
+                          .fold<double>(0, (sum, item) => sum + item.amount);
                       return Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                        child: Text(
-                          'Tháng ${entry.key.split('-')[1]}/${entry.key.split('-')[0]}',
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.bold),
+                        padding: const EdgeInsets.fromLTRB(12, 16, 12, 6),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                left: 4,
+                                bottom: 8,
+                              ),
+                              child: Text(
+                                'Tháng ${entry.key.split('-')[1]}/${entry.key.split('-')[0]}',
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Card(
+                                    margin: EdgeInsets.zero,
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(10),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          const Text(
+                                            'Đã chuyển',
+                                            style: TextStyle(fontSize: 11),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            formatVnd(monthSent),
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 13,
+                                              color: Theme.of(
+                                                context,
+                                              ).colorScheme.error,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Card(
+                                    margin: EdgeInsets.zero,
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(10),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          const Text(
+                                            'Đã nhận',
+                                            style: TextStyle(fontSize: 11),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            formatVnd(monthReceived),
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 13,
+                                              color: Colors.green[700],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
                       );
                     },

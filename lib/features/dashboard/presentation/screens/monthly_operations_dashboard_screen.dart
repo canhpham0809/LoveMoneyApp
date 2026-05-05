@@ -44,6 +44,8 @@ class _MonthlyOperationsDashboardScreenState
   double _totalFundContribution = 0;
   double _totalDebtBorrow = 0;
   double _totalDebtLend = 0;
+  double _totalDebtPaymentMade = 0;
+  double _totalDebtPaymentReceived = 0;
 
   @override
   void initState() {
@@ -95,6 +97,10 @@ class _MonthlyOperationsDashboardScreenState
             (totals['fund_contribution'] as num?)?.toDouble() ?? 0;
         _totalDebtBorrow = (totals['debt_borrow'] as num?)?.toDouble() ?? 0;
         _totalDebtLend = (totals['debt_lend'] as num?)?.toDouble() ?? 0;
+        _totalDebtPaymentMade =
+            (totals['debt_payment_made'] as num?)?.toDouble() ?? 0;
+        _totalDebtPaymentReceived =
+            (totals['debt_payment_received'] as num?)?.toDouble() ?? 0;
       });
     } catch (e) {
       if (!mounted) return;
@@ -156,6 +162,8 @@ class _MonthlyOperationsDashboardScreenState
                     transferReceived: _transferReceived,
                     totalDebtBorrow: _totalDebtBorrow,
                     totalDebtLend: _totalDebtLend,
+                    totalDebtPaymentMade: _totalDebtPaymentMade,
+                    totalDebtPaymentReceived: _totalDebtPaymentReceived,
                   ),
                   const SizedBox(height: 14),
                   _BreakdownSection(
@@ -214,6 +222,8 @@ class _SummaryHeader extends StatelessWidget {
   final double transferReceived;
   final double totalDebtBorrow;
   final double totalDebtLend;
+  final double totalDebtPaymentMade;
+  final double totalDebtPaymentReceived;
 
   const _SummaryHeader({
     required this.totalIncome,
@@ -223,17 +233,31 @@ class _SummaryHeader extends StatelessWidget {
     required this.transferReceived,
     required this.totalDebtBorrow,
     required this.totalDebtLend,
+    required this.totalDebtPaymentMade,
+    required this.totalDebtPaymentReceived,
   });
 
   @override
   Widget build(BuildContext context) {
-    final net = totalIncome - totalExpense;
+    // Mirror the formula used in fetchMonthlySummaries (home screen):
+    // net = income + transferReceived − expense − fundContributions − debtPaymentsMade − transferSent
+    // Note: totalDebtPaymentReceived items that have linked_income_id are
+    // already included in totalIncome; items without are edge-cases not
+    // recorded as income and would be negligible — omit to avoid over-counting.
+    final net =
+        totalIncome +
+        transferReceived -
+        totalExpense -
+        totalFundContribution -
+        totalDebtPaymentMade -
+        transferSent;
 
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
           children: [
+            // Row 1: Tổng Thu | Tổng Chi
             Row(
               children: [
                 Expanded(
@@ -256,39 +280,9 @@ class _SummaryHeader extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
+            // Row 2: Nhận từ | Chuyển cho
             Row(
               children: [
-                Expanded(
-                  child: _miniTile(
-                    'Còn lại',
-                    net,
-                    net >= 0 ? Colors.blue[700]! : Colors.red[700]!,
-                    Icons.account_balance_wallet_outlined,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _miniTile(
-                    'Góp Quỹ',
-                    totalFundContribution,
-                    Colors.orange[700]!,
-                    Icons.savings_outlined,
-                  ),
-                ),
-              ],
-            ),
-            const Divider(height: 18),
-            Row(
-              children: [
-                Expanded(
-                  child: _miniTile(
-                    'Chuyển cho',
-                    transferSent,
-                    Colors.red[700]!,
-                    Icons.arrow_upward,
-                  ),
-                ),
-                const SizedBox(width: 10),
                 Expanded(
                   child: _miniTile(
                     'Nhận từ',
@@ -297,9 +291,19 @@ class _SummaryHeader extends StatelessWidget {
                     Icons.arrow_downward,
                   ),
                 ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _miniTile(
+                    'Chuyển cho',
+                    transferSent,
+                    Colors.red[700]!,
+                    Icons.arrow_upward,
+                  ),
+                ),
               ],
             ),
-            const Divider(height: 18),
+            const SizedBox(height: 8),
+            // Row 3: Mượn Nợ | Cho Mượn
             Row(
               children: [
                 Expanded(
@@ -317,6 +321,52 @@ class _SummaryHeader extends StatelessWidget {
                     totalDebtLend,
                     Colors.deepPurple[700]!,
                     Icons.account_balance_wallet_outlined,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            // Row 4: Được trả | Trả nợ
+            Row(
+              children: [
+                Expanded(
+                  child: _miniTile(
+                    'Được trả',
+                    totalDebtPaymentReceived,
+                    Colors.teal[700]!,
+                    Icons.move_to_inbox_outlined,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _miniTile(
+                    'Trả nợ',
+                    totalDebtPaymentMade,
+                    Colors.orange[800]!,
+                    Icons.outbox_outlined,
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 18),
+            // Row 5: Còn lại | Góp Quỹ
+            Row(
+              children: [
+                Expanded(
+                  child: _miniTile(
+                    'Còn lại',
+                    net,
+                    net >= 0 ? Colors.blue[700]! : Colors.red[700]!,
+                    Icons.account_balance_wallet_outlined,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _miniTile(
+                    'Góp Quỹ',
+                    totalFundContribution,
+                    Colors.orange[700]!,
+                    Icons.savings_outlined,
                   ),
                 ),
               ],
@@ -411,10 +461,14 @@ class _BreakdownSection extends StatelessWidget {
                 final icon = iconKey == null || iconKey.trim().isEmpty
                     ? defaultIcon
                     : iconFromKey(iconKey);
+                final subItems =
+                    (row['sub_items'] as List?)?.cast<Map<String, dynamic>>() ??
+                    const <Map<String, dynamic>>[];
 
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 10),
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
                         children: [
@@ -451,6 +505,77 @@ class _BreakdownSection extends StatelessWidget {
                           backgroundColor: Colors.grey.withOpacity(0.18),
                         ),
                       ),
+                      if (subItems.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        ...subItems.map((sub) {
+                          final subType = (sub['type'] as String?) ?? '';
+                          final subAmount =
+                              (sub['amount'] as num?)?.toDouble() ?? 0;
+                          final subDate = sub['date'] as String?;
+                          final subDesc = sub['description'] as String?;
+                          final isOutgoing =
+                              subType == 'withdrawal' || subType == 'payment';
+                          final subColor = isOutgoing
+                              ? Colors.red[700]!
+                              : Colors.green[700]!;
+                          final subLabel = subDesc?.isNotEmpty == true
+                              ? subDesc!
+                              : (isOutgoing
+                                    ? (subType == 'withdrawal'
+                                          ? 'Rút quỹ'
+                                          : 'Trả nợ')
+                                    : (subType == 'receipt'
+                                          ? 'Nhận lại'
+                                          : 'Góp quỹ'));
+                          final dateStr =
+                              subDate != null && subDate.length >= 10
+                              ? subDate.substring(5, 10).replaceAll('-', '/')
+                              : '';
+                          return Padding(
+                            padding: const EdgeInsets.only(left: 36, top: 3),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  isOutgoing
+                                      ? Icons.arrow_upward
+                                      : Icons.arrow_downward,
+                                  size: 12,
+                                  color: subColor,
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    subLabel,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[700],
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                if (dateStr.isNotEmpty)
+                                  Text(
+                                    dateStr,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.grey[500],
+                                    ),
+                                  ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  '${isOutgoing ? '-' : '+'} ${formatVnd(subAmount)}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: subColor,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                      ],
                     ],
                   ),
                 );
@@ -485,14 +610,14 @@ class _TransferSection extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             _row(
-              label: 'Đã chuyển cho partner',
+              label: 'Tổng tiền đã chuyển',
               amount: transferSent,
               icon: Icons.north_east_rounded,
               color: Colors.red[700]!,
             ),
             const SizedBox(height: 8),
             _row(
-              label: 'Đã nhận từ partner',
+              label: 'Tổng tiền đã nhận',
               amount: transferReceived,
               icon: Icons.south_west_rounded,
               color: Colors.green[700]!,

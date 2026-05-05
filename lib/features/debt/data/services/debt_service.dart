@@ -30,11 +30,15 @@ class DebtService {
         error.message.contains('show_in_income_form');
   }
 
-  static const String _debtInitIncomeSource = 'Nhan tien no';
-  static const String _debtRepaymentIncomeSource = 'Thu hoi cho muon';
-  static const String _debtLendExpenseCategory = 'Cho mượn no';
-  static const String _debtDeleteExpenseCategory = 'Xóa no dieu chinh';
-  static const String _debtDeleteIncomeSource = 'Xóa cho muon dieu chinh';
+  bool _isMissingDebtKindColumn(Object error) {
+    return error is PostgrestException &&
+        error.code == '42703' &&
+        error.message.contains('debt_kind');
+  }
+
+  static const String _debtInitIncomeSource = 'Nhận tiền nợ';
+  static const String _debtRepaymentIncomeSource = 'Thu hồi cho mượn';
+  static const String _debtLendExpenseCategory = 'Cho mượn nợ';
 
   Future<List<DebtModel>> getDebts(String coupleId) async {
     try {
@@ -126,7 +130,7 @@ class DebtService {
 
       if (debtKind == 'debt' && recordToIncome) {
         if (defaultWalletId == null) {
-          throw Exception('Chua co vi mac dinh de ghi nhan thu nhap tu no.');
+          throw Exception('Chưa có ví mặc định để ghi nhận thu nhập từ nợ.');
         }
         final incomeSourceId = await _ensureIncomeSource(
           coupleId,
@@ -143,7 +147,7 @@ class DebtService {
               'amount': originalAmount,
               'description': note?.trim().isNotEmpty == true
                   ? note!.trim()
-                  : 'Nhan no: $name',
+                  : 'Nhận nợ: $name',
               'is_from_transfer': false,
               'date': startDate.toIso8601String().substring(0, 10),
             })
@@ -154,7 +158,7 @@ class DebtService {
 
       if (debtKind == 'lend' && recordToExpense) {
         if (defaultWalletId == null) {
-          throw Exception('Chua co vi mac dinh de ghi nhan cho muon.');
+          throw Exception('Chưa có ví mặc định để ghi nhận cho mượn.');
         }
         final categoryId = await _ensureExpenseCategory(
           coupleId,
@@ -237,7 +241,7 @@ class DebtService {
     final dateIso = startDate.toIso8601String().substring(0, 10);
     final incomeDescription = note?.trim().isNotEmpty == true
         ? note!.trim()
-        : 'Nhan no: $name';
+        : 'Nhận nợ: $name';
     final expenseDescription = note?.trim().isNotEmpty == true
         ? note!.trim()
         : 'Cho mượn: $name';
@@ -452,60 +456,45 @@ class DebtService {
     }
 
     final nowIso = DateTime.now().toUtc().toIso8601String();
-    final adjustment = await _calculateDeleteDebtAdjustment(
-      debtId,
-      debtRow: debt,
+
+    final paymentRows = List<Map<String, dynamic>>.from(
+      await _db
+          .from('debt_payments')
+          .select('id, linked_income_id')
+          .eq('debt_id', debtId)
+          .eq('is_deleted', false),
     );
 
-    if (adjustment < 0) {
-      final defaultWalletId = await _resolveDefaultWalletId(
-        debt['couple_id'] as String,
-      );
-      if (defaultWalletId != null) {
-        final categoryId = await _ensureExpenseCategory(
-          debt['couple_id'] as String,
-          _debtDeleteExpenseCategory,
-          icon: 'money_off',
-          color: '#EF4444',
-        );
-        await _db.from('expenses').insert({
-          'couple_id': debt['couple_id'] as String,
-          'user_id': debt['user_id'] as String,
-          'wallet_id': defaultWalletId,
-          'category_id': categoryId,
-          'amount': adjustment.abs(),
-          'description':
-              'Dieu chinh khi xoa khoan no ${(debt['name'] as String?) ?? ''}'
-                  .trim(),
-          'date': DateTime.now().toIso8601String().substring(0, 10),
-        });
-      }
+    final incomeIdsToDelete = <String>{
+      if (debt['linked_income_id'] is String)
+        debt['linked_income_id'] as String,
+      ...paymentRows
+          .map((row) => row['linked_income_id'] as String?)
+          .whereType<String>(),
+    };
+
+    if (incomeIdsToDelete.isNotEmpty) {
+      await _db
+          .from('incomes')
+          .update({'is_deleted': true, 'deleted_at': nowIso})
+          .inFilter('id', incomeIdsToDelete.toList())
+          .eq('is_deleted', false);
     }
 
-    if (adjustment > 0) {
-      final defaultWalletId = await _resolveDefaultWalletId(
-        debt['couple_id'] as String,
-      );
-      if (defaultWalletId != null) {
-        final incomeSourceId = await _ensureIncomeSource(
-          debt['couple_id'] as String,
-          _debtDeleteIncomeSource,
-          icon: 'undo',
-        );
-        await _db.from('incomes').insert({
-          'couple_id': debt['couple_id'] as String,
-          'user_id': debt['user_id'] as String,
-          'wallet_id': defaultWalletId,
-          'income_source_id': incomeSourceId,
-          'amount': adjustment,
-          'description':
-              'Dieu chinh khi xoa cho muon ${(debt['name'] as String?) ?? ''}'
-                  .trim(),
-          'is_from_transfer': false,
-          'date': DateTime.now().toIso8601String().substring(0, 10),
-        });
-      }
+    final linkedExpenseId = debt['linked_expense_id'] as String?;
+    if (linkedExpenseId != null) {
+      await _db
+          .from('expenses')
+          .update({'is_deleted': true, 'deleted_at': nowIso})
+          .eq('id', linkedExpenseId)
+          .eq('is_deleted', false);
     }
+
+    await _db
+        .from('debt_payments')
+        .update({'is_deleted': true, 'deleted_at': nowIso})
+        .eq('debt_id', debtId)
+        .eq('is_deleted', false);
 
     await _db
         .from('debts')
@@ -855,11 +844,18 @@ class DebtService {
         .eq('id', paymentId)
         .single();
 
-    final debt = await _db
-        .from('debts')
-        .select('debt_kind')
-        .eq('id', debtId)
-        .single();
+    String? debtKind;
+    try {
+      final debtRow = await _db
+          .from('debts')
+          .select('debt_kind')
+          .eq('id', debtId)
+          .single();
+      debtKind = debtRow['debt_kind'] as String?;
+    } catch (e) {
+      if (!_isMissingDebtKindColumn(e)) rethrow;
+      debtKind = 'debt';
+    }
 
     await _db
         .from('debt_payments')
@@ -869,8 +865,7 @@ class DebtService {
         })
         .eq('id', paymentId);
 
-    if ((debt['debt_kind'] as String?) == 'lend' &&
-        existingPayment['linked_income_id'] != null) {
+    if (debtKind == 'lend' && existingPayment['linked_income_id'] != null) {
       await _db
           .from('incomes')
           .update({
@@ -1074,4 +1069,3 @@ class DebtService {
         .eq('id', debtId);
   }
 }
-

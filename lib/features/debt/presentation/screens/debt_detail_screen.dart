@@ -289,11 +289,18 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
       );
       if (confirmed != true) return;
 
-      await _debtService.deletePayment(
-        paymentId: item.id,
-        debtId: widget.debtId,
-      );
-      await _load(showLoader: false);
+      try {
+        await _debtService.deletePayment(
+          paymentId: item.id,
+          debtId: widget.debtId,
+        );
+        await _load(showLoader: false);
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Lỗi xóa: $e')));
+      }
     }
   }
 
