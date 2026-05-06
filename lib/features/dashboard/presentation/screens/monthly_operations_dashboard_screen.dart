@@ -41,6 +41,7 @@ class _MonthlyOperationsDashboardScreenState
   double _transferReceived = 0;
   double _totalIncome = 0;
   double _totalExpense = 0;
+  double _totalFundWithdrawal = 0;
   double _totalFundContribution = 0;
   double _totalDebtBorrow = 0;
   double _totalDebtLend = 0;
@@ -93,6 +94,8 @@ class _MonthlyOperationsDashboardScreenState
         _transferReceived = (transfer['received'] as num?)?.toDouble() ?? 0;
         _totalIncome = (totals['income'] as num?)?.toDouble() ?? 0;
         _totalExpense = (totals['expense'] as num?)?.toDouble() ?? 0;
+        _totalFundWithdrawal =
+            (totals['fund_withdrawal'] as num?)?.toDouble() ?? 0;
         _totalFundContribution =
             (totals['fund_contribution'] as num?)?.toDouble() ?? 0;
         _totalDebtBorrow = (totals['debt_borrow'] as num?)?.toDouble() ?? 0;
@@ -157,6 +160,7 @@ class _MonthlyOperationsDashboardScreenState
                   _SummaryHeader(
                     totalIncome: _totalIncome,
                     totalExpense: _totalExpense,
+                    totalFundWithdrawal: _totalFundWithdrawal,
                     totalFundContribution: _totalFundContribution,
                     transferSent: _transferSent,
                     transferReceived: _transferReceived,
@@ -167,21 +171,21 @@ class _MonthlyOperationsDashboardScreenState
                   ),
                   const SizedBox(height: 14),
                   _BreakdownSection(
-                    title: 'Tổng Thu theo danh mục',
+                    title: 'Tổng Thu',
                     emptyText: 'Không có dữ liệu thu trong tháng.',
                     rows: _incomeBySource,
                     amountColor: Colors.green[700]!,
                   ),
                   const SizedBox(height: 12),
                   _BreakdownSection(
-                    title: 'Tổng Chi theo danh mục',
+                    title: 'Tổng Chi',
                     emptyText: 'Không có dữ liệu chi trong tháng.',
                     rows: _expenseByCategory,
                     amountColor: Theme.of(context).colorScheme.error,
                   ),
                   const SizedBox(height: 12),
                   _BreakdownSection(
-                    title: 'Tổng tiền đã góp Quỹ',
+                    title: 'Tổng tiền góp Quỹ',
                     emptyText: 'Không có giao dịch góp quỹ trong tháng.',
                     rows: _fundContributionByItem,
                     amountColor: Colors.orange[700]!,
@@ -217,6 +221,7 @@ class _MonthlyOperationsDashboardScreenState
 class _SummaryHeader extends StatelessWidget {
   final double totalIncome;
   final double totalExpense;
+  final double totalFundWithdrawal;
   final double totalFundContribution;
   final double transferSent;
   final double transferReceived;
@@ -228,6 +233,7 @@ class _SummaryHeader extends StatelessWidget {
   const _SummaryHeader({
     required this.totalIncome,
     required this.totalExpense,
+    required this.totalFundWithdrawal,
     required this.totalFundContribution,
     required this.transferSent,
     required this.transferReceived,
@@ -239,17 +245,16 @@ class _SummaryHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Mirror the formula used in fetchMonthlySummaries (home screen):
-    // net = income + transferReceived − expense − fundContributions − debtPaymentsMade − transferSent
-    // Note: totalDebtPaymentReceived items that have linked_income_id are
-    // already included in totalIncome; items without are edge-cases not
-    // recorded as income and would be negligible — omit to avoid over-counting.
     final net =
         totalIncome +
-        transferReceived -
+        transferReceived +
+        totalDebtBorrow +
+        totalDebtPaymentReceived +
+        totalFundWithdrawal -
         totalExpense -
-        totalFundContribution -
+        totalDebtLend -
         totalDebtPaymentMade -
+        totalFundContribution -
         transferSent;
 
     return Card(
@@ -348,16 +353,16 @@ class _SummaryHeader extends StatelessWidget {
                 ),
               ],
             ),
-            const Divider(height: 18),
-            // Row 5: Còn lại | Góp Quỹ
+            const SizedBox(height: 8),
+            // Row 5: Rút Quỹ | Góp Quỹ
             Row(
               children: [
                 Expanded(
                   child: _miniTile(
-                    'Còn lại',
-                    net,
-                    net >= 0 ? Colors.blue[700]! : Colors.red[700]!,
-                    Icons.account_balance_wallet_outlined,
+                    'Rút Quỹ',
+                    totalFundWithdrawal,
+                    Colors.lightBlue[700]!,
+                    Icons.download_outlined,
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -367,6 +372,20 @@ class _SummaryHeader extends StatelessWidget {
                     totalFundContribution,
                     Colors.orange[700]!,
                     Icons.savings_outlined,
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 18),
+            // Row 6: Còn lại
+            Row(
+              children: [
+                Expanded(
+                  child: _miniTile(
+                    'Còn lại',
+                    net,
+                    net >= 0 ? Colors.blue[700]! : Colors.red[700]!,
+                    Icons.account_balance_wallet_outlined,
                   ),
                 ),
               ],

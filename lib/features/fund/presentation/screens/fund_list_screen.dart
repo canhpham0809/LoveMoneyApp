@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_app_demo/core/utils/amount_input.dart';
 import 'package:flutter_app_demo/core/theme/app_colors.dart';
 import 'package:flutter_app_demo/core/widgets/amount_suggestion_chips.dart';
+import 'package:flutter_app_demo/core/widgets/busy_overlay.dart';
 import 'package:flutter_app_demo/core/utils/formatters.dart';
 import 'package:flutter_app_demo/features/fund/data/models/fund_model.dart';
 import 'package:flutter_app_demo/features/fund/data/services/fund_service.dart';
@@ -30,12 +31,32 @@ class FundListScreen extends StatefulWidget {
 }
 
 class _FundListScreenState extends State<FundListScreen> {
+  static const int _pageSize = 50;
+
   final _service = FundService();
+  final ScrollController _scrollController = ScrollController();
   List<FundModel> _items = [];
   Map<String, String> _memberNameById = {};
   List<String> _manualOrderIds = [];
+  int _currentOffset = 0;
+  bool _hasMore = true;
+  bool _isLoadingMore = false;
   bool _isLoading = true;
+  bool _isMutating = false;
   String? _error;
+
+  Future<T> _runMutation<T>(Future<T> Function() action) async {
+    if (mounted) {
+      setState(() => _isMutating = true);
+    }
+    try {
+      return await action();
+    } finally {
+      if (mounted) {
+        setState(() => _isMutating = false);
+      }
+    }
+  }
 
   String _normalizeUserId(String userId) => userId.trim().toLowerCase();
 
@@ -105,7 +126,9 @@ class _FundListScreenState extends State<FundListScreen> {
 
   Future<void> _persistFundOrder(List<String> previousOrder) async {
     try {
-      await _service.updateFundOrder(_items.map((e) => e.id).toList());
+      await _runMutation(
+        () => _service.updateFundOrder(_items.map((e) => e.id).toList()),
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -121,6 +144,7 @@ class _FundListScreenState extends State<FundListScreen> {
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     widget.refreshSignal?.addListener(_onExternalRefresh);
     _load();
   }
@@ -136,8 +160,18 @@ class _FundListScreenState extends State<FundListScreen> {
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
     widget.refreshSignal?.removeListener(_onExternalRefresh);
     super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients || _isLoadingMore || !_hasMore) return;
+    final position = _scrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 220) {
+      _loadMore();
+    }
   }
 
   void _onExternalRefresh() {
@@ -305,38 +339,40 @@ class _FundListScreenState extends State<FundListScreen> {
     final selectedDeadline = payload['deadline'] as DateTime?;
 
     try {
-      if (existing == null) {
-        final created = await _service.createFund(
-          coupleId: widget.coupleId,
-          name: name,
-          targetAmount: targetAmount,
-          deadline: selectedDeadline,
-        );
-        if (!mounted) return;
-        setState(() {
-          _items.insert(0, created);
-          _manualOrderIds.remove(created.id);
-          _manualOrderIds.insert(0, created.id);
-          _items = _applyFundOrder(_items);
-        });
-      } else {
-        await _service.updateFund(
-          fundId: existing.id,
-          name: name,
-          targetAmount: targetAmount,
-          deadline: selectedDeadline,
-        );
-        final refreshed = await _service.getFundById(existing.id);
-        if (!mounted) return;
-        setState(() {
-          final idx = _items.indexWhere((e) => e.id == existing.id);
-          if (idx >= 0) {
-            _items[idx] = refreshed;
-          }
-          _items = _applyFundOrder(_items);
-        });
-      }
-      widget.onDataChanged?.call();
+      await _runMutation(() async {
+        if (existing == null) {
+          final created = await _service.createFund(
+            coupleId: widget.coupleId,
+            name: name,
+            targetAmount: targetAmount,
+            deadline: selectedDeadline,
+          );
+          if (!mounted) return;
+          setState(() {
+            _items.insert(0, created);
+            _manualOrderIds.remove(created.id);
+            _manualOrderIds.insert(0, created.id);
+            _items = _applyFundOrder(_items);
+          });
+        } else {
+          await _service.updateFund(
+            fundId: existing.id,
+            name: name,
+            targetAmount: targetAmount,
+            deadline: selectedDeadline,
+          );
+          final refreshed = await _service.getFundById(existing.id);
+          if (!mounted) return;
+          setState(() {
+            final idx = _items.indexWhere((e) => e.id == existing.id);
+            if (idx >= 0) {
+              _items[idx] = refreshed;
+            }
+            _items = _applyFundOrder(_items);
+          });
+        }
+        widget.onDataChanged?.call();
+      });
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -398,17 +434,12 @@ class _FundListScreenState extends State<FundListScreen> {
           );
           return;
         }
-
-        final amount = await _service.previewDeleteFundSettlement(item.id);
-        if (!mounted) return;
         final confirmed = await showDialog<bool>(
           context: context,
           builder: (dialogContext) => AlertDialog(
             title: const Text('Xác nhận xóa quỹ'),
-            content: Text(
-              amount > 0
-                  ? 'Nếu xác nhận xóa quỹ, hệ thống sẽ cộng vào thu nhập ${formatVnd(amount)}.'
-                  : 'Nếu xác nhận xóa quỹ, hệ thống không phát sinh giao dịch tiền.',
+            content: const Text(
+              'Nếu thực hiện xóa khoản Quỹ này, tất cả các giao dịch đã phát sinh trước đó đều sẽ bị xóa.',
             ),
             actions: [
               TextButton(
@@ -424,14 +455,16 @@ class _FundListScreenState extends State<FundListScreen> {
         );
         if (confirmed != true) return;
 
-        await _service.deleteFund(item.id);
-        if (mounted) {
-          setState(() {
-            _items.removeWhere((f) => f.id == item.id);
-            _manualOrderIds.remove(item.id);
-          });
-        }
-        widget.onDataChanged?.call();
+        await _runMutation(() async {
+          await _service.deleteFund(item.id);
+          if (mounted) {
+            setState(() {
+              _items.removeWhere((f) => f.id == item.id);
+              _manualOrderIds.remove(item.id);
+            });
+          }
+          widget.onDataChanged?.call();
+        });
       } catch (e) {
         if (!mounted) return;
         ScaffoldMessenger.of(
@@ -447,7 +480,11 @@ class _FundListScreenState extends State<FundListScreen> {
       _error = null;
     });
     try {
-      final items = await _service.getFunds(widget.coupleId);
+      final items = await _service.getFunds(
+        widget.coupleId,
+        limit: _pageSize,
+        offset: 0,
+      );
       final creatorIds = items
           .map((item) => item.creatorUserId)
           .whereType<String>()
@@ -457,12 +494,56 @@ class _FundListScreenState extends State<FundListScreen> {
         setState(() {
           _items = _applyFundOrder(items);
           _memberNameById = memberNameById;
+          _currentOffset = items.length;
+          _hasMore = items.length == _pageSize;
         });
       }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_isLoading || _isLoadingMore || !_hasMore) return;
+
+    setState(() => _isLoadingMore = true);
+    try {
+      final nextItems = await _service.getFunds(
+        widget.coupleId,
+        limit: _pageSize,
+        offset: _currentOffset,
+      );
+      if (!mounted) return;
+      if (nextItems.isEmpty) {
+        setState(() {
+          _hasMore = false;
+          _isLoadingMore = false;
+        });
+        return;
+      }
+
+      final merged = _applyFundOrder([..._items, ...nextItems]);
+      final creatorIds = merged
+          .map((item) => item.creatorUserId)
+          .whereType<String>()
+          .toSet();
+      final memberNameById = await _loadMemberNamesByIds(creatorIds);
+
+      if (mounted) {
+        setState(() {
+          _items = merged;
+          _memberNameById = memberNameById;
+          _currentOffset = _items.length;
+          _hasMore = nextItems.length == _pageSize;
+          _isLoadingMore = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _isLoadingMore = false);
+      }
     }
   }
 
@@ -480,227 +561,258 @@ class _FundListScreenState extends State<FundListScreen> {
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(_error!, textAlign: TextAlign.center),
-                  const SizedBox(height: 12),
-                  FilledButton(onPressed: _load, child: const Text('Thử lại')),
-                ],
-              ),
-            )
-          : Column(
-              children: [
-                Container(
-                  margin: const EdgeInsets.fromLTRB(14, 12, 14, 6),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    border: Border.all(color: AppColors.border),
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.05),
-                        blurRadius: 8,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.savings_outlined,
-                        color: AppColors.success,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 10),
-                      const Expanded(
-                        child: Text(
-                          'Tổng tiền đã góp quỹ',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      Text(
-                        formatVnd(totalFundAmount),
-                        style: const TextStyle(
-                          color: AppColors.success,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
-                  ),
+      body: BusyOverlay(
+        isVisible: _isMutating,
+        message: 'Đang xử lý...',
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+            ? Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(_error!, textAlign: TextAlign.center),
+                    const SizedBox(height: 12),
+                    FilledButton(
+                      onPressed: _load,
+                      child: const Text('Thử lại'),
+                    ),
+                  ],
                 ),
-                if (_items.isEmpty)
-                  const Expanded(child: Center(child: Text('Chưa có quỹ nào.')))
-                else
-                  Expanded(
-                    child: ReorderableListView.builder(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      itemCount: _items.length,
-                      onReorder: _onReorder,
-                      buildDefaultDragHandles: false,
-                      itemBuilder: (context, index) {
-                        final item = _items[index];
-                        final progress =
-                            (item.targetAmount != null &&
-                                item.targetAmount! > 0)
-                            ? (item.currentAmount / item.targetAmount!).clamp(
-                                0.0,
-                                1.0,
-                              )
-                            : 0.0;
-                        return Card(
-                          key: ValueKey(item.id),
-                          margin: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 6,
-                          ),
-                          child: InkWell(
-                            onTap: () async {
-                              await Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => FundDetailScreen(
-                                    coupleId: widget.coupleId,
-                                    fundId: item.id,
-                                  ),
-                                ),
-                              );
-                              if (mounted) {
-                                await _load();
-                                widget.onDataChanged?.call();
-                              }
-                            },
-                            onLongPress: () => _showFundActions(item),
-                            borderRadius: BorderRadius.circular(18),
-                            child: Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Container(
-                                        height: 56,
-                                        width: 56,
-                                        decoration: BoxDecoration(
-                                          color: AppColors.tealSoft.withValues(
-                                            alpha: 0.45,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            16,
-                                          ),
-                                        ),
-                                        child: const Icon(
-                                          Icons.savings_outlined,
-                                          color: AppColors.tealDeep,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 14),
-                                      Expanded(
-                                        child: Text(
-                                          item.name,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 18,
-                                          ),
-                                        ),
-                                      ),
-                                      Text(
-                                        formatVnd(item.currentAmount),
-                                        style: const TextStyle(
-                                          color: Colors.black,
-                                          fontWeight: FontWeight.w800,
-                                          fontSize: 16,
-                                        ),
-                                      ),
-                                      ReorderableDragStartListener(
-                                        index: index,
-                                        child: const Padding(
-                                          padding: EdgeInsets.only(left: 8),
-                                          child: Icon(Icons.drag_indicator),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  if (item.targetAmount != null) ...[
-                                    const SizedBox(height: 8),
-                                    LinearProgressIndicator(
-                                      value: progress,
-                                      minHeight: 12,
-                                      borderRadius: BorderRadius.circular(999),
-                                      valueColor:
-                                          const AlwaysStoppedAnimation<Color>(
-                                            AppColors.tealDeep,
-                                          ),
-                                      backgroundColor: Colors.grey[200],
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text(
-                                          '${(progress * 100).toStringAsFixed(0)}%',
-                                          style: const TextStyle(
-                                            fontSize: 13,
-                                            color: AppColors.tealDeep,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        Text(
-                                          'Mục tiêu: ${formatVnd(item.targetAmount!)}',
-                                          style: const TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                  if (item.deadline != null)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 4.0),
-                                      child: Text(
-                                        'Hạn: ${formatDate(item.deadline!)}',
-                                        style: const TextStyle(
-                                          fontSize: 13,
-                                          color: AppColors.textMuted,
-                                        ),
-                                      ),
-                                    ),
-                                  if (item.creatorUserId != null)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 2.0),
-                                      child: Text(
-                                        'Người tạo: ${_resolveMemberName(item.creatorUserId!)}',
-                                        style: const TextStyle(
-                                          fontSize: 13,
-                                          color: AppColors.textMuted,
-                                        ),
-                                      ),
-                                    ),
-                                ],
-                              ),
+              )
+            : Column(
+                children: [
+                  Container(
+                    margin: const EdgeInsets.fromLTRB(14, 12, 14, 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      border: Border.all(color: AppColors.border),
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.05),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.savings_outlined,
+                          color: AppColors.success,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: Text(
+                            'Tổng tiền đã góp quỹ',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
-                        );
-                      },
+                        ),
+                        Text(
+                          formatVnd(totalFundAmount),
+                          style: const TextStyle(
+                            color: AppColors.success,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-              ],
-            ),
+                  if (_items.isEmpty)
+                    const Expanded(
+                      child: Center(child: Text('Chưa có quỹ nào.')),
+                    )
+                  else
+                    Expanded(
+                      child: ReorderableListView.builder(
+                        scrollController: _scrollController,
+                        padding: const EdgeInsets.only(bottom: 12),
+                        itemCount: _items.length,
+                        onReorder: _hasMore ? (_, _) {} : _onReorder,
+                        buildDefaultDragHandles: false,
+                        itemBuilder: (context, index) {
+                          final item = _items[index];
+                          final progress =
+                              (item.targetAmount != null &&
+                                  item.targetAmount! > 0)
+                              ? (item.currentAmount / item.targetAmount!).clamp(
+                                  0.0,
+                                  1.0,
+                                )
+                              : 0.0;
+                          return Card(
+                            key: ValueKey(item.id),
+                            margin: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 6,
+                            ),
+                            child: InkWell(
+                              onTap: () async {
+                                await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => FundDetailScreen(
+                                      coupleId: widget.coupleId,
+                                      fundId: item.id,
+                                    ),
+                                  ),
+                                );
+                                if (mounted) {
+                                  await _load();
+                                  widget.onDataChanged?.call();
+                                }
+                              },
+                              onLongPress: () => _showFundActions(item),
+                              borderRadius: BorderRadius.circular(18),
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Container(
+                                          height: 56,
+                                          width: 56,
+                                          decoration: BoxDecoration(
+                                            color: AppColors.tealSoft
+                                                .withValues(alpha: 0.45),
+                                            borderRadius: BorderRadius.circular(
+                                              16,
+                                            ),
+                                          ),
+                                          child: const Icon(
+                                            Icons.savings_outlined,
+                                            color: AppColors.tealDeep,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 14),
+                                        Expanded(
+                                          child: Text(
+                                            item.name,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 18,
+                                            ),
+                                          ),
+                                        ),
+                                        Text(
+                                          formatVnd(item.currentAmount),
+                                          style: const TextStyle(
+                                            color: Colors.black,
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 16,
+                                          ),
+                                        ),
+                                        if (!_hasMore)
+                                          ReorderableDragStartListener(
+                                            index: index,
+                                            child: const Padding(
+                                              padding: EdgeInsets.only(left: 8),
+                                              child: Icon(Icons.drag_indicator),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                    if (item.targetAmount != null) ...[
+                                      const SizedBox(height: 8),
+                                      LinearProgressIndicator(
+                                        value: progress,
+                                        minHeight: 12,
+                                        borderRadius: BorderRadius.circular(
+                                          999,
+                                        ),
+                                        valueColor:
+                                            const AlwaysStoppedAnimation<Color>(
+                                              AppColors.tealDeep,
+                                            ),
+                                        backgroundColor: Colors.grey[200],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text(
+                                            '${(progress * 100).toStringAsFixed(0)}%',
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                              color: AppColors.tealDeep,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          Text(
+                                            'Mục tiêu: ${formatVnd(item.targetAmount!)}',
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                    if (item.deadline != null)
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                          top: 4.0,
+                                        ),
+                                        child: Text(
+                                          'Hạn: ${formatDate(item.deadline!)}',
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            color: AppColors.textMuted,
+                                          ),
+                                        ),
+                                      ),
+                                    if (item.creatorUserId != null)
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                          top: 2.0,
+                                        ),
+                                        child: Text(
+                                          'Người tạo: ${_resolveMemberName(item.creatorUserId!)}',
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            color: AppColors.textMuted,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  if (_isLoadingMore)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 12),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (!_hasMore)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 12),
+                      child: Center(
+                        child: Text(
+                          'Đã tải hết trang.',
+                          style: TextStyle(color: Colors.black54),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: _openFundPopup,
         child: const Icon(Icons.add, size: 36),

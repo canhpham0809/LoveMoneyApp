@@ -26,24 +26,34 @@ class FundService {
         error.message.contains('creator_user_id');
   }
 
-  Future<List<FundModel>> getFunds(String coupleId) async {
+  Future<List<FundModel>> getFunds(
+    String coupleId, {
+    int? limit,
+    int? offset,
+  }) async {
     try {
-      final rows = await _db
+      final ordered = _db
           .from('funds')
           .select()
           .eq('couple_id', coupleId)
           .eq('is_deleted', false)
           .order('sort_order')
           .order('created_at');
+      final rows = (limit != null && offset != null)
+          ? await ordered.range(offset, offset + limit - 1)
+          : await ordered;
       return rows.map((r) => FundModel.fromJson(r)).toList();
     } catch (e) {
       if (!_isMissingSortOrderColumn(e)) rethrow;
-      final rows = await _db
+      final ordered = _db
           .from('funds')
           .select()
           .eq('couple_id', coupleId)
           .eq('is_deleted', false)
           .order('name');
+      final rows = (limit != null && offset != null)
+          ? await ordered.range(offset, offset + limit - 1)
+          : await ordered;
       return rows.map((r) => FundModel.fromJson(r)).toList();
     }
   }
@@ -188,37 +198,38 @@ class FundService {
       throw Exception('Chỉ người tạo quỹ mới có quyền xóa.');
     }
 
-    final currentAmount = (fundRow['current_amount'] as num?)?.toDouble() ?? 0;
-    if (currentAmount > 0) {
-      final coupleId = fundRow['couple_id'] as String;
-      final defaultWalletId = await _resolveDefaultWalletId(coupleId);
-      final userId = Supabase.instance.client.auth.currentUser?.id;
-      if (defaultWalletId != null && userId != null) {
-        final incomeSourceId = await _ensureIncomeSource(
-          coupleId,
-          _fundDeleteIncomeSourceName,
-          icon: 'undo',
-        );
-        final fundName = (fundRow['name'] as String?)?.trim() ?? 'Quy';
-        await _db.from('incomes').insert({
-          'couple_id': coupleId,
-          'user_id': userId,
-          'wallet_id': defaultWalletId,
-          'income_source_id': incomeSourceId,
-          'amount': currentAmount,
-          'description': 'Hoan tien khi xoa quy $fundName',
-          'is_from_transfer': false,
-          'date': DateTime.now().toIso8601String().substring(0, 10),
-        });
-      }
+    final nowIso = DateTime.now().toUtc().toIso8601String();
+    final contributionRows = List<Map<String, dynamic>>.from(
+      await _db
+          .from('fund_contributions')
+          .select('id, linked_income_id')
+          .eq('fund_id', fundId)
+          .eq('is_deleted', false),
+    );
+
+    final linkedIncomeIds = contributionRows
+        .map((row) => row['linked_income_id'] as String?)
+        .whereType<String>()
+        .toSet()
+        .toList();
+
+    if (linkedIncomeIds.isNotEmpty) {
+      await _db
+          .from('incomes')
+          .update({'is_deleted': true, 'deleted_at': nowIso})
+          .inFilter('id', linkedIncomeIds)
+          .eq('is_deleted', false);
     }
 
     await _db
+        .from('fund_contributions')
+        .update({'is_deleted': true, 'deleted_at': nowIso})
+        .eq('fund_id', fundId)
+        .eq('is_deleted', false);
+
+    await _db
         .from('funds')
-        .update({
-          'is_deleted': true,
-          'deleted_at': DateTime.now().toUtc().toIso8601String(),
-        })
+        .update({'is_deleted': true, 'deleted_at': nowIso})
         .eq('id', fundId);
   }
 
@@ -288,10 +299,10 @@ class FundService {
         .select('name, current_amount')
         .eq('id', fundId)
         .single();
-    final fundName = (fund['name'] as String?)?.trim() ?? 'Quy';
+    final fundName = (fund['name'] as String?)?.trim() ?? 'Quỹ';
     final currentAmount = (fund['current_amount'] as num?)?.toDouble() ?? 0;
     if (amount > currentAmount) {
-      throw Exception('Số tiền rut vuot qua so du quy hien tai.');
+      throw Exception('Số tiền rút vượt quá số dư quỹ hiện tại.');
     }
 
     final row = await _db
@@ -323,7 +334,7 @@ class FundService {
             'amount': amount,
             'description': note?.trim().isNotEmpty == true
                 ? note!.trim()
-                : 'Rut tien tu quy $fundName',
+                : 'Rút tiền từ quỹ $fundName',
             'is_from_transfer': false,
             'date': date.toIso8601String().substring(0, 10),
           })
@@ -406,7 +417,7 @@ class FundService {
         .eq('id', fundId);
 
     if (contributionType == 'withdrawal' && linkedIncomeId != null) {
-      final fundName = (fund['name'] as String?)?.trim() ?? 'Quy';
+      final fundName = (fund['name'] as String?)?.trim() ?? 'Quỹ';
       await _db
           .from('incomes')
           .update({
@@ -415,7 +426,7 @@ class FundService {
             'amount': amount,
             'description': note?.trim().isNotEmpty == true
                 ? note!.trim()
-                : 'Rut tien tu quy $fundName',
+                : 'Rút tiền từ quỹ $fundName',
             'date': date.toIso8601String().substring(0, 10),
           })
           .eq('id', linkedIncomeId)

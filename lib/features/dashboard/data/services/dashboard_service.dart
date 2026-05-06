@@ -175,7 +175,7 @@ class DashboardService {
 
     final incomeSources = await _db
         .from('income_sources')
-        .select('id, name, icon')
+        .select('id, name, icon, show_in_income_form')
         .eq('couple_id', coupleId)
         .eq('is_deleted', false);
     final incomeSourceNameById = {
@@ -186,6 +186,11 @@ class DashboardService {
       for (final row in incomeSources)
         row['id'] as String: ((row['icon'] as String?) ?? 'payments'),
     };
+    final hiddenIncomeSourceIds = {
+      for (final row in incomeSources)
+        if ((row['show_in_income_form'] as bool?) == false) row['id'] as String,
+    };
+    final generatedIncomeSourceNames = {'nhận tiền nợ', 'rút quỹ', 'xóa quỹ'};
 
     final funds = await _db
         .from('funds')
@@ -202,14 +207,14 @@ class DashboardService {
 
     var expensesQuery = _db
         .from('expenses')
-        .select('amount, category_id, category_name')
+        .select('id, amount, category_id, category_name')
         .eq('couple_id', coupleId)
         .eq('is_deleted', false)
         .gte('date', from)
         .lt('date', to);
     var incomesQuery = _db
         .from('incomes')
-        .select('amount, income_source_id')
+        .select('id, amount, income_source_id')
         .eq('couple_id', coupleId)
         .eq('is_deleted', false)
         .or('is_from_transfer.is.null,is_from_transfer.eq.false')
@@ -217,7 +222,9 @@ class DashboardService {
         .lt('date', to);
     var contributionsQuery = _db
         .from('fund_contributions')
-        .select('amount, fund_id, contribution_type, date, note')
+        .select(
+          'amount, fund_id, contribution_type, date, note, linked_income_id',
+        )
         .eq('couple_id', coupleId)
         .eq('is_deleted', false)
         .gte('date', from)
@@ -244,7 +251,7 @@ class DashboardService {
       var debtsQuery = _db
           .from('debts')
           .select(
-            'id, name, debt_kind, original_amount, record_to_income, linked_expense_id, start_date',
+            'id, name, debt_kind, original_amount, record_to_income, linked_income_id, linked_expense_id, start_date',
           )
           .eq('couple_id', coupleId)
           .eq('is_deleted', false);
@@ -268,6 +275,7 @@ class DashboardService {
               ...row,
               'debt_kind': 'debt',
               'record_to_income': false,
+              'linked_income_id': null,
               'linked_expense_id': null,
             },
           )
@@ -286,8 +294,89 @@ class DashboardService {
     final contributions = List<Map<String, dynamic>>.from(results[2] as List);
     final transfers = List<Map<String, dynamic>>.from(results[3] as List);
 
+    final activeFundIds = fundNameById.keys.toSet();
+    final filteredContributions = contributions.where((row) {
+      final fundId = row['fund_id'] as String?;
+      return fundId != null && activeFundIds.contains(fundId);
+    }).toList();
+
+    double transferSent = 0;
+    double transferReceived = 0;
+    for (final row in transfers) {
+      final amount = (row['amount'] as num?)?.toDouble() ?? 0;
+      final fromUserId = row['from_user_id'] as String?;
+      final toUserId = row['to_user_id'] as String?;
+
+      if (viewerUserId == null) {
+        continue;
+      }
+      if (fromUserId == viewerUserId) {
+        transferSent += amount;
+      } else if (toUserId == viewerUserId) {
+        transferReceived += amount;
+      }
+    }
+
+    // Fetch payments in the month for ALL debts of this viewer, then decide
+    // inclusion in Dart (recorded+created-this-month OR has payments this month).
+    final allDebtIdsForCouple = debtRows.map((r) => r['id'] as String).toList();
+    final paymentsByDebtId = <String, List<Map<String, dynamic>>>{};
+    if (allDebtIdsForCouple.isNotEmpty) {
+      try {
+        final paymentRows = List<Map<String, dynamic>>.from(
+          await _db
+              .from('debt_payments')
+              .select('debt_id, amount, date, note, linked_income_id')
+              .inFilter('debt_id', allDebtIdsForCouple)
+              .eq('is_deleted', false)
+              .gte('date', from)
+              .lt('date', to),
+        );
+        for (final p in paymentRows) {
+          final pid = p['debt_id'] as String?;
+          if (pid == null) continue;
+          paymentsByDebtId.putIfAbsent(pid, () => []).add(p);
+        }
+      } catch (_) {
+        // debt_payments might not exist in older schemas — skip gracefully
+      }
+    }
+
+    final excludedIncomeIds = <String>{
+      ...filteredContributions
+          .map((row) => row['linked_income_id'] as String?)
+          .whereType<String>(),
+      ...debtRows
+          .map((row) => row['linked_income_id'] as String?)
+          .whereType<String>(),
+      ...paymentsByDebtId.values
+          .expand((rows) => rows)
+          .map((row) => row['linked_income_id'] as String?)
+          .whereType<String>(),
+    };
+    final excludedExpenseIds = <String>{
+      ...debtRows
+          .map((row) => row['linked_expense_id'] as String?)
+          .whereType<String>(),
+    };
+
+    final manualIncomes = incomes.where((row) {
+      final incomeId = row['id'] as String?;
+      final sourceId = row['income_source_id'] as String?;
+      final sourceName =
+          ((sourceId != null ? incomeSourceNameById[sourceId] : null) ?? '')
+              .trim()
+              .toLowerCase();
+      return !excludedIncomeIds.contains(incomeId) &&
+          !hiddenIncomeSourceIds.contains(sourceId) &&
+          !generatedIncomeSourceNames.contains(sourceName);
+    }).toList();
+    final manualExpenses = expenses
+        .where((row) => !excludedExpenseIds.contains(row['id'] as String?))
+        .toList();
+
     final expenseMap = <String, Map<String, dynamic>>{};
-    for (final row in expenses) {
+    for (final row in manualExpenses) {
       final categoryId = row['category_id'] as String?;
       final fallbackName = (row['category_name'] as String?) ?? 'Khác';
       final name =
@@ -306,7 +395,7 @@ class DashboardService {
     }
 
     final incomeMap = <String, Map<String, dynamic>>{};
-    for (final row in incomes) {
+    for (final row in manualIncomes) {
       final sourceId = row['income_source_id'] as String?;
       final name =
           (sourceId != null ? incomeSourceNameById[sourceId] : null) ?? 'Khác';
@@ -324,7 +413,7 @@ class DashboardService {
     }
 
     final contributionMap = <String, Map<String, dynamic>>{};
-    for (final row in contributions) {
+    for (final row in filteredContributions) {
       final fundId = row['fund_id'] as String?;
       final name = (fundId != null ? fundNameById[fundId] : null) ?? 'Quỹ';
       final iconKey =
@@ -353,48 +442,6 @@ class DashboardService {
       });
     }
 
-    double transferSent = 0;
-    double transferReceived = 0;
-    for (final row in transfers) {
-      final amount = (row['amount'] as num?)?.toDouble() ?? 0;
-      final fromUserId = row['from_user_id'] as String?;
-      final toUserId = row['to_user_id'] as String?;
-
-      if (viewerUserId == null) {
-        continue;
-      }
-      if (fromUserId == viewerUserId) {
-        transferSent += amount;
-      } else if (toUserId == viewerUserId) {
-        transferReceived += amount;
-      }
-    }
-
-    // Fetch payments in the month for ALL debts of this viewer, then decide
-    // inclusion in Dart (recorded+created-this-month OR has payments this month).
-    final allDebtIdsForCouple = debtRows.map((r) => r['id'] as String).toList();
-    final paymentsByDebtId = <String, List<Map<String, dynamic>>>{};
-    if (allDebtIdsForCouple.isNotEmpty) {
-      try {
-        final paymentRows = List<Map<String, dynamic>>.from(
-          await _db
-              .from('debt_payments')
-              .select('debt_id, amount, date, note')
-              .inFilter('debt_id', allDebtIdsForCouple)
-              .eq('is_deleted', false)
-              .gte('date', from)
-              .lt('date', to),
-        );
-        for (final p in paymentRows) {
-          final pid = p['debt_id'] as String?;
-          if (pid == null) continue;
-          paymentsByDebtId.putIfAbsent(pid, () => []).add(p);
-        }
-      } catch (_) {
-        // debt_payments might not exist in older schemas — skip gracefully
-      }
-    }
-
     final borrowItems = <Map<String, dynamic>>[];
     final lendItems = <Map<String, dynamic>>[];
     for (final row in debtRows) {
@@ -417,9 +464,14 @@ class DashboardService {
       if (isCreatedThisMonth && !isRecorded && payments.isEmpty) continue;
 
       // Only count original amount if the debt was recorded AND created this month
-      final amount = (isCreatedThisMonth && isRecorded)
+      final originalAmount = (isCreatedThisMonth && isRecorded)
           ? ((row['original_amount'] as num?)?.toDouble() ?? 0)
           : 0.0;
+      final paymentAmount = payments.fold<double>(
+        0,
+        (s, p) => s + ((p['amount'] as num?)?.toDouble() ?? 0),
+      );
+      final amount = originalAmount > 0 ? originalAmount : paymentAmount;
 
       final subItems = payments.map((p) {
         return <String, dynamic>{
@@ -434,6 +486,7 @@ class DashboardService {
         'id': debtId,
         'name': (row['name'] as String?) ?? 'Khoản nợ',
         'amount': amount,
+        'summary_amount': originalAmount,
         'sub_items': subItems,
       };
 
@@ -482,15 +535,15 @@ class DashboardService {
       'debt_borrowed_by_item': sortByAmountDesc(borrowItems),
       'debt_lent_by_item': sortByAmountDesc(lendItems),
       'totals': {
-        'income': incomes.fold<double>(
+        'income': manualIncomes.fold<double>(
           0,
           (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0),
         ),
-        'expense': expenses.fold<double>(
+        'expense': manualExpenses.fold<double>(
           0,
           (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0),
         ),
-        'fund_contribution': contributions
+        'fund_contribution': filteredContributions
             .where(
               (row) => (row['contribution_type'] as String?) == 'contribution',
             )
@@ -498,13 +551,23 @@ class DashboardService {
               0,
               (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0),
             ),
+        'fund_withdrawal': filteredContributions
+            .where(
+              (row) => (row['contribution_type'] as String?) == 'withdrawal',
+            )
+            .fold<double>(
+              0,
+              (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0),
+            ),
         'debt_borrow': borrowItems.fold<double>(
           0,
-          (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0),
+          (sum, row) =>
+              sum + ((row['summary_amount'] as num?)?.toDouble() ?? 0),
         ),
         'debt_lend': lendItems.fold<double>(
           0,
-          (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0),
+          (sum, row) =>
+              sum + ((row['summary_amount'] as num?)?.toDouble() ?? 0),
         ),
         'debt_payment_made': totalDebtPaymentMade,
         'debt_payment_received': totalDebtPaymentReceived,

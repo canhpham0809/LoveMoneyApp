@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_app_demo/core/theme/app_colors.dart';
 import 'package:flutter_app_demo/core/utils/amount_input.dart';
 import 'package:flutter_app_demo/core/widgets/amount_suggestion_chips.dart';
+import 'package:flutter_app_demo/core/widgets/busy_overlay.dart';
 import 'package:flutter_app_demo/core/utils/formatters.dart';
 import 'package:flutter_app_demo/features/debt/data/models/debt_model.dart';
 import 'package:flutter_app_demo/features/debt/data/models/debt_payment_model.dart';
@@ -32,6 +33,20 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
   List<DebtPaymentModel> _payments = [];
   Map<String, String> _memberNameById = {};
   bool _isLoading = true;
+  bool _isMutating = false;
+
+  Future<T> _runMutation<T>(Future<T> Function() action) async {
+    if (mounted) {
+      setState(() => _isMutating = true);
+    }
+    try {
+      return await action();
+    } finally {
+      if (mounted) {
+        setState(() => _isMutating = false);
+      }
+    }
+  }
 
   String _normalizeUserId(String userId) => userId.trim().toLowerCase();
 
@@ -113,6 +128,7 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
     final amountCtrl = TextEditingController();
     final noteCtrl = TextEditingController();
     DateTime selectedDate = existing?.date ?? DateTime.now();
+    var isSubmitting = false;
     if (existing != null) {
       amountCtrl.text = formatAmountInput(existing.amount.toStringAsFixed(0));
       noteCtrl.text = existing.note ?? '';
@@ -195,8 +211,9 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                         children: [
                           Expanded(
                             child: TextButton(
-                              onPressed: () =>
-                                  Navigator.pop(dialogContext, false),
+                              onPressed: isSubmitting
+                                  ? null
+                                  : () => Navigator.pop(dialogContext, false),
                               child: const Text('Hủy'),
                             ),
                           ),
@@ -204,6 +221,7 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                           Expanded(
                             child: FilledButton(
                               onPressed: () async {
+                                if (isSubmitting) return;
                                 final amount = parseAmountInput(
                                   amountCtrl.text.trim(),
                                 );
@@ -215,33 +233,48 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                                   );
                                   return;
                                 }
-                                if (existing == null) {
-                                  await _debtService.createPayment(
-                                    coupleId: widget.coupleId,
-                                    debtId: widget.debtId,
-                                    walletId: walletId,
-                                    amount: amount,
-                                    date: selectedDate,
-                                    note: noteCtrl.text.trim().isEmpty
-                                        ? null
-                                        : noteCtrl.text.trim(),
-                                  );
-                                } else {
-                                  await _debtService.updatePayment(
-                                    paymentId: existing.id,
-                                    debtId: widget.debtId,
-                                    amount: amount,
-                                    date: selectedDate,
-                                    note: noteCtrl.text.trim().isEmpty
-                                        ? null
-                                        : noteCtrl.text.trim(),
-                                  );
+                                setDialogState(() => isSubmitting = true);
+                                try {
+                                  if (existing == null) {
+                                    await _debtService.createPayment(
+                                      coupleId: widget.coupleId,
+                                      debtId: widget.debtId,
+                                      walletId: walletId,
+                                      amount: amount,
+                                      date: selectedDate,
+                                      note: noteCtrl.text.trim().isEmpty
+                                          ? null
+                                          : noteCtrl.text.trim(),
+                                    );
+                                  } else {
+                                    await _debtService.updatePayment(
+                                      paymentId: existing.id,
+                                      debtId: widget.debtId,
+                                      amount: amount,
+                                      date: selectedDate,
+                                      note: noteCtrl.text.trim().isEmpty
+                                          ? null
+                                          : noteCtrl.text.trim(),
+                                    );
+                                  }
+                                } finally {
+                                  if (dialogContext.mounted) {
+                                    setDialogState(() => isSubmitting = false);
+                                  }
                                 }
                                 if (dialogContext.mounted) {
                                   Navigator.pop(dialogContext, true);
                                 }
                               },
-                              child: const Text('Lưu'),
+                              child: isSubmitting
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Text('Lưu'),
                             ),
                           ),
                         ],
@@ -321,11 +354,13 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
       if (confirmed != true) return;
 
       try {
-        await _debtService.deletePayment(
-          paymentId: item.id,
-          debtId: widget.debtId,
-        );
-        await _load(showLoader: false);
+        await _runMutation(() async {
+          await _debtService.deletePayment(
+            paymentId: item.id,
+            debtId: widget.debtId,
+          );
+          await _load(showLoader: false);
+        });
       } catch (e) {
         if (!mounted) return;
         ScaffoldMessenger.of(
@@ -341,267 +376,276 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
     final isLend = debt?.debtKind == 'lend';
     return Scaffold(
       appBar: AppBar(title: Text(isLend ? 'Chi tiết Cho mượn' : 'Chi tiết Nợ')),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : debt == null
-          ? const Center(child: Text('Không tìm thấy khoản nợ.'))
-          : Column(
-              children: [
-                Builder(
-                  builder: (context) {
-                    final pct = debt.originalAmount > 0
-                        ? 1 - (debt.remainingAmount / debt.originalAmount)
-                        : 1.0;
-                    final clampedPct = pct.clamp(0.0, 1.0);
-                    final paidAmount =
-                        (debt.originalAmount - debt.remainingAmount).clamp(
-                          0.0,
-                          debt.originalAmount,
-                        );
-                    final accentColor = debt.isClosed
-                        ? AppColors.success
-                        : (isLend ? AppColors.tealDeep : AppColors.danger);
-                    final accentSoft = debt.isClosed
-                        ? AppColors.successSoft
-                        : (isLend ? AppColors.tealSoft : AppColors.dangerSoft);
-                    final leadingIcon = debt.isClosed
-                        ? Icons.check_circle_outline
-                        : (isLend
-                              ? Icons.account_balance_wallet_outlined
-                              : Icons.credit_card_outlined);
+      body: BusyOverlay(
+        isVisible: _isMutating,
+        message: 'Đang xử lý dữ liệu...',
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : debt == null
+            ? const Center(child: Text('Không tìm thấy khoản nợ.'))
+            : Column(
+                children: [
+                  Builder(
+                    builder: (context) {
+                      final pct = debt.originalAmount > 0
+                          ? 1 - (debt.remainingAmount / debt.originalAmount)
+                          : 1.0;
+                      final clampedPct = pct.clamp(0.0, 1.0);
+                      final paidAmount =
+                          (debt.originalAmount - debt.remainingAmount).clamp(
+                            0.0,
+                            debt.originalAmount,
+                          );
+                      final accentColor = debt.isClosed
+                          ? AppColors.success
+                          : (isLend ? AppColors.tealDeep : AppColors.danger);
+                      final accentSoft = debt.isClosed
+                          ? AppColors.successSoft
+                          : (isLend
+                                ? AppColors.tealSoft
+                                : AppColors.dangerSoft);
+                      final leadingIcon = debt.isClosed
+                          ? Icons.check_circle_outline
+                          : (isLend
+                                ? Icons.account_balance_wallet_outlined
+                                : Icons.credit_card_outlined);
 
-                    return Container(
-                      margin: const EdgeInsets.fromLTRB(12, 12, 12, 6),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        border: Border.all(color: AppColors.border),
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.05),
-                            blurRadius: 8,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  height: 50,
-                                  width: 50,
-                                  decoration: BoxDecoration(
-                                    color: accentSoft,
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
-                                  child: Icon(
-                                    leadingIcon,
-                                    color: accentColor,
-                                    size: 22,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    debt.name,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  formatVnd(debt.originalAmount),
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 14,
-                                    color: accentColor,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(999),
-                              child: LinearProgressIndicator(
-                                value: clampedPct,
-                                minHeight: 8,
-                                backgroundColor: accentSoft,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  accentColor,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 5),
-                            Text(
-                              'Tiến độ: ${(clampedPct * 100).toStringAsFixed(0)}%',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: accentColor,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              'Đã đóng: ${formatVnd(paidAmount)}',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: Colors.black87,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Còn lại: ${formatVnd(debt.remainingAmount)}',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: Colors.black87,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              debt.dueDate != null
-                                  ? 'Hạn: ${formatDate(debt.dueDate!)}'
-                                  : 'Hạn: Không có',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.black54,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Người tạo: ${_resolveMemberName(debt.userId)}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.black54,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Ghi chú: ${debt.note?.trim().isNotEmpty == true ? debt.note!.trim() : 'Không có'}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.black54,
-                              ),
+                      return Container(
+                        margin: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          border: Border.all(color: AppColors.border),
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.05),
+                              blurRadius: 8,
+                              offset: const Offset(0, 3),
                             ),
                           ],
                         ),
-                      ),
-                    );
-                  },
-                ),
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 12),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      isLend ? 'Lịch sử trả nợ' : 'Lịch sử trả nợ',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Expanded(
-                  child: _payments.isEmpty
-                      ? Center(
-                          child: Text(
-                            isLend
-                                ? 'Chưa có đợt thu hồi nào.'
-                                : 'Chưa có đợt trả nợ nào.',
-                          ),
-                        )
-                      : ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(12, 4, 12, 90),
-                          itemCount: _payments.length,
-                          itemBuilder: (context, index) {
-                            final p = _payments[index];
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                border: Border.all(color: AppColors.border),
-                                borderRadius: BorderRadius.circular(14),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.05),
-                                    blurRadius: 8,
-                                    offset: const Offset(0, 3),
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    height: 50,
+                                    width: 50,
+                                    decoration: BoxDecoration(
+                                      color: accentSoft,
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                    child: Icon(
+                                      leadingIcon,
+                                      color: accentColor,
+                                      size: 22,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      debt.name,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    formatVnd(debt.originalAmount),
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 14,
+                                      color: accentColor,
+                                    ),
                                   ),
                                 ],
                               ),
-                              child: ListTile(
-                                minVerticalPadding: 6,
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 4,
-                                ),
-                                leading: CircleAvatar(
-                                  radius: 22,
-                                  backgroundColor: AppColors.successSoft,
-                                  child: const Icon(
-                                    Icons.timeline,
-                                    color: AppColors.success,
-                                    size: 20,
-                                  ),
-                                ),
-                                onLongPress: () => _showPaymentActions(p),
-                                title: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'Trả nợ',
-                                      style: TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      '${formatDate(p.date)} ${formatTimeUtcPlus7(p.updatedAt)}',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.black54,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      'Người tạo: ${p.updatedBy != null ? _resolveMemberName(p.updatedBy!) : 'Không rõ'}',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.black54,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      'Ghi chú: ${p.note?.trim().isNotEmpty == true ? p.note!.trim() : 'Không có'}',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.black54,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                trailing: Text(
-                                  '+${formatVnd(p.amount)}',
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.success,
+                              const SizedBox(height: 8),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(999),
+                                child: LinearProgressIndicator(
+                                  value: clampedPct,
+                                  minHeight: 8,
+                                  backgroundColor: accentSoft,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    accentColor,
                                   ),
                                 ),
                               ),
-                            );
-                          },
+                              const SizedBox(height: 5),
+                              Text(
+                                'Tiến độ: ${(clampedPct * 100).toStringAsFixed(0)}%',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: accentColor,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Đã đóng: ${formatVnd(paidAmount)}',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.black87,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Còn lại: ${formatVnd(debt.remainingAmount)}',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.black87,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                debt.dueDate != null
+                                    ? 'Hạn: ${formatDate(debt.dueDate!)}'
+                                    : 'Hạn: Không có',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.black54,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Người tạo: ${_resolveMemberName(debt.userId)}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.black54,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Ghi chú: ${debt.note?.trim().isNotEmpty == true ? debt.note!.trim() : 'Không có'}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.black54,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                ),
-              ],
-            ),
+                      );
+                    },
+                  ),
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 12),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        isLend ? 'Lịch sử trả nợ' : 'Lịch sử trả nợ',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: _payments.isEmpty
+                        ? Center(
+                            child: Text(
+                              isLend
+                                  ? 'Chưa có đợt thu hồi nào.'
+                                  : 'Chưa có đợt trả nợ nào.',
+                            ),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.fromLTRB(12, 4, 12, 90),
+                            itemCount: _payments.length,
+                            itemBuilder: (context, index) {
+                              final p = _payments[index];
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  border: Border.all(color: AppColors.border),
+                                  borderRadius: BorderRadius.circular(14),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.05,
+                                      ),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 3),
+                                    ),
+                                  ],
+                                ),
+                                child: ListTile(
+                                  minVerticalPadding: 6,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 4,
+                                  ),
+                                  leading: CircleAvatar(
+                                    radius: 22,
+                                    backgroundColor: AppColors.successSoft,
+                                    child: const Icon(
+                                      Icons.timeline,
+                                      color: AppColors.success,
+                                      size: 20,
+                                    ),
+                                  ),
+                                  onLongPress: () => _showPaymentActions(p),
+                                  title: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'Trả nợ',
+                                        style: TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        '${formatDate(p.date)} ${formatTimeUtcPlus7(p.updatedAt)}',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.black54,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'Người tạo: ${p.updatedBy != null ? _resolveMemberName(p.updatedBy!) : 'Không rõ'}',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.black54,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'Ghi chú: ${p.note?.trim().isNotEmpty == true ? p.note!.trim() : 'Không có'}',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.black54,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  trailing: Text(
+                                    '+${formatVnd(p.amount)}',
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.success,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: _openPaymentPopup,
         child: const Icon(Icons.add),

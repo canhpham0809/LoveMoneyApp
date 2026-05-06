@@ -6,6 +6,7 @@ import 'package:flutter_app_demo/core/utils/amount_input.dart';
 import 'package:flutter_app_demo/core/theme/app_colors.dart';
 import 'package:flutter_app_demo/core/utils/category_visuals.dart';
 import 'package:flutter_app_demo/core/widgets/amount_suggestion_chips.dart';
+import 'package:flutter_app_demo/core/widgets/busy_overlay.dart';
 import 'package:flutter_app_demo/core/utils/formatters.dart';
 import 'package:flutter_app_demo/features/expense/data/models/category_model.dart';
 import 'package:flutter_app_demo/features/expense/data/models/expense_model.dart';
@@ -77,14 +78,35 @@ class _ExpenseFeedItem {
 }
 
 class _ExpenseListScreenState extends State<ExpenseListScreen> {
+  static const int _pageSize = 50;
+
   final _service = ExpenseService();
   final _walletService = WalletService();
+  final ScrollController _scrollController = ScrollController();
   List<ExpenseModel> _items = [];
   List<_ExpenseFeedItem> _externalItems = [];
   Map<String, CategoryModel> _categoryById = {};
+  int _currentOffset = 0;
+  bool _hasMore = true;
+  bool _isLoadingMore = false;
   bool _isLoading = true;
   bool _isDeleting = false;
+  bool _isMutating = false;
+  bool _isRefreshingContent = false;
   String? _error;
+
+  Future<T> _runMutation<T>(Future<T> Function() action) async {
+    if (mounted) {
+      setState(() => _isMutating = true);
+    }
+    try {
+      return await action();
+    } finally {
+      if (mounted) {
+        setState(() => _isMutating = false);
+      }
+    }
+  }
 
   int _compareBySelectedDateDesc(_ExpenseFeedItem a, _ExpenseFeedItem b) {
     final dateCompare = b.date.compareTo(a.date);
@@ -121,6 +143,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     widget.refreshSignal?.addListener(_onExternalRefresh);
     _load();
   }
@@ -139,23 +162,39 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
     widget.refreshSignal?.removeListener(_onExternalRefresh);
     super.dispose();
   }
 
-  void _onExternalRefresh() {
-    if (!mounted) return;
-    _load(showLoader: false);
+  void _onScroll() {
+    if (!_scrollController.hasClients || _isLoadingMore || !_hasMore) return;
+    final position = _scrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 220) {
+      _loadMore();
+    }
   }
 
-  Future<void> _load({bool showLoader = true}) async {
+  void _onExternalRefresh() {
+    if (!mounted) return;
+    _load(showLoader: false, showRefreshOverlay: false);
+  }
+
+  Future<void> _load({
+    bool showLoader = true,
+    bool showRefreshOverlay = true,
+  }) async {
     if (showLoader) {
       setState(() {
         _isLoading = true;
         _error = null;
       });
-    } else if (mounted) {
-      setState(() => _error = null);
+    } else if (showRefreshOverlay && mounted) {
+      setState(() {
+        _error = null;
+        _isRefreshingContent = true;
+      });
     }
     try {
       final results = await Future.wait<dynamic>([
@@ -163,6 +202,8 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
         _service.getExpenses(
           widget.coupleId,
           createdByUserId: widget.viewerUserId,
+          limit: _pageSize,
+          offset: 0,
         ),
         _loadExternalExpenseItems(),
       ]);
@@ -179,12 +220,61 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
           _items = items;
           _externalItems = externalItems;
           _categoryById = {for (final c in categories) c.id: c};
+          _currentOffset = items.length;
+          _hasMore = items.length == _pageSize;
         });
       }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
-      if (showLoader && mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() {
+          if (showLoader) {
+            _isLoading = false;
+          } else {
+            _isRefreshingContent = false;
+          }
+        });
+      }
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_isLoading || _isLoadingMore || !_hasMore) return;
+
+    setState(() => _isLoadingMore = true);
+    try {
+      final nextItems = await _service.getExpenses(
+        widget.coupleId,
+        createdByUserId: widget.viewerUserId,
+        limit: _pageSize,
+        offset: _currentOffset,
+      );
+      if (!mounted) return;
+      if (nextItems.isEmpty) {
+        setState(() {
+          _hasMore = false;
+          _isLoadingMore = false;
+        });
+        return;
+      }
+
+      nextItems.sort((a, b) {
+        final dateCompare = b.date.compareTo(a.date);
+        if (dateCompare != 0) return dateCompare;
+        return b.createdAt.compareTo(a.createdAt);
+      });
+
+      setState(() {
+        _items = [..._items, ...nextItems];
+        _currentOffset = _items.length;
+        _hasMore = nextItems.length == _pageSize;
+        _isLoadingMore = false;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() => _isLoadingMore = false);
+      }
     }
   }
 
@@ -220,11 +310,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
       fundsQuery.order('created_at', ascending: false),
       debtQuery.order('created_at', ascending: false),
       transferQuery.order('created_at', ascending: false),
-      db
-          .from('funds')
-          .select('id, name')
-          .eq('couple_id', widget.coupleId)
-          .eq('is_deleted', false),
+      db.from('funds').select('id, name').eq('couple_id', widget.coupleId),
       db
           .from('debts')
           .select('id, name')
@@ -276,7 +362,9 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
           id: 'fund-${row['id']}',
           kind: _ExpenseFeedKind.fundContribution,
           amount: (row['amount'] as num).toDouble(),
-          title: (note != null && note.isNotEmpty) ? note : fundName,
+          title: (note != null && note.isNotEmpty)
+              ? note
+              : 'Đóng góp quỹ: $fundName',
           date: DateTime.parse(row['date'] as String),
           createdAt: DateTime.parse(row['created_at'] as String),
         ),
@@ -295,7 +383,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
           id: 'debt-${row['id']}',
           kind: _ExpenseFeedKind.debtPayment,
           amount: (row['amount'] as num).toDouble(),
-          title: (note != null && note.isNotEmpty) ? note : debtName,
+          title: (note != null && note.isNotEmpty) ? note : 'Trả nợ: $debtName',
           date: DateTime.parse(row['date'] as String),
           createdAt: DateTime.parse(row['created_at'] as String),
         ),
@@ -733,16 +821,17 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
     }
 
     try {
-      await _service.updateExpense(
-        expenseId: existing.id,
-        walletId: walletId,
-        categoryId: payload.categoryId,
-        amount: payload.amount,
-        description: payload.description,
-        date: payload.date,
-      );
-      await _load(showLoader: false);
-      widget.onDataChanged?.call();
+      await _runMutation(() async {
+        await _service.updateExpense(
+          expenseId: existing.id,
+          walletId: walletId,
+          categoryId: payload.categoryId,
+          amount: payload.amount,
+          description: payload.description,
+          date: payload.date,
+        );
+        widget.onDataChanged?.call();
+      });
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -848,85 +937,60 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
           IconButton(onPressed: () => _load(), icon: const Icon(Icons.refresh)),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+      body: BusyOverlay(
+        isVisible: _isMutating || _isDeleting || _isRefreshingContent,
+        message: _isDeleting
+            ? 'Đang xóa...'
+            : (_isRefreshingContent
+                  ? 'Đang tải dữ liệu...'
+                  : 'Đang lưu dữ liệu...'),
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+            ? Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(_error!, textAlign: TextAlign.center),
+                    const SizedBox(height: 12),
+                    FilledButton(
+                      onPressed: () => _load(),
+                      child: const Text('Thử lại'),
+                    ),
+                  ],
+                ),
+              )
+            : mergedItems.isEmpty
+            ? Center(
+                child: Text('Chưa có chi tiêu nào của ${widget.viewerLabel}.'),
+              )
+            : ListView(
+                controller: _scrollController,
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 90),
                 children: [
-                  Text(_error!, textAlign: TextAlign.center),
-                  const SizedBox(height: 12),
-                  FilledButton(
-                    onPressed: () => _load(),
-                    child: const Text('Thử lại'),
-                  ),
-                ],
-              ),
-            )
-          : mergedItems.isEmpty
-          ? Center(
-              child: Text('Chưa có chi tiêu nào của ${widget.viewerLabel}.'),
-            )
-          : ListView(
-              padding: const EdgeInsets.fromLTRB(14, 10, 14, 90),
-              children: [
-                for (final entry in grouped.entries) ...[
-                  Builder(
-                    builder: (context) {
-                      final monthTotal = entry.value.values
-                          .expand((rows) => rows)
-                          .fold<double>(0, (sum, row) => sum + row.amount);
-                      return Padding(
-                        padding: const EdgeInsets.fromLTRB(0, 14, 0, 6),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                'Tháng ${entry.key.split('-')[1]}/${entry.key.split('-')[0]}',
-                                style: Theme.of(context).textTheme.titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                            Text(
-                              formatVnd(monthTotal),
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                                color: Colors.black87,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                  for (final dayEntry in entry.value.entries) ...[
+                  for (final entry in grouped.entries) ...[
                     Builder(
                       builder: (context) {
-                        final dayItems = dayEntry.value;
-                        final dayDate = DateTime.parse(dayEntry.key);
-                        final dayTotal = dayItems.fold<double>(
-                          0,
-                          (sum, row) => sum + row.amount,
-                        );
+                        final monthTotal = entry.value.values
+                            .expand((rows) => rows)
+                            .fold<double>(0, (sum, row) => sum + row.amount);
                         return Padding(
-                          padding: const EdgeInsets.fromLTRB(0, 4, 0, 6),
+                          padding: const EdgeInsets.fromLTRB(0, 14, 0, 6),
                           child: Row(
                             children: [
                               Expanded(
                                 child: Text(
-                                  formatDate(dayDate),
-                                  style: Theme.of(context).textTheme.bodyMedium
-                                      ?.copyWith(fontWeight: FontWeight.w600),
+                                  'Tháng ${entry.key.split('-')[1]}/${entry.key.split('-')[0]}',
+                                  style: Theme.of(context).textTheme.titleMedium
+                                      ?.copyWith(fontWeight: FontWeight.bold),
                                 ),
                               ),
                               Text(
-                                formatVnd(dayTotal),
+                                formatVnd(monthTotal),
                                 style: const TextStyle(
-                                  color: Colors.black54,
                                   fontWeight: FontWeight.w600,
-                                  fontSize: 13,
+                                  color: Colors.black87,
+                                  fontSize: 14,
                                 ),
                               ),
                             ],
@@ -934,18 +998,114 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                         );
                       },
                     ),
-                    ...dayEntry.value.map((item) {
-                      if (item.kind != _ExpenseFeedKind.expense ||
-                          item.editableExpense == null) {
-                        final icon = switch (item.kind) {
-                          _ExpenseFeedKind.fundContribution =>
-                            Icons.savings_outlined,
-                          _ExpenseFeedKind.debtPayment => Icons.credit_card,
-                          _ExpenseFeedKind.transferSent => Icons.swap_horiz,
-                          _ExpenseFeedKind.expense =>
-                            Icons.shopping_bag_outlined,
-                        };
+                    for (final dayEntry in entry.value.entries) ...[
+                      Builder(
+                        builder: (context) {
+                          final dayItems = dayEntry.value;
+                          final dayDate = DateTime.parse(dayEntry.key);
+                          final dayTotal = dayItems.fold<double>(
+                            0,
+                            (sum, row) => sum + row.amount,
+                          );
+                          return Padding(
+                            padding: const EdgeInsets.fromLTRB(0, 4, 0, 6),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    formatDate(dayDate),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                                Text(
+                                  formatVnd(dayTotal),
+                                  style: const TextStyle(
+                                    color: Colors.black54,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                      ...dayEntry.value.map((item) {
+                        if (item.kind != _ExpenseFeedKind.expense ||
+                            item.editableExpense == null) {
+                          final icon = switch (item.kind) {
+                            _ExpenseFeedKind.fundContribution =>
+                              Icons.savings_outlined,
+                            _ExpenseFeedKind.debtPayment => Icons.credit_card,
+                            _ExpenseFeedKind.transferSent => Icons.swap_horiz,
+                            _ExpenseFeedKind.expense =>
+                              Icons.shopping_bag_outlined,
+                          };
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              border: Border.all(color: AppColors.border),
+                              borderRadius: BorderRadius.circular(14),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.05),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ],
+                            ),
+                            child: ListTile(
+                              minVerticalPadding: 6,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 4,
+                              ),
+                              leading: CircleAvatar(
+                                radius: 22,
+                                backgroundColor: AppColors.dangerSoft,
+                                child: Icon(
+                                  icon,
+                                  color: AppColors.danger,
+                                  size: 20,
+                                ),
+                              ),
+                              title: Text(
+                                item.title,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              subtitle: Text(
+                                '${formatDate(item.date)} · ${formatTimeUtcPlus7(item.createdAt)}',
+                              ),
+                              trailing: Text(
+                                '-${formatVnd(item.amount)}',
+                                style: const TextStyle(
+                                  color: AppColors.danger,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+
+                        final expense = item.editableExpense!;
+                        final category = _categoryById[expense.categoryId];
+                        final iconKey =
+                            (category?.icon.trim().isNotEmpty ?? false)
+                            ? category!.icon
+                            : ((expense.categoryIcon?.trim().isNotEmpty ??
+                                      false)
+                                  ? expense.categoryIcon!
+                                  : 'shopping_bag');
                         return Container(
+                          key: ValueKey(expense.id),
                           margin: const EdgeInsets.only(bottom: 8),
                           decoration: BoxDecoration(
                             color: Colors.white,
@@ -969,11 +1129,12 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                               radius: 22,
                               backgroundColor: AppColors.dangerSoft,
                               child: Icon(
-                                icon,
+                                iconFromKey(iconKey),
                                 color: AppColors.danger,
                                 size: 20,
                               ),
                             ),
+                            onLongPress: () => _showItemActions(expense),
                             title: Text(
                               item.title,
                               style: const TextStyle(
@@ -994,72 +1155,27 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                             ),
                           ),
                         );
-                      }
-
-                      final expense = item.editableExpense!;
-                      final category = _categoryById[expense.categoryId];
-                      final iconKey =
-                          (category?.icon.trim().isNotEmpty ?? false)
-                          ? category!.icon
-                          : ((expense.categoryIcon?.trim().isNotEmpty ?? false)
-                                ? expense.categoryIcon!
-                                : 'shopping_bag');
-                      return Container(
-                        key: ValueKey(expense.id),
-                        margin: const EdgeInsets.only(bottom: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          border: Border.all(color: AppColors.border),
-                          borderRadius: BorderRadius.circular(14),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.05),
-                              blurRadius: 8,
-                              offset: const Offset(0, 3),
-                            ),
-                          ],
-                        ),
-                        child: ListTile(
-                          minVerticalPadding: 6,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 4,
-                          ),
-                          leading: CircleAvatar(
-                            radius: 22,
-                            backgroundColor: AppColors.dangerSoft,
-                            child: Icon(
-                              iconFromKey(iconKey),
-                              color: AppColors.danger,
-                              size: 20,
-                            ),
-                          ),
-                          onLongPress: () => _showItemActions(expense),
-                          title: Text(
-                            item.title,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          subtitle: Text(
-                            '${formatDate(item.date)} · ${formatTimeUtcPlus7(item.createdAt)}',
-                          ),
-                          trailing: Text(
-                            '-${formatVnd(item.amount)}',
-                            style: const TextStyle(
-                              color: AppColors.danger,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ),
-                      );
-                    }),
+                      }),
+                    ],
                   ],
+                  if (_isLoadingMore)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (!_hasMore)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Center(
+                        child: Text(
+                          'Đã tải hết trang.',
+                          style: TextStyle(color: Colors.black54),
+                        ),
+                      ),
+                    ),
                 ],
-              ],
-            ),
+              ),
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
           if (widget.viewerUserId != widget.currentUserId) {

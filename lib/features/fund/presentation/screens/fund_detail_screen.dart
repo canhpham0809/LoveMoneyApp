@@ -6,6 +6,7 @@ import 'package:flutter_app_demo/core/theme/app_colors.dart';
 
 import 'package:flutter_app_demo/core/utils/amount_input.dart';
 import 'package:flutter_app_demo/core/widgets/amount_suggestion_chips.dart';
+import 'package:flutter_app_demo/core/widgets/busy_overlay.dart';
 import 'package:flutter_app_demo/core/utils/formatters.dart';
 import 'package:flutter_app_demo/features/fund/data/models/fund_contribution_model.dart';
 import 'package:flutter_app_demo/features/fund/data/models/fund_model.dart';
@@ -34,6 +35,20 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
   List<FundContributionModel> _contributions = [];
   Map<String, String> _memberNameById = {};
   bool _isLoading = true;
+  bool _isMutating = false;
+
+  Future<T> _runMutation<T>(Future<T> Function() action) async {
+    if (mounted) {
+      setState(() => _isMutating = true);
+    }
+    try {
+      return await action();
+    } finally {
+      if (mounted) {
+        setState(() => _isMutating = false);
+      }
+    }
+  }
 
   String _normalizeUserId(String userId) => userId.trim().toLowerCase();
 
@@ -119,6 +134,7 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
     final noteCtrl = TextEditingController();
     DateTime selectedDate = existing?.date ?? DateTime.now();
     var isClosingDialog = false;
+    var isSubmitting = false;
     if (existing != null) {
       amountCtrl.text = formatAmountInput(existing.amount.toStringAsFixed(0));
       noteCtrl.text = existing.note ?? '';
@@ -204,7 +220,7 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                           Expanded(
                             child: TextButton(
                               onPressed: () {
-                                if (isClosingDialog) return;
+                                if (isClosingDialog || isSubmitting) return;
                                 isClosingDialog = true;
                                 WidgetsBinding.instance.addPostFrameCallback((
                                   _,
@@ -220,7 +236,7 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                           Expanded(
                             child: FilledButton(
                               onPressed: () async {
-                                if (isClosingDialog) return;
+                                if (isClosingDialog || isSubmitting) return;
                                 final amount = parseAmountInput(
                                   amountCtrl.text.trim(),
                                 );
@@ -232,31 +248,44 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                                   );
                                   return;
                                 }
-                                if (existing == null) {
-                                  final uid = Supabase
-                                      .instance
-                                      .client
-                                      .auth
-                                      .currentUser!
-                                      .id;
-                                  if (isWithdrawalTx) {
-                                    await _fundService.createWithdrawal(
-                                      coupleId: widget.coupleId,
-                                      userId: uid,
-                                      fundId: widget.fundId,
-                                      walletId: walletId,
-                                      amount: amount,
-                                      note: noteCtrl.text.trim().isEmpty
-                                          ? null
-                                          : noteCtrl.text.trim(),
-                                      date: selectedDate,
-                                    );
+                                setDialogState(() => isSubmitting = true);
+                                try {
+                                  if (existing == null) {
+                                    final uid = Supabase
+                                        .instance
+                                        .client
+                                        .auth
+                                        .currentUser!
+                                        .id;
+                                    if (isWithdrawalTx) {
+                                      await _fundService.createWithdrawal(
+                                        coupleId: widget.coupleId,
+                                        userId: uid,
+                                        fundId: widget.fundId,
+                                        walletId: walletId,
+                                        amount: amount,
+                                        note: noteCtrl.text.trim().isEmpty
+                                            ? null
+                                            : noteCtrl.text.trim(),
+                                        date: selectedDate,
+                                      );
+                                    } else {
+                                      await _fundService.createContribution(
+                                        coupleId: widget.coupleId,
+                                        userId: uid,
+                                        fundId: widget.fundId,
+                                        walletId: walletId,
+                                        amount: amount,
+                                        note: noteCtrl.text.trim().isEmpty
+                                            ? null
+                                            : noteCtrl.text.trim(),
+                                        date: selectedDate,
+                                      );
+                                    }
                                   } else {
-                                    await _fundService.createContribution(
-                                      coupleId: widget.coupleId,
-                                      userId: uid,
+                                    await _fundService.updateContribution(
+                                      contributionId: existing.id,
                                       fundId: widget.fundId,
-                                      walletId: walletId,
                                       amount: amount,
                                       note: noteCtrl.text.trim().isEmpty
                                           ? null
@@ -264,16 +293,10 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                                       date: selectedDate,
                                     );
                                   }
-                                } else {
-                                  await _fundService.updateContribution(
-                                    contributionId: existing.id,
-                                    fundId: widget.fundId,
-                                    amount: amount,
-                                    note: noteCtrl.text.trim().isEmpty
-                                        ? null
-                                        : noteCtrl.text.trim(),
-                                    date: selectedDate,
-                                  );
+                                } finally {
+                                  if (dialogContext.mounted) {
+                                    setDialogState(() => isSubmitting = false);
+                                  }
                                 }
                                 isClosingDialog = true;
                                 WidgetsBinding.instance.addPostFrameCallback((
@@ -283,7 +306,15 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                                   Navigator.of(dialogContext).maybePop(true);
                                 });
                               },
-                              child: const Text('Lưu'),
+                              child: isSubmitting
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Text('Lưu'),
                             ),
                           ),
                         ],
@@ -367,11 +398,13 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
       );
       if (confirmed != true) return;
 
-      await _fundService.deleteContribution(
-        contributionId: item.id,
-        fundId: widget.fundId,
-      );
-      await _load(showLoader: false);
+      await _runMutation(() async {
+        await _fundService.deleteContribution(
+          contributionId: item.id,
+          fundId: widget.fundId,
+        );
+        await _load(showLoader: false);
+      });
     }
   }
 
@@ -380,258 +413,267 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
     final fund = _fund;
     return Scaffold(
       appBar: AppBar(title: const Text('Chi tiết Quỹ')),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : fund == null
-          ? const Center(child: Text('Không tìm thấy quỹ.'))
-          : Column(
-              children: [
-                Builder(
-                  builder: (context) {
-                    final target = fund.targetAmount;
-                    final hasTarget = target != null && target > 0;
-                    final progress = hasTarget
-                        ? (fund.currentAmount / target).clamp(0.0, 1.0)
-                        : 1.0;
-                    final remaining = hasTarget
-                        ? (target - fund.currentAmount).clamp(0.0, target)
-                        : 0.0;
+      body: BusyOverlay(
+        isVisible: _isMutating,
+        message: 'Đang xử lý...',
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : fund == null
+            ? const Center(child: Text('Không tìm thấy quỹ.'))
+            : Column(
+                children: [
+                  Builder(
+                    builder: (context) {
+                      final target = fund.targetAmount;
+                      final hasTarget = target != null && target > 0;
+                      final progress = hasTarget
+                          ? (fund.currentAmount / target).clamp(0.0, 1.0)
+                          : 1.0;
+                      final remaining = hasTarget
+                          ? (target - fund.currentAmount).clamp(0.0, target)
+                          : 0.0;
 
-                    return Container(
-                      margin: const EdgeInsets.fromLTRB(12, 12, 12, 6),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        border: Border.all(color: AppColors.border),
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.05),
-                            blurRadius: 8,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  height: 50,
-                                  width: 50,
-                                  decoration: BoxDecoration(
-                                    color: AppColors.tealSoft,
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
-                                  child: const Icon(
-                                    Icons.savings_outlined,
-                                    color: AppColors.tealDeep,
-                                    size: 22,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    fund.name,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 16,
+                      return Container(
+                        margin: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          border: Border.all(color: AppColors.border),
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.05),
+                              blurRadius: 8,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    height: 50,
+                                    width: 50,
+                                    decoration: BoxDecoration(
+                                      color: AppColors.tealSoft,
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                    child: const Icon(
+                                      Icons.savings_outlined,
+                                      color: AppColors.tealDeep,
+                                      size: 22,
                                     ),
                                   ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      fund.name,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    formatVnd(fund.currentAmount),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 14,
+                                      color: AppColors.tealDeep,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(999),
+                                child: LinearProgressIndicator(
+                                  value: progress,
+                                  minHeight: 8,
+                                  backgroundColor: AppColors.tealSoft,
+                                  valueColor:
+                                      const AlwaysStoppedAnimation<Color>(
+                                        AppColors.tealDeep,
+                                      ),
                                 ),
-                                const SizedBox(width: 6),
+                              ),
+                              const SizedBox(height: 5),
+                              Text(
+                                'Tiến độ: ${(progress * 100).toStringAsFixed(0)}%',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.tealDeep,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              if (hasTarget)
                                 Text(
-                                  formatVnd(fund.currentAmount),
+                                  'Mục tiêu: ${formatVnd(target)}',
                                   style: const TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 14,
-                                    color: AppColors.tealDeep,
+                                    fontSize: 13,
+                                    color: Colors.black87,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(999),
-                              child: LinearProgressIndicator(
-                                value: progress,
-                                minHeight: 8,
-                                backgroundColor: AppColors.tealSoft,
-                                valueColor: const AlwaysStoppedAnimation<Color>(
-                                  AppColors.tealDeep,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 5),
-                            Text(
-                              'Tiến độ: ${(progress * 100).toStringAsFixed(0)}%',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: AppColors.tealDeep,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            if (hasTarget)
+                              if (hasTarget) const SizedBox(height: 2),
                               Text(
-                                'Mục tiêu: ${formatVnd(target)}',
+                                hasTarget
+                                    ? 'Còn lại: ${formatVnd(remaining)}'
+                                    : 'Còn lại: Không có mục tiêu',
                                 style: const TextStyle(
                                   fontSize: 13,
                                   color: Colors.black87,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
-                            if (hasTarget) const SizedBox(height: 2),
-                            Text(
-                              hasTarget
-                                  ? 'Còn lại: ${formatVnd(remaining)}'
-                                  : 'Còn lại: Không có mục tiêu',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: Colors.black87,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              fund.deadline != null
-                                  ? 'Hạn: ${formatDate(fund.deadline!)}'
-                                  : 'Hạn: Không có',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.black54,
-                              ),
-                            ),
-                            if (fund.creatorUserId != null) ...[
                               const SizedBox(height: 2),
                               Text(
-                                'Người tạo: ${_resolveMemberName(fund.creatorUserId!)}',
+                                fund.deadline != null
+                                    ? 'Hạn: ${formatDate(fund.deadline!)}'
+                                    : 'Hạn: Không có',
                                 style: const TextStyle(
                                   fontSize: 12,
                                   color: Colors.black54,
                                 ),
                               ),
+                              if (fund.creatorUserId != null) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Người tạo: ${_resolveMemberName(fund.creatorUserId!)}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.black54,
+                                  ),
+                                ),
+                              ],
                             ],
-                          ],
+                          ),
                         ),
+                      );
+                    },
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 12),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Lịch sử giao dịch góp/rút quỹ',
+                        style: TextStyle(fontWeight: FontWeight.bold),
                       ),
-                    );
-                  },
-                ),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 12),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Lịch sử giao dịch góp/rút quỹ',
-                      style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Expanded(
-                  child: _contributions.isEmpty
-                      ? const Center(child: Text('Chưa có đợt góp nào.'))
-                      : ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(12, 4, 12, 90),
-                          itemCount: _contributions.length,
-                          itemBuilder: (context, index) {
-                            final c = _contributions[index];
-                            final isWithdrawal =
-                                c.contributionType == 'withdrawal';
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                border: Border.all(color: AppColors.border),
-                                borderRadius: BorderRadius.circular(14),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.05),
-                                    blurRadius: 8,
-                                    offset: const Offset(0, 3),
-                                  ),
-                                ],
-                              ),
-                              child: ListTile(
-                                minVerticalPadding: 6,
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 4,
-                                ),
-                                leading: CircleAvatar(
-                                  radius: 22,
-                                  backgroundColor: isWithdrawal
-                                      ? AppColors.successSoft
-                                      : Colors.orange.withValues(alpha: 0.12),
-                                  child: Icon(
-                                    isWithdrawal
-                                        ? Icons.south_west_rounded
-                                        : Icons.north_east_rounded,
-                                    color: isWithdrawal
-                                        ? AppColors.success
-                                        : Colors.orange,
-                                    size: 20,
-                                  ),
-                                ),
-                                onLongPress: () => _showContributionActions(c),
-                                title: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      isWithdrawal ? 'Rút quỹ' : 'Góp quỹ',
-                                      style: const TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w600,
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: _contributions.isEmpty
+                        ? const Center(child: Text('Chưa có đợt góp nào.'))
+                        : ListView.builder(
+                            padding: const EdgeInsets.fromLTRB(12, 4, 12, 90),
+                            itemCount: _contributions.length,
+                            itemBuilder: (context, index) {
+                              final c = _contributions[index];
+                              final isWithdrawal =
+                                  c.contributionType == 'withdrawal';
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  border: Border.all(color: AppColors.border),
+                                  borderRadius: BorderRadius.circular(14),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.05,
                                       ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      '${formatDate(c.date)} ${formatTimeUtcPlus7(c.updatedAt)}',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.black54,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      'Người tạo: ${_resolveMemberName(c.updatedBy ?? c.userId)}',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.black54,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      'Ghi chú: ${c.note?.trim().isNotEmpty == true ? c.note!.trim() : 'Không có'}',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.black54,
-                                      ),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 3),
                                     ),
                                   ],
                                 ),
-                                trailing: Text(
-                                  isWithdrawal
-                                      ? '-${formatVnd(c.amount)}'
-                                      : '+${formatVnd(c.amount)}',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                    color: isWithdrawal
-                                        ? Colors.orange
-                                        : AppColors.success,
+                                child: ListTile(
+                                  minVerticalPadding: 6,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 4,
+                                  ),
+                                  leading: CircleAvatar(
+                                    radius: 22,
+                                    backgroundColor: isWithdrawal
+                                        ? AppColors.successSoft
+                                        : Colors.orange.withValues(alpha: 0.12),
+                                    child: Icon(
+                                      isWithdrawal
+                                          ? Icons.south_west_rounded
+                                          : Icons.north_east_rounded,
+                                      color: isWithdrawal
+                                          ? AppColors.success
+                                          : Colors.orange,
+                                      size: 20,
+                                    ),
+                                  ),
+                                  onLongPress: () =>
+                                      _showContributionActions(c),
+                                  title: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        isWithdrawal ? 'Rút quỹ' : 'Góp quỹ',
+                                        style: const TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        '${formatDate(c.date)} ${formatTimeUtcPlus7(c.updatedAt)}',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.black54,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'Người tạo: ${_resolveMemberName(c.updatedBy ?? c.userId)}',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.black54,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'Ghi chú: ${c.note?.trim().isNotEmpty == true ? c.note!.trim() : 'Không có'}',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.black54,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  trailing: Text(
+                                    isWithdrawal
+                                        ? '-${formatVnd(c.amount)}'
+                                        : '+${formatVnd(c.amount)}',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: isWithdrawal
+                                          ? Colors.orange
+                                          : AppColors.success,
+                                    ),
                                   ),
                                 ),
-                              ),
-                            );
-                          },
-                        ),
-                ),
-              ],
-            ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+      ),
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.end,

@@ -6,6 +6,7 @@ import 'package:flutter_app_demo/core/utils/amount_input.dart';
 import 'package:flutter_app_demo/core/theme/app_colors.dart';
 import 'package:flutter_app_demo/core/utils/category_visuals.dart';
 import 'package:flutter_app_demo/core/widgets/amount_suggestion_chips.dart';
+import 'package:flutter_app_demo/core/widgets/busy_overlay.dart';
 import 'package:flutter_app_demo/core/utils/formatters.dart';
 import 'package:flutter_app_demo/features/income/data/models/income_model.dart';
 import 'package:flutter_app_demo/features/income/data/models/income_source_model.dart';
@@ -92,14 +93,35 @@ class _IncomeExternalLoadResult {
 }
 
 class _IncomeListScreenState extends State<IncomeListScreen> {
+  static const int _pageSize = 50;
+
   final _service = IncomeService();
   final _walletService = WalletService();
+  final ScrollController _scrollController = ScrollController();
   List<IncomeModel> _items = [];
   List<_IncomeFeedItem> _externalItems = [];
   Map<String, IncomeSourceModel> _sourceById = {};
+  int _currentOffset = 0;
+  bool _hasMore = true;
+  bool _isLoadingMore = false;
   bool _isLoading = true;
   bool _isDeleting = false;
+  bool _isMutating = false;
+  bool _isRefreshingContent = false;
   String? _error;
+
+  Future<T> _runMutation<T>(Future<T> Function() action) async {
+    if (mounted) {
+      setState(() => _isMutating = true);
+    }
+    try {
+      return await action();
+    } finally {
+      if (mounted) {
+        setState(() => _isMutating = false);
+      }
+    }
+  }
 
   int _compareBySelectedDateDesc(_IncomeFeedItem a, _IncomeFeedItem b) {
     final dateCompare = b.date.compareTo(a.date);
@@ -136,6 +158,7 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     widget.refreshSignal?.addListener(_onExternalRefresh);
     _load();
   }
@@ -154,29 +177,47 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
     widget.refreshSignal?.removeListener(_onExternalRefresh);
     super.dispose();
   }
 
-  void _onExternalRefresh() {
-    if (!mounted) return;
-    _load(showLoader: false);
+  void _onScroll() {
+    if (!_scrollController.hasClients || _isLoadingMore || !_hasMore) return;
+    final position = _scrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 220) {
+      _loadMore();
+    }
   }
 
-  Future<void> _load({bool showLoader = true}) async {
+  void _onExternalRefresh() {
+    if (!mounted) return;
+    _load(showLoader: false, showRefreshOverlay: false);
+  }
+
+  Future<void> _load({
+    bool showLoader = true,
+    bool showRefreshOverlay = true,
+  }) async {
     if (showLoader) {
       setState(() {
         _isLoading = true;
         _error = null;
       });
-    } else if (mounted) {
-      setState(() => _error = null);
+    } else if (showRefreshOverlay && mounted) {
+      setState(() {
+        _error = null;
+        _isRefreshingContent = true;
+      });
     }
     try {
       final results = await Future.wait<dynamic>([
         _service.getIncomes(
           widget.coupleId,
           createdByUserId: widget.viewerUserId,
+          limit: _pageSize,
+          offset: 0,
         ),
         _service.getIncomeSources(widget.coupleId),
         _loadExternalIncomeItems(),
@@ -203,12 +244,64 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
           _items = items;
           _externalItems = external.items;
           _sourceById = {for (final s in sources) s.id: s};
+          _currentOffset = items.length;
+          _hasMore = items.length == _pageSize;
         });
       }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
-      if (showLoader && mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() {
+          if (showLoader) {
+            _isLoading = false;
+          } else {
+            _isRefreshingContent = false;
+          }
+        });
+      }
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_isLoading || _isLoadingMore || !_hasMore) return;
+
+    setState(() => _isLoadingMore = true);
+    try {
+      var nextItems = await _service.getIncomes(
+        widget.coupleId,
+        createdByUserId: widget.viewerUserId,
+        limit: _pageSize,
+        offset: _currentOffset,
+      );
+
+      nextItems = nextItems.where((income) => !income.isFromTransfer).toList();
+      if (!mounted) return;
+
+      if (nextItems.isEmpty) {
+        setState(() {
+          _hasMore = false;
+          _isLoadingMore = false;
+        });
+        return;
+      }
+
+      nextItems.sort((a, b) {
+        final dateCompare = b.date.compareTo(a.date);
+        if (dateCompare != 0) return dateCompare;
+        return b.createdAt.compareTo(a.createdAt);
+      });
+
+      setState(() {
+        _items = [..._items, ...nextItems];
+        _currentOffset = _items.length;
+        _hasMore = nextItems.length == _pageSize;
+        _isLoadingMore = false;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() => _isLoadingMore = false);
+      }
     }
   }
 
@@ -248,11 +341,7 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
       fundsQuery.order('created_at', ascending: false),
       debtQuery.order('created_at', ascending: false),
       transferQuery.order('created_at', ascending: false),
-      db
-          .from('funds')
-          .select('id, name')
-          .eq('couple_id', widget.coupleId)
-          .eq('is_deleted', false),
+      db.from('funds').select('id, name').eq('couple_id', widget.coupleId),
       db
           .from('debts')
           .select('id, name')
@@ -307,12 +396,16 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
       final fundName =
           (fundId != null ? fundNameById[fundId] : null) ?? 'Quỹ tiết kiệm';
       final note = (row['note'] as String?)?.trim();
+      final hasCustomNote =
+          note != null &&
+          note.isNotEmpty &&
+          note.toLowerCase() != fundName.toLowerCase();
       items.add(
         _IncomeFeedItem(
           id: 'fund-${row['id']}',
           kind: _IncomeFeedKind.fundWithdrawal,
           amount: (row['amount'] as num).toDouble(),
-          title: (note != null && note.isNotEmpty) ? note : fundName,
+          title: hasCustomNote ? note : 'Rút quỹ: $fundName',
           date: DateTime.parse(row['date'] as String),
           createdAt: DateTime.parse(row['created_at'] as String),
         ),
@@ -333,7 +426,9 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
           id: 'debt-${row['id']}',
           kind: _IncomeFeedKind.debtCollection,
           amount: (row['amount'] as num).toDouble(),
-          title: (note != null && note.isNotEmpty) ? note : debtName,
+          title: (note != null && note.isNotEmpty)
+              ? note
+              : 'Thu hồi nợ: $debtName',
           date: DateTime.parse(row['date'] as String),
           createdAt: DateTime.parse(row['created_at'] as String),
         ),
@@ -455,14 +550,16 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
     }
 
     try {
-      final created = await _service.createIncome(
-        coupleId: widget.coupleId,
-        userId: uid,
-        walletId: walletId,
-        incomeSourceId: payload.incomeSourceId,
-        amount: payload.amount,
-        description: payload.description,
-        date: payload.date,
+      final created = await _runMutation(
+        () => _service.createIncome(
+          coupleId: widget.coupleId,
+          userId: uid,
+          walletId: walletId,
+          incomeSourceId: payload.incomeSourceId,
+          amount: payload.amount,
+          description: payload.description,
+          date: payload.date,
+        ),
       );
       if (!mounted) return;
       setState(() {
@@ -763,16 +860,17 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
     }
 
     try {
-      await _service.updateIncome(
-        incomeId: existing.id,
-        walletId: walletId,
-        incomeSourceId: payload.incomeSourceId,
-        amount: payload.amount,
-        description: payload.description,
-        date: payload.date,
-      );
-      await _load(showLoader: false);
-      widget.onDataChanged?.call();
+      await _runMutation(() async {
+        await _service.updateIncome(
+          incomeId: existing.id,
+          walletId: walletId,
+          incomeSourceId: payload.incomeSourceId,
+          amount: payload.amount,
+          description: payload.description,
+          date: payload.date,
+        );
+        widget.onDataChanged?.call();
+      });
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -876,85 +974,60 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
           IconButton(onPressed: () => _load(), icon: const Icon(Icons.refresh)),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+      body: BusyOverlay(
+        isVisible: _isMutating || _isDeleting || _isRefreshingContent,
+        message: _isDeleting
+            ? 'Đang xóa...'
+            : (_isRefreshingContent
+                  ? 'Đang tải dữ liệu...'
+                  : 'Đang lưu dữ liệu...'),
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+            ? Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(_error!, textAlign: TextAlign.center),
+                    const SizedBox(height: 12),
+                    FilledButton(
+                      onPressed: () => _load(),
+                      child: const Text('Thử lại'),
+                    ),
+                  ],
+                ),
+              )
+            : mergedItems.isEmpty
+            ? Center(
+                child: Text('Chưa có thu nhập nào của ${widget.viewerLabel}.'),
+              )
+            : ListView(
+                controller: _scrollController,
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 90),
                 children: [
-                  Text(_error!, textAlign: TextAlign.center),
-                  const SizedBox(height: 12),
-                  FilledButton(
-                    onPressed: () => _load(),
-                    child: const Text('Thử lại'),
-                  ),
-                ],
-              ),
-            )
-          : mergedItems.isEmpty
-          ? Center(
-              child: Text('Chưa có thu nhập nào của ${widget.viewerLabel}.'),
-            )
-          : ListView(
-              padding: const EdgeInsets.fromLTRB(14, 10, 14, 90),
-              children: [
-                for (final entry in grouped.entries) ...[
-                  Builder(
-                    builder: (context) {
-                      final monthTotal = entry.value.values
-                          .expand((rows) => rows)
-                          .fold<double>(0, (sum, row) => sum + row.amount);
-                      return Padding(
-                        padding: const EdgeInsets.fromLTRB(0, 14, 0, 6),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                'Tháng ${entry.key.split('-')[1]}/${entry.key.split('-')[0]}',
-                                style: Theme.of(context).textTheme.titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                            Text(
-                              formatVnd(monthTotal),
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                                color: Colors.black87,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                  for (final dayEntry in entry.value.entries) ...[
+                  for (final entry in grouped.entries) ...[
                     Builder(
                       builder: (context) {
-                        final dayItems = dayEntry.value;
-                        final dayDate = DateTime.parse(dayEntry.key);
-                        final dayTotal = dayItems.fold<double>(
-                          0,
-                          (sum, row) => sum + row.amount,
-                        );
+                        final monthTotal = entry.value.values
+                            .expand((rows) => rows)
+                            .fold<double>(0, (sum, row) => sum + row.amount);
                         return Padding(
-                          padding: const EdgeInsets.fromLTRB(0, 4, 0, 6),
+                          padding: const EdgeInsets.fromLTRB(0, 14, 0, 6),
                           child: Row(
                             children: [
                               Expanded(
                                 child: Text(
-                                  formatDate(dayDate),
-                                  style: Theme.of(context).textTheme.bodyMedium
-                                      ?.copyWith(fontWeight: FontWeight.w600),
+                                  'Tháng ${entry.key.split('-')[1]}/${entry.key.split('-')[0]}',
+                                  style: Theme.of(context).textTheme.titleMedium
+                                      ?.copyWith(fontWeight: FontWeight.bold),
                                 ),
                               ),
                               Text(
-                                formatVnd(dayTotal),
+                                formatVnd(monthTotal),
                                 style: const TextStyle(
-                                  color: Colors.black54,
                                   fontWeight: FontWeight.w600,
-                                  fontSize: 13,
+                                  color: Colors.black87,
+                                  fontSize: 14,
                                 ),
                               ),
                             ],
@@ -962,18 +1035,112 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                         );
                       },
                     ),
-                    ...dayEntry.value.map((item) {
-                      if (item.kind != _IncomeFeedKind.income ||
-                          item.editableIncome == null) {
-                        final icon = switch (item.kind) {
-                          _IncomeFeedKind.fundWithdrawal =>
-                            Icons.south_west_rounded,
-                          _IncomeFeedKind.debtCollection =>
-                            Icons.account_balance_wallet_outlined,
-                          _IncomeFeedKind.transferReceived => Icons.swap_horiz,
-                          _IncomeFeedKind.income => Icons.attach_money,
-                        };
+                    for (final dayEntry in entry.value.entries) ...[
+                      Builder(
+                        builder: (context) {
+                          final dayItems = dayEntry.value;
+                          final dayDate = DateTime.parse(dayEntry.key);
+                          final dayTotal = dayItems.fold<double>(
+                            0,
+                            (sum, row) => sum + row.amount,
+                          );
+                          return Padding(
+                            padding: const EdgeInsets.fromLTRB(0, 4, 0, 6),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    formatDate(dayDate),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                                Text(
+                                  formatVnd(dayTotal),
+                                  style: const TextStyle(
+                                    color: Colors.black54,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                      ...dayEntry.value.map((item) {
+                        if (item.kind != _IncomeFeedKind.income ||
+                            item.editableIncome == null) {
+                          final icon = switch (item.kind) {
+                            _IncomeFeedKind.fundWithdrawal =>
+                              Icons.south_west_rounded,
+                            _IncomeFeedKind.debtCollection =>
+                              Icons.account_balance_wallet_outlined,
+                            _IncomeFeedKind.transferReceived =>
+                              Icons.swap_horiz,
+                            _IncomeFeedKind.income => Icons.attach_money,
+                          };
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              border: Border.all(color: AppColors.border),
+                              borderRadius: BorderRadius.circular(14),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.05),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ],
+                            ),
+                            child: ListTile(
+                              minVerticalPadding: 6,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 4,
+                              ),
+                              leading: CircleAvatar(
+                                radius: 22,
+                                backgroundColor: AppColors.successSoft,
+                                child: Icon(
+                                  icon,
+                                  color: AppColors.success,
+                                  size: 20,
+                                ),
+                              ),
+                              title: Text(
+                                item.title,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              subtitle: Text(
+                                '${formatDate(item.date)} · ${formatTimeUtcPlus7(item.createdAt)}',
+                              ),
+                              trailing: Text(
+                                '+${formatVnd(item.amount)}',
+                                style: const TextStyle(
+                                  color: AppColors.success,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+
+                        final income = item.editableIncome!;
+                        final source = _sourceById[income.incomeSourceId ?? ''];
+                        final iconKey =
+                            (source?.icon.trim().isNotEmpty ?? false)
+                            ? source!.icon
+                            : 'payments';
                         return Container(
+                          key: ValueKey(income.id),
                           margin: const EdgeInsets.only(bottom: 8),
                           decoration: BoxDecoration(
                             color: Colors.white,
@@ -997,11 +1164,12 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                               radius: 22,
                               backgroundColor: AppColors.successSoft,
                               child: Icon(
-                                icon,
+                                iconFromKey(iconKey),
                                 color: AppColors.success,
                                 size: 20,
                               ),
                             ),
+                            onLongPress: () => _showItemActions(income),
                             title: Text(
                               item.title,
                               style: const TextStyle(
@@ -1022,69 +1190,27 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                             ),
                           ),
                         );
-                      }
-
-                      final income = item.editableIncome!;
-                      final source = _sourceById[income.incomeSourceId ?? ''];
-                      final iconKey = (source?.icon.trim().isNotEmpty ?? false)
-                          ? source!.icon
-                          : 'payments';
-                      return Container(
-                        key: ValueKey(income.id),
-                        margin: const EdgeInsets.only(bottom: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          border: Border.all(color: AppColors.border),
-                          borderRadius: BorderRadius.circular(14),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.05),
-                              blurRadius: 8,
-                              offset: const Offset(0, 3),
-                            ),
-                          ],
-                        ),
-                        child: ListTile(
-                          minVerticalPadding: 6,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 4,
-                          ),
-                          leading: CircleAvatar(
-                            radius: 22,
-                            backgroundColor: AppColors.successSoft,
-                            child: Icon(
-                              iconFromKey(iconKey),
-                              color: AppColors.success,
-                              size: 20,
-                            ),
-                          ),
-                          onLongPress: () => _showItemActions(income),
-                          title: Text(
-                            item.title,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          subtitle: Text(
-                            '${formatDate(item.date)} · ${formatTimeUtcPlus7(item.createdAt)}',
-                          ),
-                          trailing: Text(
-                            '+${formatVnd(item.amount)}',
-                            style: const TextStyle(
-                              color: AppColors.success,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ),
-                      );
-                    }),
+                      }),
+                    ],
                   ],
+                  if (_isLoadingMore)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (!_hasMore)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Center(
+                        child: Text(
+                          'Đã tải hết trang.',
+                          style: TextStyle(color: Colors.black54),
+                        ),
+                      ),
+                    ),
                 ],
-              ],
-            ),
+              ),
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
           if (widget.viewerUserId != widget.currentUserId) {

@@ -7,6 +7,7 @@ import '../../../../core/models/monthly_summary.dart';
 import '../../../../core/models/transaction.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/formatters.dart';
+import '../../../../core/widgets/busy_overlay.dart';
 import '../../../income/data/services/income_service.dart';
 import 'monthly_operations_dashboard_screen.dart';
 import '../../../home/widgets/monthly_card.dart';
@@ -50,6 +51,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   int _selectedMonthIndex = 0;
   List<Transaction> _recentTransactions = [];
   bool _isLoading = true;
+  bool _isRefreshingContent = false;
+  String _refreshMessage = 'Đang tải dữ liệu...';
   String? _error;
 
   @override
@@ -67,7 +70,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       widget.refreshSignal?.addListener(_onExternalRefresh);
     }
     if (oldWidget.viewerUserId != widget.viewerUserId) {
-      _load(showLoader: false);
+      _load(showLoader: false, overlayMessage: 'Đang chuyển view...');
     }
   }
 
@@ -80,10 +83,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   void _onExternalRefresh() {
     if (!mounted) return;
-    _load(showLoader: false);
+    _load(showLoader: false, overlayMessage: 'Đang tải dữ liệu...');
   }
 
-  Future<void> _load({required bool showLoader}) async {
+  Future<void> _load({required bool showLoader, String? overlayMessage}) async {
     if (showLoader) {
       setState(() {
         _isLoading = true;
@@ -91,7 +94,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       });
     } else {
       if (mounted) {
-        setState(() => _error = null);
+        setState(() {
+          _error = null;
+          _isRefreshingContent = true;
+          _refreshMessage = overlayMessage ?? 'Đang tải dữ liệu...';
+        });
       }
     }
     try {
@@ -140,13 +147,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
-      if (showLoader && mounted) {
-        setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() {
+          if (showLoader) {
+            _isLoading = false;
+          } else {
+            _isRefreshingContent = false;
+          }
+        });
       }
     }
   }
 
-  Future<void> _loadRecentTransactions() async {
+  Future<void> _loadRecentTransactions({String? overlayMessage}) async {
     if (_monthlySummaries.isEmpty) {
       if (!mounted) return;
       setState(() {
@@ -154,24 +167,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
       });
       return;
     }
+    if (mounted) {
+      setState(() {
+        _isRefreshingContent = true;
+        _refreshMessage = overlayMessage ?? 'Đang tải giao dịch...';
+      });
+    }
     final summary = _monthlySummaries[_selectedMonthIndex];
-    final txs = await _transactionService.fetchRecentTransactions(
-      coupleId: widget.coupleId,
-      year: summary.year,
-      month: summary.month,
-      viewerUserId: widget.viewerUserId,
-    );
-    if (!mounted) return;
-    setState(() {
-      _recentTransactions = txs;
-    });
+    try {
+      final txs = await _transactionService.fetchRecentTransactions(
+        coupleId: widget.coupleId,
+        year: summary.year,
+        month: summary.month,
+        viewerUserId: widget.viewerUserId,
+      );
+      if (!mounted) return;
+      setState(() {
+        _recentTransactions = txs;
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _isRefreshingContent = false);
+      }
+    }
   }
 
   void _onMonthChanged(int index) async {
     setState(() {
       _selectedMonthIndex = index;
     });
-    await _loadRecentTransactions();
+    await _loadRecentTransactions(
+      overlayMessage: 'Đang tải giao dịch tháng...',
+    );
   }
 
   Future<void> _openMonthlyDashboard(MonthlySummary summary) async {
@@ -325,14 +352,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       widget.onDataChanged?.call();
       await _load(showLoader: false);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Đã ghi nhận ${formatVnd(carryAmount)} vào Thu tháng ${nextMonthDate.month.toString().padLeft(2, '0')}/${nextMonthDate.year}.',
-          ),
-        ),
-      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -377,109 +396,117 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(_error!, textAlign: TextAlign.center),
-                  const SizedBox(height: 12),
-                  FilledButton(
-                    onPressed: () => _load(showLoader: true),
-                    child: const Text('Thử lại'),
-                  ),
-                ],
-              ),
-            )
-          : RefreshIndicator(
-              onRefresh: () => _load(showLoader: false),
-              child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  12,
-                  16,
-                  widget.onCreatePressed == null ? 16 : 96,
-                ),
+      body: BusyOverlay(
+        isVisible: _isRefreshingContent,
+        message: _refreshMessage,
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+            ? Center(
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.tealSoft.withValues(alpha: 0.45),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        'Đang xem: ${widget.viewerLabel}',
-                        style: Theme.of(context).textTheme.labelMedium
-                            ?.copyWith(
-                              color: AppColors.tealDeep,
-                              fontWeight: FontWeight.w700,
-                            ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    // Monthly swipeable summary cards
-                    if (_monthlySummaries.isNotEmpty)
-                      SizedBox(
-                        height: 172,
-                        child: PageView.builder(
-                          controller: _monthPageController,
-                          itemCount: _monthlySummaries.length,
-                          onPageChanged: _onMonthChanged,
-                          itemBuilder: (context, idx) => Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 6),
-                            child: MonthlyCard(
-                              summary: _monthlySummaries[idx],
-                              isSelected: idx == _selectedMonthIndex,
-                              onTap: () async {
-                                await _openMonthlyDashboard(
-                                  _monthlySummaries[idx],
-                                );
-                              },
-                              onCarryOverPressed: () async {
-                                await _onCarryOverPressed(
-                                  _monthlySummaries[idx],
-                                );
-                              },
-                            ),
-                          ),
-                        ),
-                      ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Text(
-                          '20 giao dịch gần nhất',
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 16,
-                              ),
-                        ),
-                        const Spacer(),
-                        Icon(
-                          Icons.tune_rounded,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    TransactionList(
-                      transactions: _recentTransactions,
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
+                    Text(_error!, textAlign: TextAlign.center),
+                    const SizedBox(height: 12),
+                    FilledButton(
+                      onPressed: () => _load(showLoader: true),
+                      child: const Text('Thử lại'),
                     ),
                   ],
                 ),
+              )
+            : RefreshIndicator(
+                onRefresh: () => _load(showLoader: false),
+                child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    12,
+                    16,
+                    widget.onCreatePressed == null ? 16 : 96,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.tealSoft.withValues(alpha: 0.45),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          'Đang xem: ${widget.viewerLabel}',
+                          style: Theme.of(context).textTheme.labelMedium
+                              ?.copyWith(
+                                color: AppColors.tealDeep,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      // Monthly swipeable summary cards
+                      if (_monthlySummaries.isNotEmpty)
+                        SizedBox(
+                          height: 172,
+                          child: PageView.builder(
+                            controller: _monthPageController,
+                            itemCount: _monthlySummaries.length,
+                            onPageChanged: _onMonthChanged,
+                            itemBuilder: (context, idx) => Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                              ),
+                              child: MonthlyCard(
+                                summary: _monthlySummaries[idx],
+                                isSelected: idx == _selectedMonthIndex,
+                                onTap: () async {
+                                  await _openMonthlyDashboard(
+                                    _monthlySummaries[idx],
+                                  );
+                                },
+                                onCarryOverPressed: () async {
+                                  await _onCarryOverPressed(
+                                    _monthlySummaries[idx],
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Text(
+                            '20 giao dịch gần nhất',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 16,
+                                ),
+                          ),
+                          const Spacer(),
+                          Icon(
+                            Icons.tune_rounded,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      TransactionList(
+                        transactions: _recentTransactions,
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ),
+      ),
       floatingActionButton: widget.onCreatePressed == null
           ? null
           : FloatingActionButton.extended(

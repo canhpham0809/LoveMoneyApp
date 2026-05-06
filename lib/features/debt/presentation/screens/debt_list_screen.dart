@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_app_demo/core/theme/app_colors.dart';
 import 'package:flutter_app_demo/core/utils/amount_input.dart';
 import 'package:flutter_app_demo/core/widgets/amount_suggestion_chips.dart';
+import 'package:flutter_app_demo/core/widgets/busy_overlay.dart';
 import 'package:flutter_app_demo/core/utils/formatters.dart';
 import 'package:flutter_app_demo/features/debt/data/models/debt_model.dart';
 import 'package:flutter_app_demo/features/debt/data/services/debt_service.dart';
@@ -56,13 +57,33 @@ class _DebtFormPayload {
 }
 
 class _DebtListScreenState extends State<DebtListScreen> {
+  static const int _pageSize = 50;
+
   final _service = DebtService();
+  final ScrollController _scrollController = ScrollController();
   List<DebtModel> _items = [];
   List<String> _manualOrderIds = [];
   Map<String, String> _memberNameById = {};
   String _selectedDebtKind = 'debt';
+  int _currentOffset = 0;
+  bool _hasMore = true;
+  bool _isLoadingMore = false;
   bool _isLoading = true;
+  bool _isMutating = false;
   String? _error;
+
+  Future<T> _runMutation<T>(Future<T> Function() action) async {
+    if (mounted) {
+      setState(() => _isMutating = true);
+    }
+    try {
+      return await action();
+    } finally {
+      if (mounted) {
+        setState(() => _isMutating = false);
+      }
+    }
+  }
 
   List<DebtModel> get _filteredItems =>
       _items.where((item) => item.debtKind == _selectedDebtKind).toList();
@@ -137,7 +158,9 @@ class _DebtListScreenState extends State<DebtListScreen> {
 
   Future<void> _persistDebtOrder(List<String> previousOrder) async {
     try {
-      await _service.updateDebtOrder(_items.map((e) => e.id).toList());
+      await _runMutation(
+        () => _service.updateDebtOrder(_items.map((e) => e.id).toList()),
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -153,6 +176,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     widget.refreshSignal?.addListener(_onExternalRefresh);
     _load();
   }
@@ -168,8 +192,18 @@ class _DebtListScreenState extends State<DebtListScreen> {
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
     widget.refreshSignal?.removeListener(_onExternalRefresh);
     super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients || _isLoadingMore || !_hasMore) return;
+    final position = _scrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 220) {
+      _loadMore();
+    }
   }
 
   void _onExternalRefresh() {
@@ -562,58 +596,60 @@ class _DebtListScreenState extends State<DebtListScreen> {
     }
 
     try {
-      if (existing == null) {
-        final created = await _service.createDebt(
-          coupleId: widget.coupleId,
-          userId: uid,
-          debtTypeId: payload.debtTypeId,
-          debtKind: payload.debtKind,
-          recordToIncome: payload.recordToIncome,
-          recordToExpense: payload.recordToExpense,
-          name: payload.name,
-          originalAmount: payload.originalAmount,
-          creditorName: payload.creditorName,
-          startDate: payload.startDate,
-          dueDate: payload.dueDate,
-          note: payload.note,
-        );
-        if (!mounted) return;
-        setState(() {
-          _items.insert(0, created);
-          _manualOrderIds.remove(created.id);
-          _manualOrderIds.insert(0, created.id);
-          _items = _applyDebtOrder(_items);
-        });
-      } else {
-        await _service.updateDebt(
-          debtId: existing.id,
-          debtTypeId: payload.debtTypeId,
-          debtKind: payload.debtKind,
-          recordToIncome: payload.recordToIncome,
-          recordToExpense: payload.recordToExpense,
-          name: payload.name,
-          originalAmount: payload.originalAmount,
-          creditorName: payload.creditorName,
-          startDate: payload.startDate,
-          dueDate: payload.dueDate,
-          note: payload.note,
-        );
-        final refreshed = await _service.getDebtById(existing.id);
-        if (!mounted) return;
-        setState(() {
-          final idx = _items.indexWhere((e) => e.id == existing.id);
-          if (idx >= 0) {
-            _items[idx] = refreshed;
-          }
-          _items = _applyDebtOrder(_items);
-        });
-      }
-      widget.onDataChanged?.call();
+      await _runMutation(() async {
+        if (existing == null) {
+          final created = await _service.createDebt(
+            coupleId: widget.coupleId,
+            userId: uid,
+            debtTypeId: payload.debtTypeId,
+            debtKind: payload.debtKind,
+            recordToIncome: payload.recordToIncome,
+            recordToExpense: payload.recordToExpense,
+            name: payload.name,
+            originalAmount: payload.originalAmount,
+            creditorName: payload.creditorName,
+            startDate: payload.startDate,
+            dueDate: payload.dueDate,
+            note: payload.note,
+          );
+          if (!mounted) return;
+          setState(() {
+            _items.insert(0, created);
+            _manualOrderIds.remove(created.id);
+            _manualOrderIds.insert(0, created.id);
+            _items = _applyDebtOrder(_items);
+          });
+        } else {
+          await _service.updateDebt(
+            debtId: existing.id,
+            debtTypeId: payload.debtTypeId,
+            debtKind: payload.debtKind,
+            recordToIncome: payload.recordToIncome,
+            recordToExpense: payload.recordToExpense,
+            name: payload.name,
+            originalAmount: payload.originalAmount,
+            creditorName: payload.creditorName,
+            startDate: payload.startDate,
+            dueDate: payload.dueDate,
+            note: payload.note,
+          );
+          final refreshed = await _service.getDebtById(existing.id);
+          if (!mounted) return;
+          setState(() {
+            final idx = _items.indexWhere((e) => e.id == existing.id);
+            if (idx >= 0) {
+              _items[idx] = refreshed;
+            }
+            _items = _applyDebtOrder(_items);
+          });
+        }
+        widget.onDataChanged?.call();
+      });
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Loi luu: $e')));
+      ).showSnackBar(SnackBar(content: Text('Lỗi lưu: $e')));
     }
   }
 
@@ -628,14 +664,14 @@ class _DebtListScreenState extends State<DebtListScreen> {
               dense: true,
               visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
               leading: const Icon(Icons.edit_outlined),
-              title: const Text('Edit'),
+              title: const Text('Chỉnh sửa'),
               onTap: () => Navigator.pop(sheetContext, 'edit'),
             ),
             ListTile(
               dense: true,
               visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
               leading: const Icon(Icons.delete_outline, color: Colors.red),
-              title: const Text('Delete'),
+              title: const Text('Xóa'),
               onTap: () => Navigator.pop(sheetContext, 'delete'),
             ),
           ],
@@ -647,47 +683,37 @@ class _DebtListScreenState extends State<DebtListScreen> {
       return;
     }
     if (action == 'delete') {
-      final impact = await _service.previewDeleteDebtImpact(item.id);
-      if (!mounted) return;
-      String message;
-      if (impact < 0) {
-        message =
-            'Neu xac nhan xoa khoan no, ban se bi tru lai ${formatVnd(impact.abs())}.';
-      } else if (impact > 0) {
-        message =
-            'Neu xac nhan xoa khoan no, ban se duoc cong them ${formatVnd(impact)}.';
-      } else {
-        message =
-            'Neu xac nhan xoa khoan no, he thong khong phat sinh giao dich tien.';
-      }
-
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: const Text('Xac nhan xoa khoan no'),
-          content: Text(message),
+          title: const Text('Xác nhận xóa khoản nợ'),
+          content: const Text(
+            'Nếu thực hiện xóa khoản Nợ này, tất cả các giao dịch đã phát sinh trước đó đều sẽ bị xóa.',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Huy'),
+              child: const Text('Hủy'),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Xoa'),
+              child: const Text('Xóa'),
             ),
           ],
         ),
       );
       if (confirmed != true) return;
 
-      await _service.deleteDebt(item.id);
-      if (mounted) {
-        setState(() {
-          _items.removeWhere((d) => d.id == item.id);
-          _manualOrderIds.remove(item.id);
-        });
-      }
-      widget.onDataChanged?.call();
+      await _runMutation(() async {
+        await _service.deleteDebt(item.id);
+        if (mounted) {
+          setState(() {
+            _items.removeWhere((d) => d.id == item.id);
+            _manualOrderIds.remove(item.id);
+          });
+        }
+        widget.onDataChanged?.call();
+      });
     }
   }
 
@@ -697,7 +723,11 @@ class _DebtListScreenState extends State<DebtListScreen> {
       _error = null;
     });
     try {
-      final items = await _service.getDebts(widget.coupleId);
+      final items = await _service.getDebts(
+        widget.coupleId,
+        limit: _pageSize,
+        offset: 0,
+      );
       final userIds = items.map((item) => item.userId).toSet().toList();
       final userNameById = <String, String>{};
       if (userIds.isNotEmpty) {
@@ -721,12 +751,71 @@ class _DebtListScreenState extends State<DebtListScreen> {
         setState(() {
           _items = _applyDebtOrder(items);
           _memberNameById = userNameById;
+          _currentOffset = items.length;
+          _hasMore = items.length == _pageSize;
         });
       }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_isLoading || _isLoadingMore || !_hasMore) return;
+
+    setState(() => _isLoadingMore = true);
+    try {
+      final nextItems = await _service.getDebts(
+        widget.coupleId,
+        limit: _pageSize,
+        offset: _currentOffset,
+      );
+      if (!mounted) return;
+
+      if (nextItems.isEmpty) {
+        setState(() {
+          _hasMore = false;
+          _isLoadingMore = false;
+        });
+        return;
+      }
+
+      final merged = _applyDebtOrder([..._items, ...nextItems]);
+      final userIds = merged.map((item) => item.userId).toSet().toList();
+      final userNameById = <String, String>{};
+      if (userIds.isNotEmpty) {
+        final rows = List<Map<String, dynamic>>.from(
+          await Supabase.instance.client
+              .from('users')
+              .select('id, display_name, email')
+              .inFilter('id', userIds),
+        );
+        for (final row in rows) {
+          final id = row['id'] as String?;
+          if (id == null || id.isEmpty) continue;
+          final displayName = (row['display_name'] as String?)?.trim();
+          final email = (row['email'] as String?)?.trim();
+          userNameById[id] = (displayName != null && displayName.isNotEmpty)
+              ? displayName
+              : ((email != null && email.isNotEmpty) ? email : id);
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _items = merged;
+          _memberNameById = userNameById;
+          _currentOffset = _items.length;
+          _hasMore = nextItems.length == _pageSize;
+          _isLoadingMore = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _isLoadingMore = false);
+      }
     }
   }
 
@@ -747,233 +836,267 @@ class _DebtListScreenState extends State<DebtListScreen> {
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(_error!, textAlign: TextAlign.center),
-                  const SizedBox(height: 8),
-                  FilledButton(onPressed: _load, child: const Text('Thử lại')),
-                ],
-              ),
-            )
-          : Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _DebtSummaryCard(
-                          title: 'Tổng tiền đang nợ',
-                          amountText: formatVnd(totalDebtOwed),
-                          selected: _selectedDebtKind == 'debt',
-                          onTap: () {
-                            setState(() => _selectedDebtKind = 'debt');
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: _DebtSummaryCard(
-                          title: 'Tổng tiền cho nợ',
-                          amountText: formatVnd(totalLentOut),
-                          selected: _selectedDebtKind == 'lend',
-                          onTap: () {
-                            setState(() => _selectedDebtKind = 'lend');
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (visibleItems.isEmpty)
-                  Expanded(
-                    child: Center(
-                      child: Text(
-                        _selectedDebtKind == 'debt'
-                            ? 'Chưa có khoản đang nợ nào.'
-                            : 'Chưa có khoản cho nợ nào.',
-                      ),
+      body: BusyOverlay(
+        isVisible: _isMutating,
+        message: 'Đang xử lý...',
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+            ? Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(_error!, textAlign: TextAlign.center),
+                    const SizedBox(height: 8),
+                    FilledButton(
+                      onPressed: _load,
+                      child: const Text('Thử lại'),
                     ),
-                  )
-                else
-                  Expanded(
-                    child: ReorderableListView.builder(
-                      padding: const EdgeInsets.fromLTRB(0, 4, 0, 80),
-                      itemCount: visibleItems.length,
-                      onReorder: _onReorder,
-                      buildDefaultDragHandles: false,
-                      itemBuilder: (context, index) {
-                        final item = visibleItems[index];
-                        final isLend = item.debtKind == 'lend';
-                        final pct = item.originalAmount > 0
-                            ? 1 - (item.remainingAmount / item.originalAmount)
-                            : 1.0;
-                        final accentColor = item.isClosed
-                            ? AppColors.success
-                            : (isLend ? AppColors.tealDeep : AppColors.danger);
-                        final accentSoft = item.isClosed
-                            ? AppColors.successSoft
-                            : (isLend
-                                  ? AppColors.tealSoft
-                                  : AppColors.dangerSoft);
-                        final leadingIcon = item.isClosed
-                            ? Icons.check_circle_outline
-                            : (isLend
-                                  ? Icons.account_balance_wallet_outlined
-                                  : Icons.credit_card_outlined);
-                        return Container(
-                          key: ValueKey(item.id),
-                          margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            border: Border.all(color: AppColors.border),
-                            borderRadius: BorderRadius.circular(18),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.05),
-                                blurRadius: 10,
-                                offset: const Offset(0, 3),
-                              ),
-                            ],
+                  ],
+                ),
+              )
+            : Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _DebtSummaryCard(
+                            title: 'Tổng tiền đang nợ',
+                            amountText: formatVnd(totalDebtOwed),
+                            selected: _selectedDebtKind == 'debt',
+                            onTap: () {
+                              setState(() => _selectedDebtKind = 'debt');
+                            },
                           ),
-                          child: Material(
-                            color: Colors.transparent,
-                            child: InkWell(
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _DebtSummaryCard(
+                            title: 'Tổng tiền cho nợ',
+                            amountText: formatVnd(totalLentOut),
+                            selected: _selectedDebtKind == 'lend',
+                            onTap: () {
+                              setState(() => _selectedDebtKind = 'lend');
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (visibleItems.isEmpty)
+                    Expanded(
+                      child: Center(
+                        child: Text(
+                          _selectedDebtKind == 'debt'
+                              ? 'Chưa có khoản đang nợ nào.'
+                              : 'Chưa có khoản cho nợ nào.',
+                        ),
+                      ),
+                    )
+                  else
+                    Expanded(
+                      child: ReorderableListView.builder(
+                        scrollController: _scrollController,
+                        padding: const EdgeInsets.fromLTRB(0, 4, 0, 80),
+                        itemCount: visibleItems.length,
+                        onReorder: _hasMore ? (_, _) {} : _onReorder,
+                        buildDefaultDragHandles: false,
+                        itemBuilder: (context, index) {
+                          final item = visibleItems[index];
+                          final isLend = item.debtKind == 'lend';
+                          final pct = item.originalAmount > 0
+                              ? 1 - (item.remainingAmount / item.originalAmount)
+                              : 1.0;
+                          final accentColor = item.isClosed
+                              ? AppColors.success
+                              : (isLend
+                                    ? AppColors.tealDeep
+                                    : AppColors.danger);
+                          final accentSoft = item.isClosed
+                              ? AppColors.successSoft
+                              : (isLend
+                                    ? AppColors.tealSoft
+                                    : AppColors.dangerSoft);
+                          final leadingIcon = item.isClosed
+                              ? Icons.check_circle_outline
+                              : (isLend
+                                    ? Icons.account_balance_wallet_outlined
+                                    : Icons.credit_card_outlined);
+                          return Container(
+                            key: ValueKey(item.id),
+                            margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              border: Border.all(color: AppColors.border),
                               borderRadius: BorderRadius.circular(18),
-                              onTap: () async {
-                                await Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => DebtDetailScreen(
-                                      coupleId: widget.coupleId,
-                                      debtId: item.id,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.05),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ],
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(18),
+                                onTap: () async {
+                                  await Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => DebtDetailScreen(
+                                        coupleId: widget.coupleId,
+                                        debtId: item.id,
+                                      ),
                                     ),
-                                  ),
-                                );
-                                if (mounted) {
-                                  await _load();
-                                  widget.onDataChanged?.call();
-                                }
-                              },
-                              onLongPress: () => _showDebtActions(item),
-                              child: Padding(
-                                padding: const EdgeInsets.all(16),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Container(
-                                          height: 56,
-                                          width: 56,
-                                          decoration: BoxDecoration(
-                                            color: accentSoft,
-                                            borderRadius: BorderRadius.circular(
-                                              16,
+                                  );
+                                  if (mounted) {
+                                    await _load();
+                                    widget.onDataChanged?.call();
+                                  }
+                                },
+                                onLongPress: () => _showDebtActions(item),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Container(
+                                            height: 56,
+                                            width: 56,
+                                            decoration: BoxDecoration(
+                                              color: accentSoft,
+                                              borderRadius:
+                                                  BorderRadius.circular(16),
+                                            ),
+                                            child: Icon(
+                                              leadingIcon,
+                                              color: accentColor,
+                                              size: 26,
                                             ),
                                           ),
-                                          child: Icon(
-                                            leadingIcon,
-                                            color: accentColor,
-                                            size: 26,
+                                          const SizedBox(width: 14),
+                                          Expanded(
+                                            child: Text(
+                                              item.name,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w700,
+                                                fontSize: 18,
+                                              ),
+                                            ),
                                           ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            formatVnd(item.originalAmount),
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 16,
+                                              color: accentColor,
+                                            ),
+                                          ),
+                                          if (!_hasMore)
+                                            ReorderableDragStartListener(
+                                              index: index,
+                                              child: const Padding(
+                                                padding: EdgeInsets.only(
+                                                  left: 8,
+                                                ),
+                                                child: Icon(
+                                                  Icons.drag_indicator,
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 10),
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(
+                                          999,
                                         ),
-                                        const SizedBox(width: 14),
-                                        Expanded(
+                                        child: LinearProgressIndicator(
+                                          value: pct.clamp(0.0, 1.0),
+                                          minHeight: 10,
+                                          backgroundColor: accentSoft,
+                                          valueColor:
+                                              AlwaysStoppedAnimation<Color>(
+                                                accentColor,
+                                              ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        'Tiến độ: ${(pct.clamp(0.0, 1.0) * 100).toStringAsFixed(0)}%',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: accentColor,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        'Còn lại: ${formatVnd(item.remainingAmount)}',
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          color: Colors.black87,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      if (item.dueDate != null)
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            top: 2,
+                                          ),
                                           child: Text(
-                                            item.name,
+                                            'Hạn: ${formatDate(item.dueDate!)}',
                                             style: const TextStyle(
-                                              fontWeight: FontWeight.w700,
-                                              fontSize: 18,
+                                              fontSize: 13,
+                                              color: Colors.black54,
                                             ),
                                           ),
                                         ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          formatVnd(item.originalAmount),
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: 16,
-                                            color: accentColor,
-                                          ),
-                                        ),
-                                        ReorderableDragStartListener(
-                                          index: index,
-                                          child: const Padding(
-                                            padding: EdgeInsets.only(left: 8),
-                                            child: Icon(Icons.drag_indicator),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 10),
-                                    ClipRRect(
-                                      borderRadius: BorderRadius.circular(999),
-                                      child: LinearProgressIndicator(
-                                        value: pct.clamp(0.0, 1.0),
-                                        minHeight: 10,
-                                        backgroundColor: accentSoft,
-                                        valueColor:
-                                            AlwaysStoppedAnimation<Color>(
-                                              accentColor,
-                                            ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      'Tiến độ: ${(pct.clamp(0.0, 1.0) * 100).toStringAsFixed(0)}%',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color: accentColor,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      'Còn lại: ${formatVnd(item.remainingAmount)}',
-                                      style: const TextStyle(
-                                        fontSize: 14,
-                                        color: Colors.black87,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    if (item.dueDate != null)
                                       Padding(
                                         padding: const EdgeInsets.only(top: 2),
                                         child: Text(
-                                          'Hạn: ${formatDate(item.dueDate!)}',
+                                          'Người tạo: ${_resolveMemberName(item.userId)}',
                                           style: const TextStyle(
                                             fontSize: 13,
                                             color: Colors.black54,
                                           ),
                                         ),
                                       ),
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 2),
-                                      child: Text(
-                                        'Người tạo: ${_resolveMemberName(item.userId)}',
-                                        style: const TextStyle(
-                                          fontSize: 13,
-                                          color: Colors.black54,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                        );
-                      },
+                          );
+                        },
+                      ),
                     ),
-                  ),
-              ],
-            ),
+                  if (_isLoadingMore)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 12),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (!_hasMore)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 12),
+                      child: Center(
+                        child: Text(
+                          'Đã tải hết trang.',
+                          style: TextStyle(color: Colors.black54),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: _openDebtPopup,
         child: const Icon(Icons.add),

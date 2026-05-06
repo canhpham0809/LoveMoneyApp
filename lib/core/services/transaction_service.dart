@@ -189,8 +189,7 @@ class TransactionService {
     final funds = await supabase
         .from('funds')
         .select('id, name')
-        .eq('couple_id', coupleId)
-        .eq('is_deleted', false);
+        .eq('couple_id', coupleId);
     final fundNameById = {
       for (final f in funds) f['id'] as String: f['name'] as String,
     };

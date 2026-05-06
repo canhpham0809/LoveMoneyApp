@@ -17,6 +17,8 @@ class TransferService {
     String coupleId, {
     String? viewerUserId,
     String? partnerUserId,
+    int? limit,
+    int? offset,
   }) async {
     var query = _db
         .from('transfers')
@@ -36,7 +38,10 @@ class TransferService {
       }
     }
 
-    final rows = await query.order('created_at', ascending: false);
+    final ordered = query.order('created_at', ascending: false);
+    final rows = (limit != null && offset != null)
+        ? await ordered.range(offset, offset + limit - 1)
+        : await ordered;
     return rows.map((r) => TransferModel.fromJson(r)).toList();
   }
 

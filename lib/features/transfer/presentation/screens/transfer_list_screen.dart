@@ -6,6 +6,7 @@ import 'package:flutter_app_demo/core/theme/app_colors.dart';
 
 import 'package:flutter_app_demo/core/utils/amount_input.dart';
 import 'package:flutter_app_demo/core/widgets/amount_suggestion_chips.dart';
+import 'package:flutter_app_demo/core/widgets/busy_overlay.dart';
 import 'package:flutter_app_demo/core/utils/formatters.dart';
 import 'package:flutter_app_demo/features/transfer/data/models/transfer_model.dart';
 import 'package:flutter_app_demo/features/transfer/data/services/transfer_service.dart';
@@ -52,12 +53,33 @@ class _TransferFormResult {
 }
 
 class _TransferListScreenState extends State<TransferListScreen> {
+  static const int _pageSize = 50;
+
   final _service = TransferService();
+  final ScrollController _scrollController = ScrollController();
   List<TransferModel> _items = [];
   Map<String, String> _userNameById = {};
+  int _currentOffset = 0;
+  bool _hasMore = true;
+  bool _isLoadingMore = false;
   bool _isLoading = true;
   bool _isDeleting = false;
+  bool _isMutating = false;
+  bool _isRefreshingContent = false;
   String? _error;
+
+  Future<T> _runMutation<T>(Future<T> Function() action) async {
+    if (mounted) {
+      setState(() => _isMutating = true);
+    }
+    try {
+      return await action();
+    } finally {
+      if (mounted) {
+        setState(() => _isMutating = false);
+      }
+    }
+  }
 
   DateTime _toUtcPlus7(DateTime value) {
     final utcValue = value.isUtc ? value : value.toUtc();
@@ -97,6 +119,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     widget.refreshSignal?.addListener(_onExternalRefresh);
     _load();
   }
@@ -115,29 +138,47 @@ class _TransferListScreenState extends State<TransferListScreen> {
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
     widget.refreshSignal?.removeListener(_onExternalRefresh);
     super.dispose();
   }
 
-  void _onExternalRefresh() {
-    if (!mounted) return;
-    _load(showLoader: false);
+  void _onScroll() {
+    if (!_scrollController.hasClients || _isLoadingMore || !_hasMore) return;
+    final position = _scrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 220) {
+      _loadMore();
+    }
   }
 
-  Future<void> _load({bool showLoader = true}) async {
+  void _onExternalRefresh() {
+    if (!mounted) return;
+    _load(showLoader: false, showRefreshOverlay: false);
+  }
+
+  Future<void> _load({
+    bool showLoader = true,
+    bool showRefreshOverlay = true,
+  }) async {
     if (showLoader) {
       setState(() {
         _isLoading = true;
         _error = null;
       });
-    } else if (mounted) {
-      setState(() => _error = null);
+    } else if (showRefreshOverlay && mounted) {
+      setState(() {
+        _error = null;
+        _isRefreshingContent = true;
+      });
     }
     try {
       final items = await _service.getTransfers(
         widget.coupleId,
         viewerUserId: widget.viewerUserId,
         partnerUserId: widget.partnerUserId,
+        limit: _pageSize,
+        offset: 0,
       );
       items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       final userIds = <String>{
@@ -164,12 +205,84 @@ class _TransferListScreenState extends State<TransferListScreen> {
         setState(() {
           _items = items;
           _userNameById = userNameById;
+          _currentOffset = items.length;
+          _hasMore = items.length == _pageSize;
         });
       }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
-      if (showLoader && mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() {
+          if (showLoader) {
+            _isLoading = false;
+          } else {
+            _isRefreshingContent = false;
+          }
+        });
+      }
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_isLoading || _isLoadingMore || !_hasMore) return;
+
+    setState(() => _isLoadingMore = true);
+    try {
+      final nextItems = await _service.getTransfers(
+        widget.coupleId,
+        viewerUserId: widget.viewerUserId,
+        partnerUserId: widget.partnerUserId,
+        limit: _pageSize,
+        offset: _currentOffset,
+      );
+      if (nextItems.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _hasMore = false;
+            _isLoadingMore = false;
+          });
+        }
+        return;
+      }
+
+      nextItems.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      final combined = [..._items, ...nextItems];
+      combined.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+      final userIds = <String>{
+        ...combined.map((item) => item.fromUserId),
+        ...combined.map((item) => item.toUserId),
+      };
+      final users = userIds.isEmpty
+          ? <Map<String, dynamic>>[]
+          : List<Map<String, dynamic>>.from(
+              await Supabase.instance.client
+                  .from('users')
+                  .select('id, display_name, email')
+                  .inFilter('id', userIds.toList()),
+            );
+      final userNameById = {
+        for (final row in users)
+          row['id'] as String:
+              ((row['display_name'] as String?)?.trim().isNotEmpty == true
+              ? (row['display_name'] as String).trim()
+              : ((row['email'] as String?) ?? 'Người kia')),
+      };
+
+      if (mounted) {
+        setState(() {
+          _items = combined;
+          _userNameById = userNameById;
+          _currentOffset = _items.length;
+          _hasMore = nextItems.length == _pageSize;
+          _isLoadingMore = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _isLoadingMore = false);
+      }
     }
   }
 
@@ -203,10 +316,6 @@ class _TransferListScreenState extends State<TransferListScreen> {
     try {
       await _service.deleteTransfer(item.id);
       widget.onDataChanged?.call();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Đã xóa giao dịch chuyển tiền')),
-      );
     } catch (e) {
       if (mounted && removedIndex >= 0) {
         setState(() {
@@ -259,13 +368,15 @@ class _TransferListScreenState extends State<TransferListScreen> {
     }
 
     try {
-      final created = await _service.createTransfer(
-        coupleId: widget.coupleId,
-        fromUserId: uid,
-        toUserId: payload.toUserId,
-        amount: payload.amount,
-        note: payload.note,
-        date: payload.date,
+      final created = await _runMutation(
+        () => _service.createTransfer(
+          coupleId: widget.coupleId,
+          fromUserId: uid,
+          toUserId: payload.toUserId,
+          amount: payload.amount,
+          note: payload.note,
+          date: payload.date,
+        ),
       );
       if (!mounted) return;
       setState(() {
@@ -523,16 +634,17 @@ class _TransferListScreenState extends State<TransferListScreen> {
     }
 
     try {
-      await _service.updateTransfer(
-        transferId: existing.id,
-        fromUserId: uid,
-        toUserId: payload.toUserId,
-        amount: payload.amount,
-        note: payload.note,
-        date: payload.date,
-      );
-      await _load(showLoader: false);
-      widget.onDataChanged?.call();
+      await _runMutation(() async {
+        await _service.updateTransfer(
+          transferId: existing.id,
+          fromUserId: uid,
+          toUserId: payload.toUserId,
+          amount: payload.amount,
+          note: payload.note,
+          date: payload.date,
+        );
+        widget.onDataChanged?.call();
+      });
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -602,195 +714,224 @@ class _TransferListScreenState extends State<TransferListScreen> {
           IconButton(onPressed: () => _load(), icon: const Icon(Icons.refresh)),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+      body: BusyOverlay(
+        isVisible: _isMutating || _isDeleting || _isRefreshingContent,
+        message: _isDeleting
+            ? 'Đang xóa...'
+            : (_isRefreshingContent
+                  ? 'Đang tải dữ liệu...'
+                  : 'Đang lưu dữ liệu...'),
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+            ? Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(_error!, textAlign: TextAlign.center),
+                    const SizedBox(height: 12),
+                    FilledButton(
+                      onPressed: () => _load(),
+                      child: const Text('Thử lại'),
+                    ),
+                  ],
+                ),
+              )
+            : _items.isEmpty
+            ? Center(
+                child: Text(
+                  'Chưa có giao dịch chuyển tiền nào của ${widget.viewerLabel}.',
+                ),
+              )
+            : ListView(
+                controller: _scrollController,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 children: [
-                  Text(_error!, textAlign: TextAlign.center),
-                  const SizedBox(height: 12),
-                  FilledButton(
-                    onPressed: () => _load(),
-                    child: const Text('Thử lại'),
-                  ),
-                ],
-              ),
-            )
-          : _items.isEmpty
-          ? Center(
-              child: Text(
-                'Chưa có giao dịch chuyển tiền nào của ${widget.viewerLabel}.',
-              ),
-            )
-          : ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              children: [
-                for (final entry in grouped.entries) ...[
-                  Builder(
-                    builder: (context) {
-                      final monthSent = entry.value
-                          .where(
-                            (item) => item.fromUserId == widget.viewerUserId,
-                          )
-                          .fold<double>(0, (sum, item) => sum + item.amount);
-                      final monthReceived = entry.value
-                          .where((item) => item.toUserId == widget.viewerUserId)
-                          .fold<double>(0, (sum, item) => sum + item.amount);
-                      return Padding(
-                        padding: const EdgeInsets.fromLTRB(0, 16, 0, 6),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.only(
-                                left: 4,
-                                bottom: 8,
+                  for (final entry in grouped.entries) ...[
+                    Builder(
+                      builder: (context) {
+                        final monthSent = entry.value
+                            .where(
+                              (item) => item.fromUserId == widget.viewerUserId,
+                            )
+                            .fold<double>(0, (sum, item) => sum + item.amount);
+                        final monthReceived = entry.value
+                            .where(
+                              (item) => item.toUserId == widget.viewerUserId,
+                            )
+                            .fold<double>(0, (sum, item) => sum + item.amount);
+                        return Padding(
+                          padding: const EdgeInsets.fromLTRB(0, 16, 0, 6),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.only(
+                                  left: 4,
+                                  bottom: 8,
+                                ),
+                                child: Text(
+                                  'Tháng ${entry.key.split('-')[1]}/${entry.key.split('-')[0]}',
+                                  style: Theme.of(context).textTheme.titleMedium
+                                      ?.copyWith(fontWeight: FontWeight.bold),
+                                ),
                               ),
-                              child: Text(
-                                'Tháng ${entry.key.split('-')[1]}/${entry.key.split('-')[0]}',
-                                style: Theme.of(context).textTheme.titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Card(
-                                    margin: EdgeInsets.zero,
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(10),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          const Text(
-                                            'Đã chuyển',
-                                            style: TextStyle(fontSize: 11),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            formatVnd(monthSent),
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 13,
-                                              color: Theme.of(
-                                                context,
-                                              ).colorScheme.error,
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Card(
+                                      margin: EdgeInsets.zero,
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(10),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            const Text(
+                                              'Đã chuyển',
+                                              style: TextStyle(fontSize: 11),
                                             ),
-                                          ),
-                                        ],
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              formatVnd(monthSent),
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 13,
+                                                color: Theme.of(
+                                                  context,
+                                                ).colorScheme.error,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Card(
-                                    margin: EdgeInsets.zero,
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(10),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          const Text(
-                                            'Đã nhận',
-                                            style: TextStyle(fontSize: 11),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            formatVnd(monthReceived),
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 13,
-                                              color: Colors.green[700],
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Card(
+                                      margin: EdgeInsets.zero,
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(10),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            const Text(
+                                              'Đã nhận',
+                                              style: TextStyle(fontSize: 11),
                                             ),
-                                          ),
-                                        ],
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              formatVnd(monthReceived),
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 13,
+                                                color: Colors.green[700],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                    ...entry.value.map((item) {
+                      final isIncoming = item.toUserId == widget.viewerUserId;
+                      final counterpartyId = isIncoming
+                          ? item.fromUserId
+                          : item.toUserId;
+                      final partnerName =
+                          _userNameById[counterpartyId] ?? 'Người kia';
+                      final directionLabel = isIncoming
+                          ? 'Nhận từ'
+                          : 'Chuyển cho';
+                      final amountColor = isIncoming
+                          ? Colors.green[700]
+                          : Theme.of(context).colorScheme.error;
+                      return Container(
+                        key: ValueKey(item.id),
+                        margin: const EdgeInsets.only(bottom: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          border: Border.all(color: AppColors.border),
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.05),
+                              blurRadius: 8,
+                              offset: const Offset(0, 3),
                             ),
                           ],
                         ),
+                        child: ListTile(
+                          minVerticalPadding: 6,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 4,
+                          ),
+                          leading: CircleAvatar(
+                            radius: 22,
+                            backgroundColor: (amountColor ?? Colors.grey)
+                                .withValues(alpha: 0.12),
+                            child: Icon(
+                              isIncoming
+                                  ? Icons.south_west_rounded
+                                  : Icons.north_east_rounded,
+                              color: amountColor,
+                              size: 20,
+                            ),
+                          ),
+                          onLongPress: () => _showItemActions(item),
+                          title: Text(
+                            item.note ?? '$directionLabel $partnerName',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          subtitle: Text(
+                            '${formatDate(item.date)} · ${_formatCreatedTimeUtcPlus7(item.createdAt)}',
+                          ),
+                          trailing: Text(
+                            '${isIncoming ? '+' : '-'}${formatVnd(item.amount)}',
+                            style: TextStyle(
+                              color: amountColor,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
                       );
-                    },
-                  ),
-                  ...entry.value.map((item) {
-                    final isIncoming = item.toUserId == widget.viewerUserId;
-                    final counterpartyId = isIncoming
-                        ? item.fromUserId
-                        : item.toUserId;
-                    final partnerName =
-                        _userNameById[counterpartyId] ?? 'Người kia';
-                    final directionLabel = isIncoming
-                        ? 'Nhận từ'
-                        : 'Chuyển cho';
-                    final amountColor = isIncoming
-                        ? Colors.green[700]
-                        : Theme.of(context).colorScheme.error;
-                    return Container(
-                      key: ValueKey(item.id),
-                      margin: const EdgeInsets.only(bottom: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        border: Border.all(color: AppColors.border),
-                        borderRadius: BorderRadius.circular(14),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.05),
-                            blurRadius: 8,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: ListTile(
-                        minVerticalPadding: 6,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 4,
-                        ),
-                        leading: CircleAvatar(
-                          radius: 22,
-                          backgroundColor: (amountColor ?? Colors.grey)
-                              .withValues(alpha: 0.12),
-                          child: Icon(
-                            isIncoming
-                                ? Icons.south_west_rounded
-                                : Icons.north_east_rounded,
-                            color: amountColor,
-                            size: 20,
-                          ),
-                        ),
-                        onLongPress: () => _showItemActions(item),
-                        title: Text(
-                          item.note ?? '$directionLabel $partnerName',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        subtitle: Text(
-                          '${formatDate(item.date)} · ${_formatCreatedTimeUtcPlus7(item.createdAt)}',
-                        ),
-                        trailing: Text(
-                          '${isIncoming ? '+' : '-'}${formatVnd(item.amount)}',
-                          style: TextStyle(
-                            color: amountColor,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
+                    }),
+                  ],
+                  if (_isLoadingMore)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (!_hasMore)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Center(
+                        child: Text(
+                          'Đã tải hết trang.',
+                          style: TextStyle(color: Colors.black54),
                         ),
                       ),
-                    );
-                  }),
+                    ),
                 ],
-              ],
-            ),
+              ),
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
           if (widget.viewerUserId != widget.currentUserId) {

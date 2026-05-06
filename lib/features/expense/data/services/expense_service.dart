@@ -27,6 +27,8 @@ class ExpenseService {
   Future<List<ExpenseModel>> getExpenses(
     String coupleId, {
     String? createdByUserId,
+    int? limit,
+    int? offset,
   }) async {
     var query = _db
         .from('expenses')
@@ -38,7 +40,10 @@ class ExpenseService {
       query = query.eq('user_id', createdByUserId);
     }
 
-    final rows = await query.order('created_at', ascending: false);
+    final ordered = query.order('created_at', ascending: false);
+    final rows = (limit != null && offset != null)
+        ? await ordered.range(offset, offset + limit - 1)
+        : await ordered;
     return rows.map((r) => ExpenseModel.fromJson(r)).toList();
   }
 

@@ -40,24 +40,34 @@ class DebtService {
   static const String _debtRepaymentIncomeSource = 'Thu hồi cho mượn';
   static const String _debtLendExpenseCategory = 'Cho mượn nợ';
 
-  Future<List<DebtModel>> getDebts(String coupleId) async {
+  Future<List<DebtModel>> getDebts(
+    String coupleId, {
+    int? limit,
+    int? offset,
+  }) async {
     try {
-      final rows = await _db
+      final ordered = _db
           .from('debts')
           .select()
           .eq('couple_id', coupleId)
           .eq('is_deleted', false)
           .order('sort_order')
           .order('created_at');
+      final rows = (limit != null && offset != null)
+          ? await ordered.range(offset, offset + limit - 1)
+          : await ordered;
       return rows.map((r) => DebtModel.fromJson(r)).toList();
     } catch (e) {
       if (!_isMissingSortOrderColumn(e)) rethrow;
-      final rows = await _db
+      final ordered = _db
           .from('debts')
           .select()
           .eq('couple_id', coupleId)
           .eq('is_deleted', false)
           .order('due_date');
+      final rows = (limit != null && offset != null)
+          ? await ordered.range(offset, offset + limit - 1)
+          : await ordered;
       return rows.map((r) => DebtModel.fromJson(r)).toList();
     }
   }
@@ -791,7 +801,7 @@ class DebtService {
             'amount': amount,
             'description': note?.trim().isNotEmpty == true
                 ? note!.trim()
-                : 'Thu hoi cho muon: ${debt['name'] as String}',
+                : 'Thu hồi nợ: ${debt['name'] as String}',
             'is_from_transfer': false,
             'date': date.toIso8601String().substring(0, 10),
           })
@@ -852,7 +862,7 @@ class DebtService {
       );
       final description = note?.trim().isNotEmpty == true
           ? note!.trim()
-          : 'Thu hoi cho muon: ${debt['name'] as String}';
+          : 'Thu hồi nợ: ${debt['name'] as String}';
       if (linkedIncomeId != null) {
         await _db
             .from('incomes')

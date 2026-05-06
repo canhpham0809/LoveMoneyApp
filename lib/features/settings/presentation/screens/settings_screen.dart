@@ -152,9 +152,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (!mounted) return;
       setState(() => _profile = profile);
       widget.onProfileUpdated?.call();
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Đã cập nhật biệt danh.')));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -258,21 +255,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 tooltip: 'Sao chép mã',
                                 icon: const Icon(Icons.copy),
                                 onPressed: () async {
-                                  final messenger = ScaffoldMessenger.of(
-                                    context,
-                                  );
                                   final code =
                                       _couple!['invite_code'] as String;
                                   await Clipboard.setData(
                                     ClipboardData(text: code),
-                                  );
-                                  if (!mounted) {
-                                    return;
-                                  }
-                                  messenger.showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Đã sao chép mã mời.'),
-                                    ),
                                   );
                                 },
                               ),
@@ -294,9 +280,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ListTile(
                           leading: const Icon(Icons.shopping_bag_outlined),
                           title: const Text('Quản lý danh mục Chi'),
-                          subtitle: const Text(
-                            'Tạo/Sửa/Xoá danh mục Chi, chọn icon và màu.',
-                          ),
+
                           trailing: const Icon(Icons.chevron_right),
                           onTap: () {
                             Navigator.push(
@@ -313,9 +297,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ListTile(
                           leading: const Icon(Icons.attach_money),
                           title: const Text('Quản lý danh mục Thu'),
-                          subtitle: const Text(
-                            'Tạo/Sửa/Xoá danh mục Thu và chọn icon.',
-                          ),
+
                           trailing: const Icon(Icons.chevron_right),
                           onTap: () {
                             Navigator.push(
@@ -332,9 +314,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ListTile(
                           leading: const Icon(Icons.credit_card_outlined),
                           title: const Text('Quản lý danh mục Nợ'),
-                          subtitle: const Text(
-                            'Tạo/Sửa/Xoá danh mục Nợ dùng khi lập khoản nợ.',
-                          ),
+
                           trailing: const Icon(Icons.chevron_right),
                           onTap: () {
                             Navigator.push(
@@ -361,10 +341,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       children: [
                         SwitchListTile(
                           secondary: const Icon(Icons.notifications_outlined),
-                          title: const Text('Nhắc ghi chi tiêu'),
-                          subtitle: const Text(
-                            'Nhắc nhở hằng ngày để ghi lại thu chi.',
-                          ),
+                          title: const Text('Nhắc nhở chi tiêu'),
+
                           value: _notifEnabled,
                           onChanged: _onNotifToggle,
                         ),

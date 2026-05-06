@@ -43,7 +43,6 @@ class _AppShellScreenState extends State<AppShellScreen> {
   final ValueNotifier<int> _debtRefreshBus = ValueNotifier<int>(0);
   final _quickAddService = QuickAddService();
   final _expenseService = ExpenseService();
-  int _quickAddSnackVersion = 0;
   List<CategoryModel> _quickAddCategoriesCache = const [];
   bool _isWarmingQuickAddCategories = false;
 
@@ -439,35 +438,6 @@ class _AppShellScreenState extends State<AppShellScreen> {
 
       if (result.expense != null) {
         _markExpenseChanged();
-        final messenger = ScaffoldMessenger.of(context);
-        _quickAddSnackVersion += 1;
-        final version = _quickAddSnackVersion;
-        messenger
-          ..hideCurrentSnackBar()
-          ..clearSnackBars()
-          ..showSnackBar(
-            SnackBar(
-              duration: const Duration(seconds: 3),
-              content: Text(
-                'Đã lưu nhanh ${result.parsedAmount?.toStringAsFixed(0) ?? ''} vào ${result.suggestedCategoryName ?? 'danh mục mặc định'}',
-              ),
-              action: SnackBarAction(
-                label: 'Undo',
-                onPressed: () async {
-                  await _expenseService.deleteExpense(result.expense!.id);
-                },
-              ),
-            ),
-          );
-
-        unawaited(
-          Future<void>.delayed(const Duration(seconds: 3), () {
-            if (!mounted || version != _quickAddSnackVersion) {
-              return;
-            }
-            messenger.hideCurrentSnackBar();
-          }),
-        );
       }
     } catch (e) {
       if (!mounted) return;
