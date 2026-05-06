@@ -670,45 +670,50 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                         ],
                       ),
                       const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                          onPressed: () async {
-                            final amount = parseAmountInput(
-                              amountCtrl.text.trim(),
-                            );
-                            if (amount == null || amount <= 0) {
-                              ScaffoldMessenger.of(dialogContext).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Số tiền không hợp lệ.'),
-                                ),
-                              );
-                              return;
-                            }
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextButton(
+                              onPressed: () =>
+                                  Navigator.of(dialogContext).maybePop(),
+                              child: const Text('Hủy'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: () async {
+                                final amount = parseAmountInput(
+                                  amountCtrl.text.trim(),
+                                );
+                                if (amount == null || amount <= 0) {
+                                  ScaffoldMessenger.of(
+                                    dialogContext,
+                                  ).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Số tiền không hợp lệ.'),
+                                    ),
+                                  );
+                                  return;
+                                }
 
-                            if (dialogContext.mounted) {
-                              Navigator.of(dialogContext).maybePop(
-                                _ExpenseFormResult(
-                                  amount: amount,
-                                  categoryId: selectedCategoryId,
-                                  description: noteCtrl.text.trim().isEmpty
-                                      ? null
-                                      : noteCtrl.text.trim(),
-                                  date: selectedDate,
-                                ),
-                              );
-                            }
-                          },
-                          child: const Text('Lưu'),
-                        ),
-                      ),
-                      SizedBox(
-                        width: double.infinity,
-                        child: TextButton(
-                          onPressed: () =>
-                              Navigator.of(dialogContext).maybePop(),
-                          child: const Text('Hủy'),
-                        ),
+                                if (dialogContext.mounted) {
+                                  Navigator.of(dialogContext).maybePop(
+                                    _ExpenseFormResult(
+                                      amount: amount,
+                                      categoryId: selectedCategoryId,
+                                      description: noteCtrl.text.trim().isEmpty
+                                          ? null
+                                          : noteCtrl.text.trim(),
+                                      date: selectedDate,
+                                    ),
+                                  );
+                                }
+                              },
+                              child: const Text('Lưu'),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),

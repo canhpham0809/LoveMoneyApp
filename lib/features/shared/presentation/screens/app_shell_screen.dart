@@ -377,23 +377,26 @@ class _AppShellScreenState extends State<AppShellScreen> {
                           },
                         ),
                       const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                          onPressed: () => Navigator.pop(dialogContext, {
-                            'input': ctrl.text.trim(),
-                            'categoryId': selectedCategoryId,
-                            'categoryName': selectedCategoryName,
-                          }),
-                          child: const Text('Lưu'),
-                        ),
-                      ),
-                      SizedBox(
-                        width: double.infinity,
-                        child: TextButton(
-                          onPressed: () => Navigator.pop(dialogContext),
-                          child: const Text('Hủy'),
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextButton(
+                              onPressed: () => Navigator.pop(dialogContext),
+                              child: const Text('Hủy'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: () => Navigator.pop(dialogContext, {
+                                'input': ctrl.text.trim(),
+                                'categoryId': selectedCategoryId,
+                                'categoryName': selectedCategoryName,
+                              }),
+                              child: const Text('Lưu'),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),

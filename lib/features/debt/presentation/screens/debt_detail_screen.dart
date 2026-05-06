@@ -191,56 +191,60 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                         label: Text('Ngày: ${formatDate(selectedDate)}'),
                       ),
                       const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                          onPressed: () async {
-                            final amount = parseAmountInput(
-                              amountCtrl.text.trim(),
-                            );
-                            if (amount == null || amount <= 0) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Số tiền không hợp lệ.'),
-                                ),
-                              );
-                              return;
-                            }
-                            if (existing == null) {
-                              await _debtService.createPayment(
-                                coupleId: widget.coupleId,
-                                debtId: widget.debtId,
-                                walletId: walletId,
-                                amount: amount,
-                                date: selectedDate,
-                                note: noteCtrl.text.trim().isEmpty
-                                    ? null
-                                    : noteCtrl.text.trim(),
-                              );
-                            } else {
-                              await _debtService.updatePayment(
-                                paymentId: existing.id,
-                                debtId: widget.debtId,
-                                amount: amount,
-                                date: selectedDate,
-                                note: noteCtrl.text.trim().isEmpty
-                                    ? null
-                                    : noteCtrl.text.trim(),
-                              );
-                            }
-                            if (dialogContext.mounted) {
-                              Navigator.pop(dialogContext, true);
-                            }
-                          },
-                          child: const Text('Lưu'),
-                        ),
-                      ),
-                      SizedBox(
-                        width: double.infinity,
-                        child: TextButton(
-                          onPressed: () => Navigator.pop(dialogContext, false),
-                          child: const Text('Hủy'),
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextButton(
+                              onPressed: () =>
+                                  Navigator.pop(dialogContext, false),
+                              child: const Text('Hủy'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: () async {
+                                final amount = parseAmountInput(
+                                  amountCtrl.text.trim(),
+                                );
+                                if (amount == null || amount <= 0) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Số tiền không hợp lệ.'),
+                                    ),
+                                  );
+                                  return;
+                                }
+                                if (existing == null) {
+                                  await _debtService.createPayment(
+                                    coupleId: widget.coupleId,
+                                    debtId: widget.debtId,
+                                    walletId: walletId,
+                                    amount: amount,
+                                    date: selectedDate,
+                                    note: noteCtrl.text.trim().isEmpty
+                                        ? null
+                                        : noteCtrl.text.trim(),
+                                  );
+                                } else {
+                                  await _debtService.updatePayment(
+                                    paymentId: existing.id,
+                                    debtId: widget.debtId,
+                                    amount: amount,
+                                    date: selectedDate,
+                                    note: noteCtrl.text.trim().isEmpty
+                                        ? null
+                                        : noteCtrl.text.trim(),
+                                  );
+                                }
+                                if (dialogContext.mounted) {
+                                  Navigator.pop(dialogContext, true);
+                                }
+                              },
+                              child: const Text('Lưu'),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),

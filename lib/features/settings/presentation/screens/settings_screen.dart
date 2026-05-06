@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:flutter_app_demo/core/services/notification_service.dart';
 import 'package:flutter_app_demo/features/settings/data/services/settings_service.dart';
 import 'package:flutter_app_demo/features/settings/presentation/screens/debt_type_management_screen.dart';
 import 'package:flutter_app_demo/features/settings/presentation/screens/expense_category_management_screen.dart';
@@ -23,16 +24,56 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final _service = SettingsService();
+  final _notifService = NotificationService();
 
   Map<String, dynamic>? _couple;
   Map<String, dynamic>? _profile;
   bool _isLoading = true;
   String? _error;
 
+  bool _notifEnabled = false;
+  TimeOfDay _notifTime = const TimeOfDay(hour: 21, minute: 0);
+
   @override
   void initState() {
     super.initState();
     _load();
+    _loadNotifSettings();
+  }
+
+  Future<void> _loadNotifSettings() async {
+    final enabled = await _notifService.isEnabled();
+    final time = await _notifService.getSavedTime();
+    if (mounted) {
+      setState(() {
+        _notifEnabled = enabled;
+        _notifTime = time;
+      });
+    }
+  }
+
+  Future<void> _onNotifToggle(bool value) async {
+    if (value) {
+      await _notifService.enableReminder(_notifTime);
+    } else {
+      await _notifService.disableReminder();
+    }
+    if (mounted) setState(() => _notifEnabled = value);
+  }
+
+  Future<void> _onPickNotifTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _notifTime,
+      helpText: 'Chọn giờ nhắc nhở',
+    );
+    if (picked == null) return;
+    setState(() => _notifTime = picked);
+    if (_notifEnabled) {
+      await _notifService.enableReminder(picked);
+    } else {
+      await _notifService.saveTime(picked);
+    }
   }
 
   Future<void> _load({bool showLoader = true}) async {
@@ -305,6 +346,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               ),
                             );
                           },
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Thông báo',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Card(
+                    child: Column(
+                      children: [
+                        SwitchListTile(
+                          secondary: const Icon(Icons.notifications_outlined),
+                          title: const Text('Nhắc ghi chi tiêu'),
+                          subtitle: const Text(
+                            'Nhắc nhở hằng ngày để ghi lại thu chi.',
+                          ),
+                          value: _notifEnabled,
+                          onChanged: _onNotifToggle,
+                        ),
+                        const Divider(height: 0),
+                        ListTile(
+                          leading: const Icon(Icons.access_time_outlined),
+                          title: const Text('Giờ nhắc nhở'),
+                          subtitle: Text(_notifTime.format(context)),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: _onPickNotifTime,
                         ),
                       ],
                     ),

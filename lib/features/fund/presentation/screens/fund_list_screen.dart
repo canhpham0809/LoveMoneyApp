@@ -234,47 +234,59 @@ class _FundListScreenState extends State<FundListScreen> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                          onPressed: () {
-                            if (isClosingDialog) return;
-                            final name = nameCtrl.text.trim();
-                            if (name.isEmpty) {
-                              ScaffoldMessenger.of(dialogContext).showSnackBar(
-                                const SnackBar(content: Text('Nhập tên quỹ.')),
-                              );
-                              return;
-                            }
-                            final targetAmount = targetCtrl.text.trim().isEmpty
-                                ? null
-                                : parseAmountInput(targetCtrl.text.trim());
-                            isClosingDialog = true;
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              if (!dialogContext.mounted) return;
-                              Navigator.of(dialogContext).maybePop({
-                                'name': name,
-                                'targetAmount': targetAmount,
-                                'deadline': deadline,
-                              });
-                            });
-                          },
-                          child: const Text('Lưu'),
-                        ),
-                      ),
-                      SizedBox(
-                        width: double.infinity,
-                        child: TextButton(
-                          onPressed: () {
-                            if (isClosingDialog) return;
-                            isClosingDialog = true;
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              if (!dialogContext.mounted) return;
-                              Navigator.of(dialogContext).maybePop();
-                            });
-                          },
-                          child: const Text('Hủy'),
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextButton(
+                              onPressed: () {
+                                if (isClosingDialog) return;
+                                isClosingDialog = true;
+                                WidgetsBinding.instance.addPostFrameCallback((
+                                  _,
+                                ) {
+                                  if (!dialogContext.mounted) return;
+                                  Navigator.of(dialogContext).maybePop();
+                                });
+                              },
+                              child: const Text('Hủy'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: () {
+                                if (isClosingDialog) return;
+                                final name = nameCtrl.text.trim();
+                                if (name.isEmpty) {
+                                  ScaffoldMessenger.of(
+                                    dialogContext,
+                                  ).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Nhập tên quỹ.'),
+                                    ),
+                                  );
+                                  return;
+                                }
+                                final targetAmount =
+                                    targetCtrl.text.trim().isEmpty
+                                    ? null
+                                    : parseAmountInput(targetCtrl.text.trim());
+                                isClosingDialog = true;
+                                WidgetsBinding.instance.addPostFrameCallback((
+                                  _,
+                                ) {
+                                  if (!dialogContext.mounted) return;
+                                  Navigator.of(dialogContext).maybePop({
+                                    'name': name,
+                                    'targetAmount': targetAmount,
+                                    'deadline': deadline,
+                                  });
+                                });
+                              },
+                              child: const Text('Lưu'),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),

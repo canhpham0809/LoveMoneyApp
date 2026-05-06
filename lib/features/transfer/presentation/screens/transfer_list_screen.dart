@@ -450,53 +450,60 @@ class _TransferListScreenState extends State<TransferListScreen> {
                         label: Text('Ngày: ${formatDate(selectedDate)}'),
                       ),
                       const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                          onPressed: () async {
-                            if (isClosingDialog) return;
-                            final amount = parseAmountInput(
-                              amountCtrl.text.trim(),
-                            );
-                            if (amount == null || amount <= 0) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Số tiền không hợp lệ.'),
-                                ),
-                              );
-                              return;
-                            }
-                            isClosingDialog = true;
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              if (!dialogContext.mounted) return;
-                              Navigator.of(dialogContext).maybePop(
-                                _TransferFormResult(
-                                  amount: amount,
-                                  toUserId: selectedRecipientId,
-                                  note: noteCtrl.text.trim().isEmpty
-                                      ? null
-                                      : noteCtrl.text.trim(),
-                                  date: selectedDate,
-                                ),
-                              );
-                            });
-                          },
-                          child: const Text('Lưu'),
-                        ),
-                      ),
-                      SizedBox(
-                        width: double.infinity,
-                        child: TextButton(
-                          onPressed: () {
-                            if (isClosingDialog) return;
-                            isClosingDialog = true;
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              if (!dialogContext.mounted) return;
-                              Navigator.of(dialogContext).maybePop();
-                            });
-                          },
-                          child: const Text('Hủy'),
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextButton(
+                              onPressed: () {
+                                if (isClosingDialog) return;
+                                isClosingDialog = true;
+                                WidgetsBinding.instance.addPostFrameCallback((
+                                  _,
+                                ) {
+                                  if (!dialogContext.mounted) return;
+                                  Navigator.of(dialogContext).maybePop();
+                                });
+                              },
+                              child: const Text('Hủy'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: () async {
+                                if (isClosingDialog) return;
+                                final amount = parseAmountInput(
+                                  amountCtrl.text.trim(),
+                                );
+                                if (amount == null || amount <= 0) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Số tiền không hợp lệ.'),
+                                    ),
+                                  );
+                                  return;
+                                }
+                                isClosingDialog = true;
+                                WidgetsBinding.instance.addPostFrameCallback((
+                                  _,
+                                ) {
+                                  if (!dialogContext.mounted) return;
+                                  Navigator.of(dialogContext).maybePop(
+                                    _TransferFormResult(
+                                      amount: amount,
+                                      toUserId: selectedRecipientId,
+                                      note: noteCtrl.text.trim().isEmpty
+                                          ? null
+                                          : noteCtrl.text.trim(),
+                                      date: selectedDate,
+                                    ),
+                                  );
+                                });
+                              },
+                              child: const Text('Lưu'),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),

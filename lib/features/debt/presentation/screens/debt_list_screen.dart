@@ -446,79 +446,94 @@ class _DebtListScreenState extends State<DebtListScreen> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                          onPressed: () async {
-                            if (isClosingDialog) return;
-                            final amount = parseAmountInput(
-                              amountCtrl.text.trim(),
-                            );
-                            if (personCtrl.text.trim().isEmpty ||
-                                amount == null ||
-                                amount <= 0) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Nhập đủ thông tin hợp lệ.'),
-                                ),
-                              );
-                              return;
-                            }
-                            final uid =
-                                Supabase.instance.client.auth.currentUser?.id;
-                            if (uid == null) {
-                              ScaffoldMessenger.of(dialogContext).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    'Không tìm thấy phiên đăng nhập.',
-                                  ),
-                                ),
-                              );
-                              return;
-                            }
-                            isClosingDialog = true;
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              if (!dialogContext.mounted) return;
-                              Navigator.of(dialogContext).maybePop(
-                                _DebtFormPayload(
-                                  debtTypeId: selectedDebtTypeId.value,
-                                  debtKind: selectedDebtKind.value,
-                                  recordToIncome:
-                                      selectedDebtKind.value == 'debt'
-                                      ? shouldRecordToIncome.value
-                                      : false,
-                                  recordToExpense:
-                                      selectedDebtKind.value == 'lend'
-                                      ? shouldRecordToExpense.value
-                                      : false,
-                                  name: personCtrl.text.trim(),
-                                  originalAmount: amount,
-                                  creditorName: personCtrl.text.trim(),
-                                  startDate: startDate,
-                                  dueDate: dueDate,
-                                  note: noteCtrl.text.trim().isEmpty
-                                      ? null
-                                      : noteCtrl.text.trim(),
-                                ),
-                              );
-                            });
-                          },
-                          child: const Text('Lưu'),
-                        ),
-                      ),
-                      SizedBox(
-                        width: double.infinity,
-                        child: TextButton(
-                          onPressed: () {
-                            if (isClosingDialog) return;
-                            isClosingDialog = true;
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              if (!dialogContext.mounted) return;
-                              Navigator.of(dialogContext).maybePop();
-                            });
-                          },
-                          child: const Text('Hủy'),
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextButton(
+                              onPressed: () {
+                                if (isClosingDialog) return;
+                                isClosingDialog = true;
+                                WidgetsBinding.instance.addPostFrameCallback((
+                                  _,
+                                ) {
+                                  if (!dialogContext.mounted) return;
+                                  Navigator.of(dialogContext).maybePop();
+                                });
+                              },
+                              child: const Text('Hủy'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: () async {
+                                if (isClosingDialog) return;
+                                final amount = parseAmountInput(
+                                  amountCtrl.text.trim(),
+                                );
+                                if (personCtrl.text.trim().isEmpty ||
+                                    amount == null ||
+                                    amount <= 0) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Nhập đủ thông tin hợp lệ.',
+                                      ),
+                                    ),
+                                  );
+                                  return;
+                                }
+                                final uid = Supabase
+                                    .instance
+                                    .client
+                                    .auth
+                                    .currentUser
+                                    ?.id;
+                                if (uid == null) {
+                                  ScaffoldMessenger.of(
+                                    dialogContext,
+                                  ).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Không tìm thấy phiên đăng nhập.',
+                                      ),
+                                    ),
+                                  );
+                                  return;
+                                }
+                                isClosingDialog = true;
+                                WidgetsBinding.instance.addPostFrameCallback((
+                                  _,
+                                ) {
+                                  if (!dialogContext.mounted) return;
+                                  Navigator.of(dialogContext).maybePop(
+                                    _DebtFormPayload(
+                                      debtTypeId: selectedDebtTypeId.value,
+                                      debtKind: selectedDebtKind.value,
+                                      recordToIncome:
+                                          selectedDebtKind.value == 'debt'
+                                          ? shouldRecordToIncome.value
+                                          : false,
+                                      recordToExpense:
+                                          selectedDebtKind.value == 'lend'
+                                          ? shouldRecordToExpense.value
+                                          : false,
+                                      name: personCtrl.text.trim(),
+                                      originalAmount: amount,
+                                      creditorName: personCtrl.text.trim(),
+                                      startDate: startDate,
+                                      dueDate: dueDate,
+                                      note: noteCtrl.text.trim().isEmpty
+                                          ? null
+                                          : noteCtrl.text.trim(),
+                                    ),
+                                  );
+                                });
+                              },
+                              child: const Text('Lưu'),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),

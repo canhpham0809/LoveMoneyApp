@@ -199,83 +199,94 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                         label: Text('Ngày: ${formatDate(selectedDate)}'),
                       ),
                       const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                          onPressed: () async {
-                            if (isClosingDialog) return;
-                            final amount = parseAmountInput(
-                              amountCtrl.text.trim(),
-                            );
-                            if (amount == null || amount <= 0) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Số tiền không hợp lệ.'),
-                                ),
-                              );
-                              return;
-                            }
-                            if (existing == null) {
-                              final uid =
-                                  Supabase.instance.client.auth.currentUser!.id;
-                              if (isWithdrawalTx) {
-                                await _fundService.createWithdrawal(
-                                  coupleId: widget.coupleId,
-                                  userId: uid,
-                                  fundId: widget.fundId,
-                                  walletId: walletId,
-                                  amount: amount,
-                                  note: noteCtrl.text.trim().isEmpty
-                                      ? null
-                                      : noteCtrl.text.trim(),
-                                  date: selectedDate,
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextButton(
+                              onPressed: () {
+                                if (isClosingDialog) return;
+                                isClosingDialog = true;
+                                WidgetsBinding.instance.addPostFrameCallback((
+                                  _,
+                                ) {
+                                  if (!dialogContext.mounted) return;
+                                  Navigator.of(dialogContext).maybePop(false);
+                                });
+                              },
+                              child: const Text('Hủy'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: () async {
+                                if (isClosingDialog) return;
+                                final amount = parseAmountInput(
+                                  amountCtrl.text.trim(),
                                 );
-                              } else {
-                                await _fundService.createContribution(
-                                  coupleId: widget.coupleId,
-                                  userId: uid,
-                                  fundId: widget.fundId,
-                                  walletId: walletId,
-                                  amount: amount,
-                                  note: noteCtrl.text.trim().isEmpty
-                                      ? null
-                                      : noteCtrl.text.trim(),
-                                  date: selectedDate,
-                                );
-                              }
-                            } else {
-                              await _fundService.updateContribution(
-                                contributionId: existing.id,
-                                fundId: widget.fundId,
-                                amount: amount,
-                                note: noteCtrl.text.trim().isEmpty
-                                    ? null
-                                    : noteCtrl.text.trim(),
-                                date: selectedDate,
-                              );
-                            }
-                            isClosingDialog = true;
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              if (!dialogContext.mounted) return;
-                              Navigator.of(dialogContext).maybePop(true);
-                            });
-                          },
-                          child: const Text('Lưu'),
-                        ),
-                      ),
-                      SizedBox(
-                        width: double.infinity,
-                        child: TextButton(
-                          onPressed: () {
-                            if (isClosingDialog) return;
-                            isClosingDialog = true;
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              if (!dialogContext.mounted) return;
-                              Navigator.of(dialogContext).maybePop(false);
-                            });
-                          },
-                          child: const Text('Hủy'),
-                        ),
+                                if (amount == null || amount <= 0) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Số tiền không hợp lệ.'),
+                                    ),
+                                  );
+                                  return;
+                                }
+                                if (existing == null) {
+                                  final uid = Supabase
+                                      .instance
+                                      .client
+                                      .auth
+                                      .currentUser!
+                                      .id;
+                                  if (isWithdrawalTx) {
+                                    await _fundService.createWithdrawal(
+                                      coupleId: widget.coupleId,
+                                      userId: uid,
+                                      fundId: widget.fundId,
+                                      walletId: walletId,
+                                      amount: amount,
+                                      note: noteCtrl.text.trim().isEmpty
+                                          ? null
+                                          : noteCtrl.text.trim(),
+                                      date: selectedDate,
+                                    );
+                                  } else {
+                                    await _fundService.createContribution(
+                                      coupleId: widget.coupleId,
+                                      userId: uid,
+                                      fundId: widget.fundId,
+                                      walletId: walletId,
+                                      amount: amount,
+                                      note: noteCtrl.text.trim().isEmpty
+                                          ? null
+                                          : noteCtrl.text.trim(),
+                                      date: selectedDate,
+                                    );
+                                  }
+                                } else {
+                                  await _fundService.updateContribution(
+                                    contributionId: existing.id,
+                                    fundId: widget.fundId,
+                                    amount: amount,
+                                    note: noteCtrl.text.trim().isEmpty
+                                        ? null
+                                        : noteCtrl.text.trim(),
+                                    date: selectedDate,
+                                  );
+                                }
+                                isClosingDialog = true;
+                                WidgetsBinding.instance.addPostFrameCallback((
+                                  _,
+                                ) {
+                                  if (!dialogContext.mounted) return;
+                                  Navigator.of(dialogContext).maybePop(true);
+                                });
+                              },
+                              child: const Text('Lưu'),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
