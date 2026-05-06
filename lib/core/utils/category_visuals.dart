@@ -61,6 +61,6 @@ Color colorFromHex(String input, {Color fallback = const Color(0xFF6366F1)}) {
 }
 
 String colorToHex(Color color) {
-  final value = color.value & 0x00FFFFFF;
+  final value = color.toARGB32() & 0x00FFFFFF;
   return '#${value.toRadixString(16).toUpperCase().padLeft(6, '0')}';
 }

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import 'package:flutter_app_demo/core/utils/category_visuals.dart';
 import 'package:flutter_app_demo/features/expense/data/models/category_model.dart';
@@ -66,6 +66,7 @@ class _ExpenseCategoryManagementScreenState
     } catch (e) {
       if (!mounted) return;
       await _load(showLoader: false);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Không cập nhật được thứ tự danh mục: $e')),
       );
@@ -149,13 +150,13 @@ class _ExpenseCategoryManagementScreenState
                               color: color,
                               shape: BoxShape.circle,
                               border: Border.all(
-                                color: selectedColor.value == color.value
+                                color: selectedColor.toARGB32() == color.toARGB32()
                                     ? Colors.black
                                     : Colors.transparent,
                                 width: 2,
                               ),
                             ),
-                            child: selectedColor.value == color.value
+                            child: selectedColor.toARGB32() == color.toARGB32()
                                 ? const Icon(
                                     Icons.check,
                                     size: 16,
@@ -171,7 +172,7 @@ class _ExpenseCategoryManagementScreenState
                 Row(
                   children: [
                     CircleAvatar(
-                      backgroundColor: selectedColor.withOpacity(0.16),
+                      backgroundColor: selectedColor.withValues(alpha: 0.16),
                       child: Icon(
                         iconFromKey(selectedIcon),
                         color: selectedColor,
@@ -337,7 +338,7 @@ class _ExpenseCategoryManagementScreenState
                   ),
                   child: ListTile(
                     leading: CircleAvatar(
-                      backgroundColor: color.withOpacity(0.16),
+                      backgroundColor: color.withValues(alpha: 0.16),
                       child: Icon(iconFromKey(item.icon), color: color),
                     ),
                     title: Text(item.name),

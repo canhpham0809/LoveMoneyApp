@@ -306,9 +306,8 @@ class TransactionService {
     final fundsTx = (results[2] as List).map((json) {
       final row = Map<String, dynamic>.from(json);
       final fundId = row['fund_id'] as String?;
-      final fallback = fundId != null && fundNameById[fundId] != null
-          ? fundNameById[fundId]!
-          : 'Góp quỹ';
+      final fundName = fundId != null ? fundNameById[fundId] : null;
+      final fallback = fundName != null ? 'Góp quỹ: $fundName' : 'Góp quỹ';
       return Transaction.fromJson({
         ...row,
         'type': 'fund',
@@ -322,9 +321,8 @@ class TransactionService {
     final debtTx = (results[3] as List).map((json) {
       final row = Map<String, dynamic>.from(json);
       final debtId = row['debt_id'] as String?;
-      final fallback = debtId != null && debtNameById[debtId] != null
-          ? debtNameById[debtId]!
-          : 'Trả nợ';
+      final debtName = debtId != null ? debtNameById[debtId] : null;
+      final fallback = debtName != null ? 'Trả nợ: $debtName' : 'Trả nợ';
       return Transaction.fromJson({
         ...row,
         'type': 'debt',

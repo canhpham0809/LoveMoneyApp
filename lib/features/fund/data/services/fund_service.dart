@@ -6,7 +6,6 @@ import 'package:flutter_app_demo/features/fund/data/models/fund_contribution_mod
 class FundService {
   SupabaseClient get _db => Supabase.instance.client;
   static const String _fundWithdrawIncomeSourceName = 'Rút quỹ';
-  static const String _fundDeleteIncomeSourceName = 'Xóa quỹ';
 
   bool _isMissingSortOrderColumn(Object error) {
     return error is PostgrestException &&
@@ -334,7 +333,7 @@ class FundService {
             'amount': amount,
             'description': note?.trim().isNotEmpty == true
                 ? note!.trim()
-                : 'Rút tiền từ quỹ $fundName',
+                : 'Rút quỹ: $fundName',
             'is_from_transfer': false,
             'date': date.toIso8601String().substring(0, 10),
           })
@@ -426,7 +425,7 @@ class FundService {
             'amount': amount,
             'description': note?.trim().isNotEmpty == true
                 ? note!.trim()
-                : 'Rút tiền từ quỹ $fundName',
+                : 'Rút quỹ: $fundName',
             'date': date.toIso8601String().substring(0, 10),
           })
           .eq('id', linkedIncomeId)
@@ -565,86 +564,5 @@ class FundService {
           .single();
       return created['id'] as String;
     }
-  }
-
-  Future<String> _ensureIncomeSource(
-    String coupleId,
-    String name, {
-    required String icon,
-  }) async {
-    try {
-      final existing = await _db
-          .from('income_sources')
-          .select('id, show_in_income_form')
-          .eq('couple_id', coupleId)
-          .eq('name', name)
-          .eq('is_deleted', false)
-          .limit(1);
-
-      if (existing.isNotEmpty) {
-        final id = existing.first['id'] as String;
-        final showInIncomeForm =
-            (existing.first['show_in_income_form'] as bool?) ?? true;
-        if (showInIncomeForm) {
-          await _db
-              .from('income_sources')
-              .update({'show_in_income_form': false})
-              .eq('id', id);
-        }
-        return id;
-      }
-
-      final created = await _db
-          .from('income_sources')
-          .insert({
-            'couple_id': coupleId,
-            'name': name,
-            'icon': icon,
-            'type': 'other',
-            'show_in_income_form': false,
-          })
-          .select('id')
-          .single();
-      return created['id'] as String;
-    } catch (e) {
-      if (!_isMissingIncomeFormColumn(e)) rethrow;
-      final existing = await _db
-          .from('income_sources')
-          .select('id')
-          .eq('couple_id', coupleId)
-          .eq('name', name)
-          .eq('is_deleted', false)
-          .limit(1);
-
-      if (existing.isNotEmpty) {
-        return existing.first['id'] as String;
-      }
-
-      final created = await _db
-          .from('income_sources')
-          .insert({
-            'couple_id': coupleId,
-            'name': name,
-            'icon': icon,
-            'type': 'other',
-          })
-          .select('id')
-          .single();
-      return created['id'] as String;
-    }
-  }
-
-  Future<String?> _resolveDefaultWalletId(String coupleId) async {
-    final rows = await _db
-        .from('wallets')
-        .select('id')
-        .eq('couple_id', coupleId)
-        .eq('is_deleted', false)
-        .order('is_default', ascending: false)
-        .order('created_at', ascending: true)
-        .limit(1);
-
-    if (rows.isEmpty) return null;
-    return rows.first['id'] as String;
   }
 }

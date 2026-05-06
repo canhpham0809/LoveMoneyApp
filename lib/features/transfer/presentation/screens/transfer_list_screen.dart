@@ -750,19 +750,33 @@ class _TransferListScreenState extends State<TransferListScreen> {
                   vertical: 8,
                 ),
                 children: [
+                  if (widget.partnerUserId != null) ...[
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.tealSoft.withValues(alpha: 0.45),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          'Đang xem: ${widget.viewerLabel}',
+                          style: Theme.of(context).textTheme.labelMedium
+                              ?.copyWith(
+                                color: AppColors.tealDeep,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                  ],
                   for (final entry in grouped.entries) ...[
                     Builder(
                       builder: (context) {
-                        final monthSent = entry.value
-                            .where(
-                              (item) => item.fromUserId == widget.viewerUserId,
-                            )
-                            .fold<double>(0, (sum, item) => sum + item.amount);
-                        final monthReceived = entry.value
-                            .where(
-                              (item) => item.toUserId == widget.viewerUserId,
-                            )
-                            .fold<double>(0, (sum, item) => sum + item.amount);
                         return Padding(
                           padding: const EdgeInsets.fromLTRB(0, 16, 0, 6),
                           child: Column(
@@ -778,67 +792,6 @@ class _TransferListScreenState extends State<TransferListScreen> {
                                   style: Theme.of(context).textTheme.titleMedium
                                       ?.copyWith(fontWeight: FontWeight.bold),
                                 ),
-                              ),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Card(
-                                      margin: EdgeInsets.zero,
-                                      child: Padding(
-                                        padding: const EdgeInsets.all(10),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            const Text(
-                                              'Đã chuyển',
-                                              style: TextStyle(fontSize: 11),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              formatVnd(monthSent),
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 13,
-                                                color: Theme.of(
-                                                  context,
-                                                ).colorScheme.error,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Card(
-                                      margin: EdgeInsets.zero,
-                                      child: Padding(
-                                        padding: const EdgeInsets.all(10),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            const Text(
-                                              'Đã nhận',
-                                              style: TextStyle(fontSize: 11),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              formatVnd(monthReceived),
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 13,
-                                                color: Colors.green[700],
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
                               ),
                             ],
                           ),

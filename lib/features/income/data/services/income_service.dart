@@ -6,12 +6,6 @@ import 'package:flutter_app_demo/features/income/data/models/income_source_model
 class IncomeService {
   SupabaseClient get _db => Supabase.instance.client;
 
-  bool _isMissingSortOrderColumn(Object error) {
-    return error is PostgrestException &&
-        error.code == '42703' &&
-        error.message.contains('sort_order');
-  }
-
   bool _isMissingIncomeFormColumn(Object error) {
     return error is PostgrestException &&
         error.code == '42703' &&
@@ -28,8 +22,7 @@ class IncomeService {
         .from('incomes')
         .select()
         .eq('couple_id', coupleId)
-        .eq('is_deleted', false)
-        .or('is_from_transfer.is.null,is_from_transfer.eq.false');
+        .eq('is_deleted', false);
 
     if (createdByUserId != null) {
       query = query.eq('user_id', createdByUserId);
@@ -106,25 +99,13 @@ class IncomeService {
   }
 
   Future<List<IncomeSourceModel>> getIncomeSources(String coupleId) async {
-    try {
-      final rows = await _db
-          .from('income_sources')
-          .select()
-          .eq('couple_id', coupleId)
-          .eq('is_deleted', false)
-          .order('sort_order')
-          .order('name');
-      return rows.map((r) => IncomeSourceModel.fromJson(r)).toList();
-    } catch (e) {
-      if (!_isMissingSortOrderColumn(e)) rethrow;
-      final rows = await _db
-          .from('income_sources')
-          .select()
-          .eq('couple_id', coupleId)
-          .eq('is_deleted', false)
-          .order('name');
-      return rows.map((r) => IncomeSourceModel.fromJson(r)).toList();
-    }
+    final rows = await _db
+        .from('income_sources')
+        .select()
+        .eq('couple_id', coupleId)
+        .eq('is_deleted', false)
+        .order('name');
+    return rows.map((r) => IncomeSourceModel.fromJson(r)).toList();
   }
 
   Future<List<IncomeSourceModel>> getIncomeFormSources(String coupleId) async {
@@ -135,37 +116,17 @@ class IncomeService {
           .eq('couple_id', coupleId)
           .eq('is_deleted', false)
           .eq('show_in_income_form', true)
-          .order('sort_order')
           .order('name');
       return rows.map((r) => IncomeSourceModel.fromJson(r)).toList();
     } catch (e) {
-      if (_isMissingIncomeFormColumn(e) || _isMissingSortOrderColumn(e)) {
-        final rows = await _db
-            .from('income_sources')
-            .select()
-            .eq('couple_id', coupleId)
-            .eq('is_deleted', false)
-            .order('name');
-        return rows.map((r) => IncomeSourceModel.fromJson(r)).toList();
-      }
-      rethrow;
-    }
-  }
-
-  Future<int> _nextSortOrder(String coupleId) async {
-    try {
+      if (!_isMissingIncomeFormColumn(e)) rethrow;
       final rows = await _db
           .from('income_sources')
-          .select('sort_order')
+          .select()
           .eq('couple_id', coupleId)
           .eq('is_deleted', false)
-          .order('sort_order', ascending: false)
-          .limit(1);
-      if (rows.isEmpty) return 0;
-      return ((rows.first['sort_order'] as num?)?.toInt() ?? 0) + 1;
-    } catch (e) {
-      if (!_isMissingSortOrderColumn(e)) rethrow;
-      return 0;
+          .order('name');
+      return rows.map((r) => IncomeSourceModel.fromJson(r)).toList();
     }
   }
 
@@ -181,7 +142,6 @@ class IncomeService {
       'name': name,
       'icon': icon,
       'type': type,
-      'sort_order': await _nextSortOrder(coupleId),
       'show_in_income_form': showInIncomeForm,
     };
 
@@ -193,10 +153,7 @@ class IncomeService {
           .single();
       return IncomeSourceModel.fromJson(row);
     } catch (e) {
-      if (!_isMissingIncomeFormColumn(e) && !_isMissingSortOrderColumn(e)) {
-        rethrow;
-      }
-      payload.remove('sort_order');
+      if (!_isMissingIncomeFormColumn(e)) rethrow;
       payload.remove('show_in_income_form');
       final row = await _db
           .from('income_sources')
@@ -257,19 +214,11 @@ class IncomeService {
 
   Future<void> updateIncomeSourceOrder(List<String> orderedIds) async {
     if (orderedIds.isEmpty) return;
-
     for (var i = 0; i < orderedIds.length; i++) {
-      try {
-        await _db
-            .from('income_sources')
-            .update({'sort_order': i})
-            .eq('id', orderedIds[i]);
-      } catch (e) {
-        if (_isMissingSortOrderColumn(e)) {
-          return;
-        }
-        rethrow;
-      }
+      await _db
+          .from('income_sources')
+          .update({'sort_order': i})
+          .eq('id', orderedIds[i]);
     }
   }
 }

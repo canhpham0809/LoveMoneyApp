@@ -1005,6 +1005,30 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                 controller: _scrollController,
                 padding: const EdgeInsets.fromLTRB(14, 10, 14, 90),
                 children: [
+                  if (widget.partnerUserId != null) ...[
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.tealSoft.withValues(alpha: 0.45),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          'Đang xem: ${widget.viewerLabel}',
+                          style: Theme.of(context).textTheme.labelMedium
+                              ?.copyWith(
+                                color: AppColors.tealDeep,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                  ],
                   for (final entry in grouped.entries) ...[
                     Builder(
                       builder: (context) {

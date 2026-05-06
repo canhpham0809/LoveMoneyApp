@@ -194,7 +194,7 @@ class DashboardService {
 
     final funds = await _db
         .from('funds')
-        .select('id, name, icon')
+        .select('id, name, icon, current_amount')
         .eq('couple_id', coupleId)
         .eq('is_deleted', false);
     final fundNameById = {
@@ -203,6 +203,10 @@ class DashboardService {
     final fundIconById = {
       for (final row in funds)
         row['id'] as String: ((row['icon'] as String?) ?? 'savings'),
+    };
+    final fundBalanceById = {
+      for (final row in funds)
+        row['id'] as String: ((row['current_amount'] as num?)?.toDouble() ?? 0),
     };
 
     var expensesQuery = _db
@@ -342,6 +346,27 @@ class DashboardService {
       }
     }
 
+    // Fetch all-time payments for non-recorded debts to compute remaining balance.
+    final totalPaidAllTimeByDebtId = <String, double>{};
+    if (allDebtIdsForCouple.isNotEmpty) {
+      try {
+        final allPaymentRows = List<Map<String, dynamic>>.from(
+          await _db
+              .from('debt_payments')
+              .select('debt_id, amount')
+              .inFilter('debt_id', allDebtIdsForCouple)
+              .eq('is_deleted', false),
+        );
+        for (final p in allPaymentRows) {
+          final pid = p['debt_id'] as String?;
+          if (pid == null) continue;
+          totalPaidAllTimeByDebtId[pid] =
+              (totalPaidAllTimeByDebtId[pid] ?? 0) +
+              ((p['amount'] as num?)?.toDouble() ?? 0);
+        }
+      } catch (_) {}
+    }
+
     final excludedIncomeIds = <String>{
       ...filteredContributions
           .map((row) => row['linked_income_id'] as String?)
@@ -424,16 +449,13 @@ class DashboardService {
         () => {
           'name': name,
           'icon_key': iconKey,
-          'amount': 0.0,
+          'amount': fundId != null ? (fundBalanceById[fundId] ?? 0.0) : 0.0,
           'sub_items': <Map<String, dynamic>>[],
         },
       );
       final contribType =
           (row['contribution_type'] as String?) ?? 'contribution';
       final amount = (row['amount'] as num?)?.toDouble() ?? 0;
-      if (contribType == 'contribution') {
-        bucket['amount'] = (bucket['amount'] as double) + amount;
-      }
       (bucket['sub_items'] as List<Map<String, dynamic>>).add({
         'type': contribType,
         'amount': amount,
@@ -467,20 +489,29 @@ class DashboardService {
       final originalAmount = (isCreatedThisMonth && isRecorded)
           ? ((row['original_amount'] as num?)?.toDouble() ?? 0)
           : 0.0;
-      final paymentAmount = payments.fold<double>(
-        0,
-        (s, p) => s + ((p['amount'] as num?)?.toDouble() ?? 0),
-      );
-      final amount = originalAmount > 0 ? originalAmount : paymentAmount;
+      final debtOriginal = ((row['original_amount'] as num?)?.toDouble() ?? 0);
+      final totalPaid = totalPaidAllTimeByDebtId[debtId] ?? 0;
+      final amount = (debtOriginal - totalPaid).clamp(0.0, double.infinity);
 
-      final subItems = payments.map((p) {
-        return <String, dynamic>{
-          'type': debtKind == 'lend' ? 'receipt' : 'payment',
-          'amount': (p['amount'] as num?)?.toDouble() ?? 0,
-          'date': p['date'] as String?,
-          'description': p['note'] as String?,
-        };
-      }).toList();
+      final subItems = <Map<String, dynamic>>[];
+      if (isCreatedThisMonth && isRecorded && originalAmount > 0) {
+        subItems.add({
+          'type': debtKind == 'lend' ? 'record_expense' : 'record_income',
+          'amount': originalAmount,
+          'date': startDate,
+          'description': null,
+        });
+      }
+      subItems.addAll(
+        payments.map((p) {
+          return <String, dynamic>{
+            'type': debtKind == 'lend' ? 'receipt' : 'payment',
+            'amount': (p['amount'] as num?)?.toDouble() ?? 0,
+            'date': p['date'] as String?,
+            'description': p['note'] as String?,
+          };
+        }),
+      );
 
       final item = {
         'id': debtId,

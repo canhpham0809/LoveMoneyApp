@@ -350,48 +350,32 @@ class _DebtListScreenState extends State<DebtListScreen> {
                         valueListenable: selectedDebtKind,
                         builder: (_, value, _) => Row(
                           children: [
-                            GestureDetector(
-                              onTap: () => selectedDebtKind.value = 'debt',
-                              child: Row(
-                                children: [
-                                  Radio<String>(
-                                    value: 'debt',
-                                    groupValue: value,
-                                    visualDensity: const VisualDensity(
-                                      horizontal: -4,
-                                      vertical: -4,
-                                    ),
-                                    materialTapTargetSize:
-                                        MaterialTapTargetSize.shrinkWrap,
-                                    onChanged: (v) {
-                                      if (v != null) selectedDebtKind.value = v;
-                                    },
-                                  ),
-                                  const Text('Nợ'),
-                                ],
+                            ChoiceChip(
+                              label: const Text('Nợ'),
+                              selected: value == 'debt',
+                              showCheckmark: false,
+                              visualDensity: const VisualDensity(
+                                horizontal: -4,
+                                vertical: -4,
                               ),
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                              onSelected: (_) =>
+                                  selectedDebtKind.value = 'debt',
                             ),
                             const SizedBox(width: 16),
-                            GestureDetector(
-                              onTap: () => selectedDebtKind.value = 'lend',
-                              child: Row(
-                                children: [
-                                  Radio<String>(
-                                    value: 'lend',
-                                    groupValue: value,
-                                    visualDensity: const VisualDensity(
-                                      horizontal: -4,
-                                      vertical: -4,
-                                    ),
-                                    materialTapTargetSize:
-                                        MaterialTapTargetSize.shrinkWrap,
-                                    onChanged: (v) {
-                                      if (v != null) selectedDebtKind.value = v;
-                                    },
-                                  ),
-                                  const Text('Cho mượn'),
-                                ],
+                            ChoiceChip(
+                              label: const Text('Cho mượn'),
+                              selected: value == 'lend',
+                              showCheckmark: false,
+                              visualDensity: const VisualDensity(
+                                horizontal: -4,
+                                vertical: -4,
                               ),
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                              onSelected: (_) =>
+                                  selectedDebtKind.value = 'lend',
                             ),
                           ],
                         ),
@@ -682,6 +666,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
       await _openDebtPopup(existing: item);
       return;
     }
+    if (!mounted) return;
     if (action == 'delete') {
       final confirmed = await showDialog<bool>(
         context: context,

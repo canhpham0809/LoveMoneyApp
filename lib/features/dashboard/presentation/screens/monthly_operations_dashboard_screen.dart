@@ -1,13 +1,20 @@
 import 'package:flutter/material.dart';
 
+import 'package:flutter_app_demo/core/theme/app_colors.dart';
 import 'package:flutter_app_demo/core/utils/category_visuals.dart';
 import 'package:flutter_app_demo/core/utils/formatters.dart';
+import 'package:flutter_app_demo/core/widgets/busy_overlay.dart';
 import 'package:flutter_app_demo/features/dashboard/data/services/dashboard_service.dart';
 
 class MonthlyOperationsDashboardScreen extends StatefulWidget {
   final String coupleId;
   final String viewerUserId;
   final String viewerLabel;
+  final String currentUserId;
+  final String? partnerUserId;
+  final String? selfLabel;
+  final String? partnerLabel;
+  final VoidCallback? onToggleViewer;
   final int year;
   final int month;
 
@@ -16,6 +23,11 @@ class MonthlyOperationsDashboardScreen extends StatefulWidget {
     required this.coupleId,
     required this.viewerUserId,
     required this.viewerLabel,
+    required this.currentUserId,
+    this.partnerUserId,
+    this.selfLabel,
+    this.partnerLabel,
+    this.onToggleViewer,
     required this.year,
     required this.month,
   });
@@ -29,7 +41,12 @@ class _MonthlyOperationsDashboardScreenState
     extends State<MonthlyOperationsDashboardScreen> {
   final _service = DashboardService();
 
+  late String _viewerUserId;
+  late String _viewerLabel;
+
   bool _isLoading = true;
+  bool _isRefreshingContent = false;
+  String _refreshMessage = 'Đang tải dữ liệu...';
   String? _error;
 
   List<Map<String, dynamic>> _incomeBySource = const [];
@@ -51,18 +68,30 @@ class _MonthlyOperationsDashboardScreenState
   @override
   void initState() {
     super.initState();
-    _load();
+    _viewerUserId = widget.viewerUserId;
+    _viewerLabel = widget.viewerLabel;
+    _load(showLoader: true);
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
+  Future<void> _load({bool showLoader = false, String? overlayMessage}) async {
+    if (showLoader) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+    } else {
+      if (mounted) {
+        setState(() {
+          _error = null;
+          _isRefreshingContent = true;
+          _refreshMessage = overlayMessage ?? 'Đang tải dữ liệu...';
+        });
+      }
+    }
     try {
       final data = await _service.getMonthlyOperationsDashboard(
         coupleId: widget.coupleId,
-        viewerUserId: widget.viewerUserId,
+        viewerUserId: _viewerUserId,
         year: widget.year,
         month: widget.month,
       );
@@ -110,9 +139,31 @@ class _MonthlyOperationsDashboardScreenState
       setState(() => _error = e.toString());
     } finally {
       if (mounted) {
-        setState(() => _isLoading = false);
+        setState(() {
+          if (showLoader) {
+            _isLoading = false;
+          } else {
+            _isRefreshingContent = false;
+          }
+        });
       }
     }
+  }
+
+  Future<void> _toggleViewerFromMonthlyDashboard() async {
+    if (widget.partnerUserId == null) return;
+    if (!mounted) return;
+    final goingToPartner = _viewerUserId == widget.currentUserId;
+    setState(() {
+      _viewerUserId = goingToPartner
+          ? widget.partnerUserId!
+          : widget.currentUserId;
+      _viewerLabel = goingToPartner
+          ? (widget.partnerLabel ?? 'Người kia')
+          : (widget.selfLabel ?? 'Tôi');
+    });
+    widget.onToggleViewer?.call();
+    await _load(showLoader: false, overlayMessage: 'Đang chuyển view...');
   }
 
   @override
@@ -124,96 +175,134 @@ class _MonthlyOperationsDashboardScreenState
       appBar: AppBar(
         title: Text('Dashboard $monthLabel'),
         actions: [
-          IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
+          if (widget.partnerUserId != null)
+            IconButton(
+              onPressed: _toggleViewerFromMonthlyDashboard,
+              icon: Icon(
+                _viewerUserId == widget.currentUserId
+                    ? Icons.person
+                    : Icons.people_alt_outlined,
+              ),
+              tooltip: 'Đang xem: $_viewerLabel. Chạm để đổi.',
+            ),
+          IconButton(
+            onPressed: () =>
+                _load(showLoader: false, overlayMessage: 'Đang tải dữ liệu...'),
+            icon: const Icon(Icons.refresh),
+          ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
+      body: BusyOverlay(
+        isVisible: _isRefreshingContent,
+        message: _refreshMessage,
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+            ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(_error!, textAlign: TextAlign.center),
+                      const SizedBox(height: 12),
+                      FilledButton(
+                        onPressed: () => _load(showLoader: true),
+                        child: const Text('Thử lại'),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            : RefreshIndicator(
+                onRefresh: () => _load(
+                  showLoader: false,
+                  overlayMessage: 'Đang tải dữ liệu...',
+                ),
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                   children: [
-                    Text(_error!, textAlign: TextAlign.center),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.tealSoft.withValues(alpha: 0.45),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          'Đang xem: $_viewerLabel',
+                          style: Theme.of(context).textTheme.labelMedium
+                              ?.copyWith(
+                                color: AppColors.tealDeep,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 12),
-                    FilledButton(
-                      onPressed: _load,
-                      child: const Text('Thử lại'),
+                    _SummaryHeader(
+                      totalIncome: _totalIncome,
+                      totalExpense: _totalExpense,
+                      totalFundWithdrawal: _totalFundWithdrawal,
+                      totalFundContribution: _totalFundContribution,
+                      transferSent: _transferSent,
+                      transferReceived: _transferReceived,
+                      totalDebtBorrow: _totalDebtBorrow,
+                      totalDebtLend: _totalDebtLend,
+                      totalDebtPaymentMade: _totalDebtPaymentMade,
+                      totalDebtPaymentReceived: _totalDebtPaymentReceived,
+                    ),
+                    const SizedBox(height: 14),
+                    _BreakdownSection(
+                      title: 'Tổng Thu',
+                      emptyText: 'Không có dữ liệu thu trong tháng.',
+                      rows: _incomeBySource,
+                      amountColor: Colors.green[700]!,
+                    ),
+                    const SizedBox(height: 12),
+                    _BreakdownSection(
+                      title: 'Tổng Chi',
+                      emptyText: 'Không có dữ liệu chi trong tháng.',
+                      rows: _expenseByCategory,
+                      amountColor: Theme.of(context).colorScheme.error,
+                    ),
+                    const SizedBox(height: 12),
+                    _BreakdownSection(
+                      title: 'Tổng tiền góp Quỹ',
+                      emptyText: 'Không có giao dịch góp quỹ trong tháng.',
+                      rows: _fundContributionByItem,
+                      amountColor: Colors.orange[700]!,
+                    ),
+                    const SizedBox(height: 12),
+                    _TransferSection(
+                      transferSent: _transferSent,
+                      transferReceived: _transferReceived,
+                    ),
+                    const SizedBox(height: 12),
+                    _BreakdownSection(
+                      title: 'Tổng tiền Mượn Nợ',
+                      emptyText: 'Không có khoản mượn nợ trong tháng.',
+                      rows: _debtBorrowedByItem,
+                      amountColor: Colors.blue[700]!,
+                      defaultIcon: Icons.request_quote_outlined,
+                    ),
+                    const SizedBox(height: 12),
+                    _BreakdownSection(
+                      title: 'Tổng tiền Cho mượn',
+                      emptyText: 'Không có khoản cho mượn trong tháng.',
+                      rows: _debtLentByItem,
+                      amountColor: Colors.deepPurple[700]!,
+                      defaultIcon: Icons.account_balance_wallet_outlined,
                     ),
                   ],
                 ),
               ),
-            )
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                children: [
-                  Text(
-                    'Đang xem: ${widget.viewerLabel}',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 12),
-                  _SummaryHeader(
-                    totalIncome: _totalIncome,
-                    totalExpense: _totalExpense,
-                    totalFundWithdrawal: _totalFundWithdrawal,
-                    totalFundContribution: _totalFundContribution,
-                    transferSent: _transferSent,
-                    transferReceived: _transferReceived,
-                    totalDebtBorrow: _totalDebtBorrow,
-                    totalDebtLend: _totalDebtLend,
-                    totalDebtPaymentMade: _totalDebtPaymentMade,
-                    totalDebtPaymentReceived: _totalDebtPaymentReceived,
-                  ),
-                  const SizedBox(height: 14),
-                  _BreakdownSection(
-                    title: 'Tổng Thu',
-                    emptyText: 'Không có dữ liệu thu trong tháng.',
-                    rows: _incomeBySource,
-                    amountColor: Colors.green[700]!,
-                  ),
-                  const SizedBox(height: 12),
-                  _BreakdownSection(
-                    title: 'Tổng Chi',
-                    emptyText: 'Không có dữ liệu chi trong tháng.',
-                    rows: _expenseByCategory,
-                    amountColor: Theme.of(context).colorScheme.error,
-                  ),
-                  const SizedBox(height: 12),
-                  _BreakdownSection(
-                    title: 'Tổng tiền góp Quỹ',
-                    emptyText: 'Không có giao dịch góp quỹ trong tháng.',
-                    rows: _fundContributionByItem,
-                    amountColor: Colors.orange[700]!,
-                  ),
-                  const SizedBox(height: 12),
-                  _TransferSection(
-                    transferSent: _transferSent,
-                    transferReceived: _transferReceived,
-                  ),
-                  const SizedBox(height: 12),
-                  _BreakdownSection(
-                    title: 'Tổng tiền Mượn Nợ',
-                    emptyText: 'Không có khoản mượn nợ trong tháng.',
-                    rows: _debtBorrowedByItem,
-                    amountColor: Colors.blue[700]!,
-                    defaultIcon: Icons.request_quote_outlined,
-                  ),
-                  const SizedBox(height: 12),
-                  _BreakdownSection(
-                    title: 'Tổng tiền Cho mượn',
-                    emptyText: 'Không có khoản cho mượn trong tháng.',
-                    rows: _debtLentByItem,
-                    amountColor: Colors.deepPurple[700]!,
-                    defaultIcon: Icons.account_balance_wallet_outlined,
-                  ),
-                ],
-              ),
-            ),
+      ),
     );
   }
 }
@@ -399,7 +488,7 @@ class _SummaryHeader extends StatelessWidget {
   Widget _miniTile(String label, double value, Color color, IconData icon) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
+        color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Padding(
@@ -493,7 +582,9 @@ class _BreakdownSection extends StatelessWidget {
                         children: [
                           CircleAvatar(
                             radius: 14,
-                            backgroundColor: amountColor.withOpacity(0.15),
+                            backgroundColor: amountColor.withValues(
+                              alpha: 0.15,
+                            ),
                             child: Icon(icon, size: 16, color: amountColor),
                           ),
                           const SizedBox(width: 8),
@@ -521,7 +612,7 @@ class _BreakdownSection extends StatelessWidget {
                           value: percent,
                           minHeight: 7,
                           color: amountColor,
-                          backgroundColor: Colors.grey.withOpacity(0.18),
+                          backgroundColor: Colors.grey.withValues(alpha: 0.18),
                         ),
                       ),
                       if (subItems.isNotEmpty) ...[
@@ -533,7 +624,9 @@ class _BreakdownSection extends StatelessWidget {
                           final subDate = sub['date'] as String?;
                           final subDesc = sub['description'] as String?;
                           final isOutgoing =
-                              subType == 'withdrawal' || subType == 'payment';
+                              subType == 'withdrawal' ||
+                              subType == 'payment' ||
+                              subType == 'record_expense';
                           final subColor = isOutgoing
                               ? Colors.red[700]!
                               : Colors.green[700]!;
@@ -542,10 +635,14 @@ class _BreakdownSection extends StatelessWidget {
                               : (isOutgoing
                                     ? (subType == 'withdrawal'
                                           ? 'Rút quỹ'
-                                          : 'Trả nợ')
+                                          : (subType == 'record_expense'
+                                                ? 'Ghi vào Chi'
+                                                : 'Trả nợ'))
                                     : (subType == 'receipt'
                                           ? 'Nhận lại'
-                                          : 'Góp quỹ'));
+                                          : (subType == 'record_income'
+                                                ? 'Ghi vào Thu'
+                                                : 'Góp quỹ')));
                           final dateStr =
                               subDate != null && subDate.length >= 10
                               ? subDate.substring(5, 10).replaceAll('-', '/')
@@ -655,7 +752,7 @@ class _TransferSection extends StatelessWidget {
   }) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
+        color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Padding(
@@ -664,7 +761,7 @@ class _TransferSection extends StatelessWidget {
           children: [
             CircleAvatar(
               radius: 13,
-              backgroundColor: color.withOpacity(0.2),
+              backgroundColor: color.withValues(alpha: 0.2),
               child: Icon(icon, size: 14, color: color),
             ),
             const SizedBox(width: 8),

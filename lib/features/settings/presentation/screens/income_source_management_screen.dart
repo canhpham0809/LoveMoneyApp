@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import 'package:flutter_app_demo/core/utils/category_visuals.dart';
 import 'package:flutter_app_demo/features/income/data/models/income_source_model.dart';
@@ -68,6 +68,7 @@ class _IncomeSourceManagementScreenState
     } catch (e) {
       if (!mounted) return;
       await _load(showLoader: false);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Không cập nhật được thứ tự danh mục Thu: $e')),
       );

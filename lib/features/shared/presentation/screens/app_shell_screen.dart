@@ -542,6 +542,8 @@ class _AppShellScreenState extends State<AppShellScreen> {
         currentUserId: currentUserId,
         viewerLabel: viewerLabel,
         partnerUserId: counterpartyUserId,
+        selfLabel: _selfLabel,
+        partnerLabel: _partnerLabel,
         onToggleViewer: _toggleViewer,
         refreshSignal: _dashboardRefreshBus,
         onDataChanged: _markIncomeChanged,

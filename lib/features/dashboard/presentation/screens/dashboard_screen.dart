@@ -19,6 +19,8 @@ class DashboardScreen extends StatefulWidget {
   final String currentUserId;
   final String viewerLabel;
   final String? partnerUserId;
+  final String? selfLabel;
+  final String? partnerLabel;
   final VoidCallback? onToggleViewer;
   final ValueListenable<int>? refreshSignal;
   final Future<void> Function()? onCreatePressed;
@@ -31,6 +33,8 @@ class DashboardScreen extends StatefulWidget {
     required this.currentUserId,
     required this.viewerLabel,
     this.partnerUserId,
+    this.selfLabel,
+    this.partnerLabel,
     this.onToggleViewer,
     this.refreshSignal,
     this.onCreatePressed,
@@ -208,6 +212,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
           coupleId: widget.coupleId,
           viewerUserId: widget.viewerUserId,
           viewerLabel: widget.viewerLabel,
+          currentUserId: widget.currentUserId,
+          partnerUserId: widget.partnerUserId,
+          selfLabel: widget.selfLabel,
+          partnerLabel: widget.partnerLabel,
+          onToggleViewer: widget.onToggleViewer,
           year: summary.year,
           month: summary.month,
         ),

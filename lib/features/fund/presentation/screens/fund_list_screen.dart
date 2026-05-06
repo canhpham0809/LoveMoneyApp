@@ -406,6 +406,7 @@ class _FundListScreenState extends State<FundListScreen> {
       await _openFundPopup(existing: item);
       return;
     }
+    if (!mounted) return;
     if (action == 'delete') {
       try {
         final currentUserId = Supabase.instance.client.auth.currentUser?.id;
