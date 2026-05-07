@@ -90,6 +90,7 @@ class _ExpenseCategoryManagementScreenState
             existing == null ? 'Thêm danh mục Chi' : 'Sửa danh mục Chi',
           ),
           content: SingleChildScrollView(
+            padding: const EdgeInsets.only(top: 8),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
