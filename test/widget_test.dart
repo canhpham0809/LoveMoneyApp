@@ -21,7 +21,7 @@ void main() {
     await tester.pumpWidget(const LoveMoneyApp());
     await tester.pumpAndSettle();
 
-    expect(find.text('LoveMoney'), findsOneWidget);
+    expect(find.text('FamilyMoney'), findsOneWidget);
     expect(find.text('Đăng nhập'), findsAtLeastNWidgets(1));
   });
 }

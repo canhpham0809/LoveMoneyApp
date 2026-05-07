@@ -315,67 +315,52 @@ class _DebtListScreenState extends State<DebtListScreen> {
                             Wrap(
                               spacing: 8,
                               runSpacing: 8,
-                              children: debtTypes
-                                  .map(
-                                    (item) => ChoiceChip(
-                                      label: Text(
-                                        item['name'] as String,
-                                        style: const TextStyle(fontSize: 10),
-                                      ),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 6,
-                                        vertical: 0,
-                                      ),
-                                      visualDensity: const VisualDensity(
-                                        horizontal: -4,
-                                        vertical: -4,
-                                      ),
-                                      materialTapTargetSize:
-                                          MaterialTapTargetSize.shrinkWrap,
-                                      showCheckmark: false,
-                                      selected: value == item['id'] as String,
-                                      onSelected: (_) {
-                                        selectedDebtTypeId.value =
-                                            item['id'] as String;
-                                      },
+                              children: debtTypes.map((item) {
+                                final isSelected =
+                                    value == item['id'] as String;
+                                final theme = Theme.of(dialogContext);
+                                return GestureDetector(
+                                  onTap: () {
+                                    selectedDebtTypeId.value =
+                                        item['id'] as String;
+                                  },
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 150),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 8,
                                     ),
-                                  )
-                                  .toList(),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      ValueListenableBuilder<String>(
-                        valueListenable: selectedDebtKind,
-                        builder: (_, value, _) => Row(
-                          children: [
-                            ChoiceChip(
-                              label: const Text('Nợ'),
-                              selected: value == 'debt',
-                              showCheckmark: false,
-                              visualDensity: const VisualDensity(
-                                horizontal: -4,
-                                vertical: -4,
-                              ),
-                              materialTapTargetSize:
-                                  MaterialTapTargetSize.shrinkWrap,
-                              onSelected: (_) =>
-                                  selectedDebtKind.value = 'debt',
-                            ),
-                            const SizedBox(width: 16),
-                            ChoiceChip(
-                              label: const Text('Cho mượn'),
-                              selected: value == 'lend',
-                              showCheckmark: false,
-                              visualDensity: const VisualDensity(
-                                horizontal: -4,
-                                vertical: -4,
-                              ),
-                              materialTapTargetSize:
-                                  MaterialTapTargetSize.shrinkWrap,
-                              onSelected: (_) =>
-                                  selectedDebtKind.value = 'lend',
+                                    decoration: BoxDecoration(
+                                      color: isSelected
+                                          ? theme.colorScheme.primaryContainer
+                                          : theme
+                                                .colorScheme
+                                                .surfaceContainerHighest,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: isSelected
+                                            ? theme.colorScheme.primary
+                                            : Colors.transparent,
+                                        width: 2,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      item['name'] as String,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: isSelected
+                                            ? FontWeight.w600
+                                            : FontWeight.normal,
+                                        color: isSelected
+                                            ? theme.colorScheme.primary
+                                            : theme
+                                                  .colorScheme
+                                                  .onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
                             ),
                           ],
                         ),
@@ -398,7 +383,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
                                 onChanged: (v) {
                                   shouldRecordToExpense.value = v ?? false;
                                 },
-                                title: const Text('Ghi nhan vao Chi'),
+                                title: const Text('Ghi nhận vào Chi'),
                               ),
                             );
                           }
@@ -415,7 +400,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
                               onChanged: (v) {
                                 shouldRecordToIncome.value = v ?? false;
                               },
-                              title: const Text('Ghi nhan vao Thu'),
+                              title: const Text('Ghi nhận vào Thu'),
                             ),
                           );
                         },

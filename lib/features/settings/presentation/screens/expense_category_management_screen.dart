@@ -1,5 +1,6 @@
 ﻿import 'package:flutter/material.dart';
 
+import 'package:flutter_app_demo/core/theme/app_colors.dart';
 import 'package:flutter_app_demo/core/utils/category_visuals.dart';
 import 'package:flutter_app_demo/features/expense/data/models/category_model.dart';
 import 'package:flutter_app_demo/features/expense/data/services/expense_service.dart';
@@ -114,9 +115,17 @@ class _ExpenseCategoryManagementScreenState
                   children: kCategoryIconChoices
                       .map(
                         (choice) => ChoiceChip(
-                          avatar: Icon(choice.icon, size: 18),
-                          label: Text(choice.key),
+                          label: Icon(
+                            choice.icon,
+                            size: 22,
+                            color: selectedIcon == choice.key
+                                ? null
+                                : Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                          ),
                           selected: selectedIcon == choice.key,
+                          padding: const EdgeInsets.all(6),
                           onSelected: (_) {
                             setDialogState(() => selectedIcon = choice.key);
                           },
@@ -150,7 +159,8 @@ class _ExpenseCategoryManagementScreenState
                               color: color,
                               shape: BoxShape.circle,
                               border: Border.all(
-                                color: selectedColor.toARGB32() == color.toARGB32()
+                                color:
+                                    selectedColor.toARGB32() == color.toARGB32()
                                     ? Colors.black
                                     : Colors.transparent,
                                 width: 2,
@@ -324,6 +334,7 @@ class _ExpenseCategoryManagementScreenState
           ? const Center(child: Text('Chưa có danh mục Chi nào.'))
           : ReorderableListView.builder(
               buildDefaultDragHandles: false,
+              padding: const EdgeInsets.only(bottom: 88),
               itemCount: _categories.length,
               onReorder: _onReorder,
               itemBuilder: (context, index) {
@@ -331,10 +342,21 @@ class _ExpenseCategoryManagementScreenState
                 final color = colorFromHex(item.color);
                 return Container(
                   key: ValueKey(item.id),
-                  decoration: const BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(color: Color(0x14000000)),
-                    ),
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppColors.border),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.06),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
                   ),
                   child: ListTile(
                     leading: CircleAvatar(
@@ -372,10 +394,9 @@ class _ExpenseCategoryManagementScreenState
                 );
               },
             ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: FloatingActionButton(
         onPressed: () => _openCategoryDialog(),
-        icon: const Icon(Icons.add),
-        label: const Text('Tạo danh mục Chi'),
+        child: const Icon(Icons.add),
       ),
     );
   }

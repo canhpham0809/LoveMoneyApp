@@ -816,7 +816,7 @@ class _FundListScreenState extends State<FundListScreen> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _openFundPopup,
-        child: const Icon(Icons.add, size: 36),
+        child: const Icon(Icons.add),
       ),
     );
   }

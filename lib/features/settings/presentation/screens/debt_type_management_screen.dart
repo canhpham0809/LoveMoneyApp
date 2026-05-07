@@ -173,6 +173,7 @@ class _DebtTypeManagementScreenState extends State<DebtTypeManagementScreen> {
           : _items.isEmpty
           ? const Center(child: Text('Chưa có danh mục Nợ nào.'))
           : ListView.separated(
+              padding: const EdgeInsets.only(bottom: 88),
               itemCount: _items.length,
               separatorBuilder: (_, _) => const Divider(height: 0),
               itemBuilder: (context, index) {
@@ -202,10 +203,9 @@ class _DebtTypeManagementScreenState extends State<DebtTypeManagementScreen> {
                 );
               },
             ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: FloatingActionButton(
         onPressed: () => _openDebtTypeDialog(),
-        icon: const Icon(Icons.add),
-        label: const Text('Tạo danh mục Nợ'),
+        child: const Icon(Icons.add),
       ),
     );
   }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'register_screen.dart';
+
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -13,7 +15,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   bool _isLoading = false;
-  bool _isRegister = false;
+  bool _showPassword = false;
   String? _error;
 
   @override
@@ -30,29 +32,36 @@ class _LoginScreenState extends State<LoginScreen> {
       _error = null;
     });
     try {
-      final auth = Supabase.instance.client.auth;
-      if (_isRegister) {
-        await auth.signUp(
-          email: _emailCtrl.text.trim(),
-          password: _passwordCtrl.text,
-        );
-      } else {
-        await auth.signInWithPassword(
-          email: _emailCtrl.text.trim(),
-          password: _passwordCtrl.text,
-        );
-      }
+      await Supabase.instance.client.auth.signInWithPassword(
+        email: _emailCtrl.text.trim(),
+        password: _passwordCtrl.text,
+      );
     } on AuthException catch (e) {
-      setState(() => _error = e.message);
+      setState(() => _error = _mapAuthError(e.message));
     } catch (e) {
-      setState(() => _error = e.toString());
+      setState(() => _error = 'Đã xảy ra lỗi. Vui lòng thử lại.');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
+  String _mapAuthError(String msg) {
+    if (msg.contains('Invalid login credentials') ||
+        msg.contains('invalid_credentials')) {
+      return 'Email hoặc mật khẩu không đúng.';
+    }
+    if (msg.contains('Email not confirmed')) {
+      return 'Email chưa được xác nhận. Vui lòng kiểm tra hộp thư.';
+    }
+    if (msg.contains('rate limit')) {
+      return 'Đăng nhập quá nhiều lần. Vui lòng thử lại sau.';
+    }
+    return msg;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
       body: Center(
         child: SingleChildScrollView(
@@ -68,17 +77,17 @@ class _LoginScreenState extends State<LoginScreen> {
                   const Icon(Icons.favorite, size: 56, color: Colors.teal),
                   const SizedBox(height: 8),
                   Text(
-                    'LoveMoney',
+                    'FamilyMoney',
                     textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    style: theme.textTheme.headlineMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    _isRegister ? 'Tạo tài khoản' : 'Đăng nhập',
+                    'Đăng nhập',
                     textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.titleMedium,
+                    style: theme.textTheme.titleMedium,
                   ),
                   const SizedBox(height: 32),
                   TextFormField(
@@ -89,6 +98,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       border: OutlineInputBorder(),
                     ),
                     keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.next,
                     validator: (v) => (v == null || !v.contains('@'))
                         ? 'Email không hợp lệ'
                         : null,
@@ -96,29 +106,64 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: _passwordCtrl,
-                    decoration: const InputDecoration(
+                    obscureText: !_showPassword,
+                    textInputAction: TextInputAction.done,
+                    onFieldSubmitted: (_) => _submit(),
+                    decoration: InputDecoration(
                       labelText: 'Mật khẩu',
-                      prefixIcon: Icon(Icons.lock_outline),
-                      border: OutlineInputBorder(),
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      border: const OutlineInputBorder(),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _showPassword
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                        ),
+                        onPressed: () =>
+                            setState(() => _showPassword = !_showPassword),
+                      ),
                     ),
-                    obscureText: true,
                     validator: (v) => (v == null || v.length < 6)
                         ? 'Tối thiểu 6 ký tự'
                         : null,
                   ),
                   if (_error != null) ...[
                     const SizedBox(height: 12),
-                    Text(
-                      _error!,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.errorContainer,
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                      textAlign: TextAlign.center,
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.error_outline,
+                            color: theme.colorScheme.error,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _error!,
+                              style: TextStyle(
+                                color: theme.colorScheme.onErrorContainer,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                   const SizedBox(height: 24),
                   FilledButton(
                     onPressed: _isLoading ? null : _submit,
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(52),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
                     child: _isLoading
                         ? const SizedBox(
                             height: 20,
@@ -128,16 +173,31 @@ class _LoginScreenState extends State<LoginScreen> {
                               color: Colors.white,
                             ),
                           )
-                        : Text(_isRegister ? 'Đăng ký' : 'Đăng nhập'),
+                        : const Text(
+                            'Đăng nhập',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                   ),
                   const SizedBox(height: 12),
-                  TextButton(
-                    onPressed: () => setState(() => _isRegister = !_isRegister),
-                    child: Text(
-                      _isRegister
-                          ? 'Đã có tài khoản? Đăng nhập'
-                          : 'Chưa có tài khoản? Đăng ký',
-                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'Chưa có tài khoản?',
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const RegisterScreen(),
+                          ),
+                        ),
+                        child: const Text('Đăng ký'),
+                      ),
+                    ],
                   ),
                 ],
               ),

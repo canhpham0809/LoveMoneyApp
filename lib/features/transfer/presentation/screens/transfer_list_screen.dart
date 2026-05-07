@@ -756,7 +756,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 12,
-                          vertical: 3,
+                          vertical: 6,
                         ),
                         decoration: BoxDecoration(
                           color: AppColors.tealSoft.withValues(alpha: 0.45),
@@ -778,7 +778,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
                     Builder(
                       builder: (context) {
                         return Padding(
-                          padding: const EdgeInsets.fromLTRB(0, 16, 0, 6),
+                          padding: const EdgeInsets.fromLTRB(0, 8, 0, 6),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [

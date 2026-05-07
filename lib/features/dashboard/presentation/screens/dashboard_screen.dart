@@ -518,9 +518,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
       floatingActionButton: widget.onCreatePressed == null
           ? null
-          : FloatingActionButton.extended(
+          : FloatingActionButton(
               onPressed: () async => widget.onCreatePressed!.call(),
-              label: const Text('Add'),
+              child: const Icon(Icons.add),
             ),
     );
   }

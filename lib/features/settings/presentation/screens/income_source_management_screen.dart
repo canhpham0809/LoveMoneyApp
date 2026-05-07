@@ -112,12 +112,20 @@ class _IncomeSourceManagementScreenState
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
-                  children: kCategoryIconChoices
+                  children: kIncomeIconChoices
                       .map(
                         (choice) => ChoiceChip(
-                          avatar: Icon(choice.icon, size: 18),
-                          label: Text(choice.key),
+                          label: Icon(
+                            choice.icon,
+                            size: 22,
+                            color: selectedIcon == choice.key
+                                ? null
+                                : Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                          ),
                           selected: selectedIcon == choice.key,
+                          padding: const EdgeInsets.all(6),
                           onSelected: (_) {
                             setDialogState(() => selectedIcon = choice.key);
                           },
@@ -125,14 +133,7 @@ class _IncomeSourceManagementScreenState
                       )
                       .toList(),
                 ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: typeCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Loại',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
+
                 const SizedBox(height: 8),
                 SwitchListTile(
                   value: showInIncomeForm,
@@ -265,6 +266,7 @@ class _IncomeSourceManagementScreenState
           ? const Center(child: Text('Chưa có danh mục Thu nào.'))
           : ReorderableListView.builder(
               buildDefaultDragHandles: false,
+              padding: const EdgeInsets.only(bottom: 88),
               itemCount: _items.length,
               onReorder: _onReorder,
               itemBuilder: (context, index) {
@@ -310,10 +312,9 @@ class _IncomeSourceManagementScreenState
                 );
               },
             ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: FloatingActionButton(
         onPressed: () => _openIncomeSourceDialog(),
-        icon: const Icon(Icons.add),
-        label: const Text('Tạo danh mục Thu'),
+        child: const Icon(Icons.add),
       ),
     );
   }
