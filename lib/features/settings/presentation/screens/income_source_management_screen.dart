@@ -20,6 +20,7 @@ class _IncomeSourceManagementScreenState
   List<IncomeSourceModel> _items = [];
   bool _isLoading = true;
   String? _error;
+  bool _isSavingOrder = false;
 
   @override
   void initState() {
@@ -55,22 +56,44 @@ class _IncomeSourceManagementScreenState
   Future<void> _onReorder(int oldIndex, int newIndex) async {
     if (newIndex > oldIndex) newIndex -= 1;
 
+    final originalOrder = _items;
     final reordered = List<IncomeSourceModel>.from(_items);
     final moved = reordered.removeAt(oldIndex);
     reordered.insert(newIndex, moved);
 
-    setState(() => _items = reordered);
+    setState(() {
+      _items = reordered;
+      _isSavingOrder = true;
+    });
 
     try {
       await _service.updateIncomeSourceOrder(
         reordered.map((e) => e.id).toList(),
       );
-    } catch (e) {
       if (!mounted) return;
+      // Reload từ database để đảm bảo UI khớp với DB
       await _load(showLoader: false);
       if (!mounted) return;
+      setState(() => _isSavingOrder = false);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Không cập nhật được thứ tự danh mục Thu: $e')),
+        const SnackBar(
+          content: Text('✓ Thứ tự danh mục đã cập nhật'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _items = originalOrder;
+        _isSavingOrder = false;
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Không cập nhật được thứ tự danh mục Thu: $e'),
+          duration: const Duration(seconds: 3),
+        ),
       );
     }
   }
@@ -264,53 +287,61 @@ class _IncomeSourceManagementScreenState
             )
           : _items.isEmpty
           ? const Center(child: Text('Chưa có danh mục Thu nào.'))
-          : ReorderableListView.builder(
-              buildDefaultDragHandles: false,
-              padding: const EdgeInsets.only(bottom: 88),
-              itemCount: _items.length,
-              onReorder: _onReorder,
-              itemBuilder: (context, index) {
-                final item = _items[index];
-                return Container(
-                  key: ValueKey(item.id),
-                  decoration: const BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(color: Color(0x14000000)),
-                    ),
-                  ),
-                  child: ListTile(
-                    leading: CircleAvatar(child: Icon(iconFromKey(item.icon))),
-                    title: Text(item.name),
-                    subtitle: Text(
-                      'Hiện tạo Thu: ${item.showInIncomeForm ? 'On' : 'Off'} · Active: ${item.isActive ? 'On' : 'Off'} · Type: ${item.type}',
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.edit_outlined),
-                          onPressed: () =>
-                              _openIncomeSourceDialog(existing: item),
+          : AbsorbPointer(
+              absorbing: _isSavingOrder,
+              child: Opacity(
+                opacity: _isSavingOrder ? 0.5 : 1.0,
+                child: ReorderableListView.builder(
+                  buildDefaultDragHandles: false,
+                  padding: const EdgeInsets.only(bottom: 88),
+                  itemCount: _items.length,
+                  onReorder: _onReorder,
+                  itemBuilder: (context, index) {
+                    final item = _items[index];
+                    return Container(
+                      key: ValueKey(item.id),
+                      decoration: const BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(color: Color(0x14000000)),
                         ),
-                        IconButton(
-                          icon: const Icon(
-                            Icons.delete_outline,
-                            color: Colors.red,
-                          ),
-                          onPressed: () => _deleteIncomeSource(item),
+                      ),
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          child: Icon(iconFromKey(item.icon)),
                         ),
-                        ReorderableDragStartListener(
-                          index: index,
-                          child: const Padding(
-                            padding: EdgeInsets.only(left: 4),
-                            child: Icon(Icons.drag_indicator),
-                          ),
+                        title: Text(item.name),
+                        subtitle: Text(
+                          'Hiện tạo Thu: ${item.showInIncomeForm ? 'On' : 'Off'} · Active: ${item.isActive ? 'On' : 'Off'} · Type: ${item.type}',
                         ),
-                      ],
-                    ),
-                  ),
-                );
-              },
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.edit_outlined),
+                              onPressed: () =>
+                                  _openIncomeSourceDialog(existing: item),
+                            ),
+                            IconButton(
+                              icon: const Icon(
+                                Icons.delete_outline,
+                                color: Colors.red,
+                              ),
+                              onPressed: () => _deleteIncomeSource(item),
+                            ),
+                            ReorderableDragStartListener(
+                              index: index,
+                              child: const Padding(
+                                padding: EdgeInsets.only(left: 4),
+                                child: Icon(Icons.drag_indicator),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
             ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _openIncomeSourceDialog(),

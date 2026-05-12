@@ -1145,13 +1145,19 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                               subtitle: Text(
                                 '${formatDate(item.date)} · ${formatTimeUtcPlus7(item.createdAt)}',
                               ),
-                              trailing: Text(
-                                '+${formatVnd(item.amount)}',
-                                style: const TextStyle(
-                                  color: AppColors.success,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
-                                ),
+                              trailing: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    '+${formatVnd(item.amount)}',
+                                    style: const TextStyle(
+                                      color: AppColors.success,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           );
@@ -1204,13 +1210,19 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                             subtitle: Text(
                               '${formatDate(item.date)} · ${formatTimeUtcPlus7(item.createdAt)}',
                             ),
-                            trailing: Text(
-                              '+${formatVnd(item.amount)}',
-                              style: const TextStyle(
-                                color: AppColors.success,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13,
-                              ),
+                            trailing: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  '+${formatVnd(item.amount)}',
+                                  style: const TextStyle(
+                                    color: AppColors.success,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         );

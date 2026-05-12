@@ -21,6 +21,7 @@ class _ExpenseCategoryManagementScreenState
   List<CategoryModel> _categories = [];
   bool _isLoading = true;
   String? _error;
+  bool _isSavingOrder = false;
 
   @override
   void initState() {
@@ -56,20 +57,42 @@ class _ExpenseCategoryManagementScreenState
   Future<void> _onReorder(int oldIndex, int newIndex) async {
     if (newIndex > oldIndex) newIndex -= 1;
 
+    final originalOrder = _categories;
     final reordered = List<CategoryModel>.from(_categories);
     final moved = reordered.removeAt(oldIndex);
     reordered.insert(newIndex, moved);
 
-    setState(() => _categories = reordered);
+    setState(() {
+      _categories = reordered;
+      _isSavingOrder = true;
+    });
 
     try {
       await _service.updateCategoryOrder(reordered.map((e) => e.id).toList());
-    } catch (e) {
       if (!mounted) return;
+      // Reload từ database để đảm bảo UI khớp với DB
       await _load(showLoader: false);
       if (!mounted) return;
+      setState(() => _isSavingOrder = false);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Không cập nhật được thứ tự danh mục: $e')),
+        const SnackBar(
+          content: Text('✓ Thứ tự danh mục đã cập nhật'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _categories = originalOrder;
+        _isSavingOrder = false;
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Không cập nhật được thứ tự danh mục: $e'),
+          duration: const Duration(seconds: 3),
+        ),
       );
     }
   }
@@ -333,67 +356,74 @@ class _ExpenseCategoryManagementScreenState
             )
           : _categories.isEmpty
           ? const Center(child: Text('Chưa có danh mục Chi nào.'))
-          : ReorderableListView.builder(
-              buildDefaultDragHandles: false,
-              padding: const EdgeInsets.only(bottom: 88),
-              itemCount: _categories.length,
-              onReorder: _onReorder,
-              itemBuilder: (context, index) {
-                final item = _categories[index];
-                final color = colorFromHex(item.color);
-                return Container(
-                  key: ValueKey(item.id),
-                  margin: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: AppColors.border),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.06),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
+          : AbsorbPointer(
+              absorbing: _isSavingOrder,
+              child: Opacity(
+                opacity: _isSavingOrder ? 0.5 : 1.0,
+                child: ReorderableListView.builder(
+                  buildDefaultDragHandles: false,
+                  padding: const EdgeInsets.only(bottom: 88),
+                  itemCount: _categories.length,
+                  onReorder: _onReorder,
+                  itemBuilder: (context, index) {
+                    final item = _categories[index];
+                    final color = colorFromHex(item.color);
+                    return Container(
+                      key: ValueKey(item.id),
+                      margin: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 5,
                       ),
-                    ],
-                  ),
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: color.withValues(alpha: 0.16),
-                      child: Icon(iconFromKey(item.icon), color: color),
-                    ),
-                    title: Text(item.name),
-                    subtitle: Text(
-                      'Màu: ${item.color.toUpperCase()} · Quick Add: ${item.showInQuickAdd ? 'On' : 'Off'} · Tạo Chi: ${item.showInExpenseForm ? 'On' : 'Off'} · Active: ${item.isActive ? 'On' : 'Off'}',
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.edit_outlined),
-                          onPressed: () => _openCategoryDialog(existing: item),
-                        ),
-                        IconButton(
-                          icon: const Icon(
-                            Icons.delete_outline,
-                            color: Colors.red,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.border),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.06),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
                           ),
-                          onPressed: () => _deleteCategory(item),
+                        ],
+                      ),
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: color.withValues(alpha: 0.16),
+                          child: Icon(iconFromKey(item.icon), color: color),
                         ),
-                        ReorderableDragStartListener(
-                          index: index,
-                          child: const Padding(
-                            padding: EdgeInsets.only(left: 4),
-                            child: Icon(Icons.drag_indicator),
-                          ),
+                        title: Text(item.name),
+                        subtitle: Text(
+                          'Màu: ${item.color.toUpperCase()} · Quick Add: ${item.showInQuickAdd ? 'On' : 'Off'} · Tạo Chi: ${item.showInExpenseForm ? 'On' : 'Off'} · Active: ${item.isActive ? 'On' : 'Off'}',
                         ),
-                      ],
-                    ),
-                  ),
-                );
-              },
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.edit_outlined),
+                              onPressed: () =>
+                                  _openCategoryDialog(existing: item),
+                            ),
+                            IconButton(
+                              icon: const Icon(
+                                Icons.delete_outline,
+                                color: Colors.red,
+                              ),
+                              onPressed: () => _deleteCategory(item),
+                            ),
+                            ReorderableDragStartListener(
+                              index: index,
+                              child: const Padding(
+                                padding: EdgeInsets.only(left: 4),
+                                child: Icon(Icons.drag_indicator),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
             ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _openCategoryDialog(),

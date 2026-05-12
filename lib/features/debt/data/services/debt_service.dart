@@ -1,10 +1,16 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 
 import 'package:flutter_app_demo/features/debt/data/models/debt_model.dart';
 import 'package:flutter_app_demo/features/debt/data/models/debt_payment_model.dart';
 
 class DebtService {
   SupabaseClient get _db => Supabase.instance.client;
+  final Uuid _uuid = const Uuid();
+
+  static const String _debtInitIncomeSource = 'Nhận tiền nợ';
+  static const String _debtRepaymentIncomeSource = 'Thu hồi cho mượn';
+  static const String _debtLendExpenseCategory = 'Cho mượn nợ';
 
   bool _isMissingSortOrderColumn(Object error) {
     return error is PostgrestException &&
@@ -36,10 +42,6 @@ class DebtService {
         error.message.contains('debt_kind');
   }
 
-  static const String _debtInitIncomeSource = 'Nhận tiền nợ';
-  static const String _debtRepaymentIncomeSource = 'Thu hồi cho mượn';
-  static const String _debtLendExpenseCategory = 'Cho mượn nợ';
-
   Future<List<DebtModel>> getDebts(
     String coupleId, {
     int? limit,
@@ -56,7 +58,7 @@ class DebtService {
       final rows = (limit != null && offset != null)
           ? await ordered.range(offset, offset + limit - 1)
           : await ordered;
-      return rows.map((r) => DebtModel.fromJson(r)).toList();
+      return rows.map((row) => DebtModel.fromJson(row)).toList();
     } catch (e) {
       if (!_isMissingSortOrderColumn(e)) rethrow;
       final ordered = _db
@@ -64,11 +66,11 @@ class DebtService {
           .select()
           .eq('couple_id', coupleId)
           .eq('is_deleted', false)
-          .order('due_date');
+          .order('created_at');
       final rows = (limit != null && offset != null)
           ? await ordered.range(offset, offset + limit - 1)
           : await ordered;
-      return rows.map((r) => DebtModel.fromJson(r)).toList();
+      return rows.map((row) => DebtModel.fromJson(row)).toList();
     }
   }
 
@@ -104,7 +106,9 @@ class DebtService {
     String? note,
     int? reminderDaysBefore,
   }) async {
-    final payload = {
+    final now = DateTime.now().toUtc();
+    final payload = <String, dynamic>{
+      'id': _uuid.v4(),
       'couple_id': coupleId,
       'user_id': userId,
       'debt_type_id': debtTypeId,
@@ -119,6 +123,9 @@ class DebtService {
       'note': note,
       'reminder_days_before': reminderDaysBefore,
       'is_closed': false,
+      'is_deleted': false,
+      'created_at': now.toIso8601String(),
+      'updated_at': now.toIso8601String(),
       'sort_order': await _nextSortOrder(coupleId),
     };
 
@@ -131,7 +138,7 @@ class DebtService {
       row = await _db.from('debts').insert(payload).select().single();
     }
 
-    final debtId = row['id'] as String;
+    final insertedDebtId = row['id'] as String;
     String? createdIncomeId;
     String? createdExpenseId;
 
@@ -201,13 +208,13 @@ class DebtService {
               'linked_income_id': createdIncomeId,
               'linked_expense_id': createdExpenseId,
             })
-            .eq('id', debtId);
+            .eq('id', insertedDebtId);
       }
 
       final updated = await _db
           .from('debts')
           .select()
-          .eq('id', debtId)
+          .eq('id', insertedDebtId)
           .single();
       return DebtModel.fromJson(updated);
     } catch (_) {
@@ -217,7 +224,7 @@ class DebtService {
       if (createdExpenseId != null) {
         await _db.from('expenses').delete().eq('id', createdExpenseId);
       }
-      await _db.from('debts').delete().eq('id', debtId);
+      await _db.from('debts').delete().eq('id', insertedDebtId);
       rethrow;
     }
   }
@@ -454,6 +461,7 @@ class DebtService {
       throw Exception('Không tìm thấy phiên đăng nhập.');
     }
 
+    final nowIso = DateTime.now().toUtc().toIso8601String();
     final debt = await _db
         .from('debts')
         .select('couple_id, user_id, name, linked_income_id, linked_expense_id')
@@ -464,8 +472,6 @@ class DebtService {
     if (creatorUserId != null && creatorUserId != currentUserId) {
       throw Exception('Chỉ người tạo khoản nợ mới có quyền xóa.');
     }
-
-    final nowIso = DateTime.now().toUtc().toIso8601String();
 
     final paymentRows = List<Map<String, dynamic>>.from(
       await _db
@@ -549,7 +555,6 @@ class DebtService {
     );
     final paymentExpenseTotal = await _getActiveDebtPaymentExpenseTotal(debtId);
 
-    // Positive: add money back. Negative: subtract money.
     return linkedExpenseAmount +
         paymentExpenseTotal -
         linkedIncomeAmount -
@@ -634,7 +639,7 @@ class DebtService {
         .eq('debt_id', debtId)
         .eq('is_deleted', false)
         .order('created_at', ascending: false);
-    return rows.map((r) => DebtPaymentModel.fromJson(r)).toList();
+    return rows.map((row) => DebtPaymentModel.fromJson(row)).toList();
   }
 
   Future<List<Map<String, dynamic>>> getDebtTypes(String coupleId) async {
@@ -763,6 +768,8 @@ class DebtService {
     required DateTime date,
     String? note,
   }) async {
+    final paymentId = _uuid.v4();
+
     final debt = await _db
         .from('debts')
         .select('id, couple_id, user_id, debt_kind, name')
@@ -773,6 +780,7 @@ class DebtService {
     final row = await _db
         .from('debt_payments')
         .insert({
+          'id': paymentId,
           'couple_id': coupleId,
           'debt_id': debtId,
           'wallet_id': walletId,
@@ -782,8 +790,6 @@ class DebtService {
         })
         .select()
         .single();
-
-    final paymentId = row['id'] as String;
 
     if (debtKind == 'lend') {
       final incomeSourceId = await _ensureIncomeSource(
@@ -811,7 +817,7 @@ class DebtService {
       await _db
           .from('debt_payments')
           .update({'linked_income_id': incomeRow['id'] as String})
-          .eq('id', paymentId);
+          .eq('id', row['id'] as String);
     }
 
     await _recalculateDebtRemaining(debtId);
@@ -903,6 +909,8 @@ class DebtService {
     required String paymentId,
     required String debtId,
   }) async {
+    final nowIso = DateTime.now().toUtc().toIso8601String();
+
     final existingPayment = await _db
         .from('debt_payments')
         .select('linked_income_id')
@@ -924,19 +932,13 @@ class DebtService {
 
     await _db
         .from('debt_payments')
-        .update({
-          'is_deleted': true,
-          'deleted_at': DateTime.now().toUtc().toIso8601String(),
-        })
+        .update({'is_deleted': true, 'deleted_at': nowIso})
         .eq('id', paymentId);
 
     if (debtKind == 'lend' && existingPayment['linked_income_id'] != null) {
       await _db
           .from('incomes')
-          .update({
-            'is_deleted': true,
-            'deleted_at': DateTime.now().toUtc().toIso8601String(),
-          })
+          .update({'is_deleted': true, 'deleted_at': nowIso})
           .eq('id', existingPayment['linked_income_id'] as String)
           .eq('is_deleted', false);
     }

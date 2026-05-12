@@ -855,13 +855,19 @@ class _TransferListScreenState extends State<TransferListScreen> {
                           subtitle: Text(
                             '${formatDate(item.date)} · ${_formatCreatedTimeUtcPlus7(item.createdAt)}',
                           ),
-                          trailing: Text(
-                            '${isIncoming ? '+' : '-'}${formatVnd(item.amount)}',
-                            style: TextStyle(
-                              color: amountColor,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                            ),
+                          trailing: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                '${isIncoming ? '+' : '-'}${formatVnd(item.amount)}',
+                                style: TextStyle(
+                                  color: amountColor,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       );

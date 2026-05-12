@@ -116,8 +116,7 @@ class ExpenseService {
           .select()
           .eq('couple_id', coupleId)
           .eq('is_deleted', false)
-          .order('sort_order')
-          .order('name');
+          .order('sort_order', ascending: true, nullsFirst: false);
       return rows.map((r) => CategoryModel.fromJson(r)).toList();
     } catch (e) {
       if (!_isMissingSortOrderColumn(e)) rethrow;
@@ -139,8 +138,7 @@ class ExpenseService {
           .eq('couple_id', coupleId)
           .eq('is_deleted', false)
           .eq('show_in_quick_add', true)
-          .order('sort_order')
-          .order('name');
+          .order('sort_order', ascending: true, nullsFirst: false);
       return rows.map((r) => CategoryModel.fromJson(r)).toList();
     } catch (e) {
       if (_isMissingQuickAddColumn(e) || _isMissingSortOrderColumn(e)) {
@@ -164,8 +162,7 @@ class ExpenseService {
           .eq('couple_id', coupleId)
           .eq('is_deleted', false)
           .eq('show_in_expense_form', true)
-          .order('sort_order')
-          .order('name');
+          .order('sort_order', ascending: true, nullsFirst: false);
       return rows.map((r) => CategoryModel.fromJson(r)).toList();
     } catch (e) {
       if (_isMissingExpenseFormColumn(e) || _isMissingSortOrderColumn(e)) {
@@ -188,7 +185,7 @@ class ExpenseService {
           .select('sort_order')
           .eq('couple_id', coupleId)
           .eq('is_deleted', false)
-          .order('sort_order', ascending: false)
+          .order('sort_order', ascending: false, nullsFirst: false)
           .limit(1);
       if (rows.isEmpty) return 0;
       return ((rows.first['sort_order'] as num?)?.toInt() ?? 0) + 1;
@@ -297,18 +294,26 @@ class ExpenseService {
   Future<void> updateCategoryOrder(List<String> orderedIds) async {
     if (orderedIds.isEmpty) return;
 
+    final errors = <String>[];
     for (var i = 0; i < orderedIds.length; i++) {
       try {
         await _db
             .from('categories')
             .update({'sort_order': i})
-            .eq('id', orderedIds[i]);
+            .eq('id', orderedIds[i])
+            .eq('is_deleted', false);
       } catch (e) {
         if (_isMissingSortOrderColumn(e)) {
           return;
         }
-        rethrow;
+        errors.add('ID ${orderedIds[i]}: $e');
       }
+    }
+
+    if (errors.isNotEmpty) {
+      throw Exception(
+        'Cập nhật thứ tự không hoàn toàn:\n${errors.join('\n')}',
+      ).toString();
     }
   }
 }

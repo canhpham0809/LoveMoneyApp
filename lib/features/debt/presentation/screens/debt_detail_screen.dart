@@ -378,7 +378,7 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
       appBar: AppBar(title: Text(isLend ? 'Chi tiết Cho mượn' : 'Chi tiết Nợ')),
       body: BusyOverlay(
         isVisible: _isMutating,
-        message: 'Đang xử lý dữ liệu...',
+        message: 'Đang xử lý ...',
         child: _isLoading
             ? const Center(child: CircularProgressIndicator())
             : debt == null
@@ -630,13 +630,19 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                                       ),
                                     ],
                                   ),
-                                  trailing: Text(
-                                    '+${formatVnd(p.amount)}',
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
-                                      color: AppColors.success,
-                                    ),
+                                  trailing: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Text(
+                                        '+${formatVnd(p.amount)}',
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.success,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               );

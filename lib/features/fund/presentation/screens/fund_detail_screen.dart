@@ -654,17 +654,23 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                                       ),
                                     ],
                                   ),
-                                  trailing: Text(
-                                    isWithdrawal
-                                        ? '-${formatVnd(c.amount)}'
-                                        : '+${formatVnd(c.amount)}',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
-                                      color: isWithdrawal
-                                          ? Colors.orange
-                                          : AppColors.success,
-                                    ),
+                                  trailing: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Text(
+                                        isWithdrawal
+                                            ? '-${formatVnd(c.amount)}'
+                                            : '+${formatVnd(c.amount)}',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                          color: isWithdrawal
+                                              ? Colors.orange
+                                              : AppColors.success,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               );

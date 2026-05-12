@@ -99,13 +99,26 @@ class IncomeService {
   }
 
   Future<List<IncomeSourceModel>> getIncomeSources(String coupleId) async {
-    final rows = await _db
-        .from('income_sources')
-        .select()
-        .eq('couple_id', coupleId)
-        .eq('is_deleted', false)
-        .order('name');
-    return rows.map((r) => IncomeSourceModel.fromJson(r)).toList();
+    try {
+      final rows = await _db
+          .from('income_sources')
+          .select()
+          .eq('couple_id', coupleId)
+          .eq('is_deleted', false)
+          .order('sort_order', ascending: true, nullsFirst: false);
+      return rows.map((r) => IncomeSourceModel.fromJson(r)).toList();
+    } catch (e) {
+      if (_isMissingIncomeFormColumn(e)) {
+        final rows = await _db
+            .from('income_sources')
+            .select()
+            .eq('couple_id', coupleId)
+            .eq('is_deleted', false)
+            .order('name');
+        return rows.map((r) => IncomeSourceModel.fromJson(r)).toList();
+      }
+      rethrow;
+    }
   }
 
   Future<List<IncomeSourceModel>> getIncomeFormSources(String coupleId) async {
@@ -116,7 +129,7 @@ class IncomeService {
           .eq('couple_id', coupleId)
           .eq('is_deleted', false)
           .eq('show_in_income_form', true)
-          .order('name');
+          .order('sort_order', ascending: true, nullsFirst: false);
       return rows.map((r) => IncomeSourceModel.fromJson(r)).toList();
     } catch (e) {
       if (!_isMissingIncomeFormColumn(e)) rethrow;
@@ -127,6 +140,22 @@ class IncomeService {
           .eq('is_deleted', false)
           .order('name');
       return rows.map((r) => IncomeSourceModel.fromJson(r)).toList();
+    }
+  }
+
+  Future<int> _nextIncomeSourceSortOrder(String coupleId) async {
+    try {
+      final rows = await _db
+          .from('income_sources')
+          .select('sort_order')
+          .eq('couple_id', coupleId)
+          .eq('is_deleted', false)
+          .order('sort_order', ascending: false, nullsFirst: false)
+          .limit(1);
+      if (rows.isEmpty) return 0;
+      return ((rows.first['sort_order'] as num?)?.toInt() ?? 0) + 1;
+    } catch (e) {
+      return 0;
     }
   }
 
@@ -143,6 +172,7 @@ class IncomeService {
       'icon': icon,
       'type': type,
       'show_in_income_form': showInIncomeForm,
+      'sort_order': await _nextIncomeSourceSortOrder(coupleId),
     };
 
     try {
@@ -214,11 +244,24 @@ class IncomeService {
 
   Future<void> updateIncomeSourceOrder(List<String> orderedIds) async {
     if (orderedIds.isEmpty) return;
+
+    final errors = <String>[];
     for (var i = 0; i < orderedIds.length; i++) {
-      await _db
-          .from('income_sources')
-          .update({'sort_order': i})
-          .eq('id', orderedIds[i]);
+      try {
+        await _db
+            .from('income_sources')
+            .update({'sort_order': i})
+            .eq('id', orderedIds[i])
+            .eq('is_deleted', false);
+      } catch (e) {
+        errors.add('ID ${orderedIds[i]}: $e');
+      }
+    }
+
+    if (errors.isNotEmpty) {
+      throw Exception(
+        'Cập nhật thứ tự không hoàn toàn:\n${errors.join('\n')}',
+      ).toString();
     }
   }
 }

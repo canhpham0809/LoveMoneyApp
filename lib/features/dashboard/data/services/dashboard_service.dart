@@ -211,14 +211,16 @@ class DashboardService {
 
     var expensesQuery = _db
         .from('expenses')
-        .select('id, amount, category_id, category_name')
+        .select(
+          'id, amount, category_id, category_name, date, description, created_at',
+        )
         .eq('couple_id', coupleId)
         .eq('is_deleted', false)
         .gte('date', from)
         .lt('date', to);
     var incomesQuery = _db
         .from('incomes')
-        .select('id, amount, income_source_id')
+        .select('id, amount, income_source_id, date, description, created_at')
         .eq('couple_id', coupleId)
         .eq('is_deleted', false)
         .or('is_from_transfer.is.null,is_from_transfer.eq.false')
@@ -235,7 +237,7 @@ class DashboardService {
         .lt('date', to);
     var transfersQuery = _db
         .from('transfers')
-        .select('amount, from_user_id, to_user_id')
+        .select('id, amount, from_user_id, to_user_id, date, note, created_at')
         .eq('couple_id', coupleId)
         .eq('is_deleted', false)
         .gte('date', from)
@@ -412,7 +414,12 @@ class DashboardService {
       final key = categoryId ?? fallbackName;
       final bucket = expenseMap.putIfAbsent(
         key,
-        () => {'name': name, 'icon_key': iconKey, 'amount': 0.0},
+        () => {
+          'name': name,
+          'bucket_id': key,
+          'icon_key': iconKey,
+          'amount': 0.0,
+        },
       );
       bucket['amount'] =
           (bucket['amount'] as double) +
@@ -430,7 +437,12 @@ class DashboardService {
       final key = sourceId ?? name;
       final bucket = incomeMap.putIfAbsent(
         key,
-        () => {'name': name, 'icon_key': iconKey, 'amount': 0.0},
+        () => {
+          'name': name,
+          'bucket_id': key,
+          'icon_key': iconKey,
+          'amount': 0.0,
+        },
       );
       bucket['amount'] =
           (bucket['amount'] as double) +
@@ -559,6 +571,251 @@ class DashboardService {
     }
 
     return {
+      'income_transactions': manualIncomes.map((row) {
+        final sourceId = row['income_source_id'] as String?;
+        final sourceName =
+            (sourceId != null ? incomeSourceNameById[sourceId] : null) ??
+            'Khác';
+        final sourceIcon =
+            (sourceId != null ? incomeSourceIconById[sourceId] : null) ??
+            'payments';
+        final dateValue = row['date'] as String?;
+        final createdAt =
+            (row['created_at'] as String?) ??
+            (dateValue == null ? null : '${dateValue}T00:00:00Z');
+        return <String, dynamic>{
+          'id': row['id'] as String?,
+          'kind': 'income',
+          'bucket_id': sourceId ?? sourceName,
+          'bucket_name': sourceName,
+          'title': (row['description'] as String?)?.trim().isNotEmpty == true
+              ? (row['description'] as String).trim()
+              : sourceName,
+          'icon_key': sourceIcon,
+          'amount': (row['amount'] as num?)?.toDouble() ?? 0,
+          'date': row['date'] as String?,
+          'created_at': createdAt,
+        };
+      }).toList(),
+      'expense_transactions': manualExpenses.map((row) {
+        final categoryId = row['category_id'] as String?;
+        final fallbackName = (row['category_name'] as String?) ?? 'Khác';
+        final categoryName =
+            (categoryId != null ? categoryNameById[categoryId] : null) ??
+            fallbackName;
+        final categoryIcon =
+            (categoryId != null ? categoryIconById[categoryId] : null) ??
+            'label';
+        final dateValue = row['date'] as String?;
+        final createdAt =
+            (row['created_at'] as String?) ??
+            (dateValue == null ? null : '${dateValue}T00:00:00Z');
+        return <String, dynamic>{
+          'id': row['id'] as String?,
+          'kind': 'expense',
+          'bucket_id': categoryId ?? fallbackName,
+          'bucket_name': categoryName,
+          'title': (row['description'] as String?)?.trim().isNotEmpty == true
+              ? (row['description'] as String).trim()
+              : categoryName,
+          'icon_key': categoryIcon,
+          'amount': (row['amount'] as num?)?.toDouble() ?? 0,
+          'date': row['date'] as String?,
+          'created_at': createdAt,
+        };
+      }).toList(),
+      'transfer_sent_transactions': transfers
+          .where((row) => (row['from_user_id'] as String?) == viewerUserId)
+          .map((row) {
+            final dateValue = row['date'] as String?;
+            final createdAt =
+                (row['created_at'] as String?) ??
+                (dateValue == null ? null : '${dateValue}T00:00:00Z');
+            return <String, dynamic>{
+              'id': row['id'] as String?,
+              'kind': 'transfer_sent',
+              'title': (row['note'] as String?)?.trim().isNotEmpty == true
+                  ? (row['note'] as String).trim()
+                  : 'Chuyển tiền',
+              'icon_key': 'sync_alt',
+              'amount': (row['amount'] as num?)?.toDouble() ?? 0,
+              'date': row['date'] as String?,
+              'created_at': createdAt,
+            };
+          })
+          .toList(),
+      'transfer_received_transactions': transfers
+          .where((row) => (row['to_user_id'] as String?) == viewerUserId)
+          .map((row) {
+            final dateValue = row['date'] as String?;
+            final createdAt =
+                (row['created_at'] as String?) ??
+                (dateValue == null ? null : '${dateValue}T00:00:00Z');
+            return <String, dynamic>{
+              'id': row['id'] as String?,
+              'kind': 'transfer_received',
+              'title': (row['note'] as String?)?.trim().isNotEmpty == true
+                  ? (row['note'] as String).trim()
+                  : 'Nhận tiền',
+              'icon_key': 'sync_alt',
+              'amount': (row['amount'] as num?)?.toDouble() ?? 0,
+              'date': row['date'] as String?,
+              'created_at': createdAt,
+            };
+          })
+          .toList(),
+      'fund_contribution_transactions': filteredContributions
+          .where(
+            (row) => (row['contribution_type'] as String?) == 'contribution',
+          )
+          .map((row) {
+            final fundId = row['fund_id'] as String?;
+            final fundName =
+                (fundId != null ? fundNameById[fundId] : null) ?? 'Quỹ';
+            final fundIcon =
+                (fundId != null ? fundIconById[fundId] : null) ?? 'savings';
+            return <String, dynamic>{
+              'kind': 'fund_contribution',
+              'bucket_id': fundId ?? fundName,
+              'bucket_name': fundName,
+              'title': (row['note'] as String?)?.trim().isNotEmpty == true
+                  ? (row['note'] as String).trim()
+                  : 'Góp quỹ $fundName',
+              'icon_key': fundIcon,
+              'amount': (row['amount'] as num?)?.toDouble() ?? 0,
+              'date': row['date'] as String?,
+              'created_at': (row['date'] as String?) == null
+                  ? null
+                  : '${row['date'] as String}T00:00:00Z',
+            };
+          })
+          .toList(),
+      'fund_withdrawal_transactions': filteredContributions
+          .where((row) => (row['contribution_type'] as String?) == 'withdrawal')
+          .map((row) {
+            final fundId = row['fund_id'] as String?;
+            final fundName =
+                (fundId != null ? fundNameById[fundId] : null) ?? 'Quỹ';
+            final fundIcon =
+                (fundId != null ? fundIconById[fundId] : null) ?? 'savings';
+            return <String, dynamic>{
+              'kind': 'fund_withdrawal',
+              'bucket_id': fundId ?? fundName,
+              'bucket_name': fundName,
+              'title': (row['note'] as String?)?.trim().isNotEmpty == true
+                  ? (row['note'] as String).trim()
+                  : 'Rút quỹ $fundName',
+              'icon_key': fundIcon,
+              'amount': (row['amount'] as num?)?.toDouble() ?? 0,
+              'date': row['date'] as String?,
+              'created_at': (row['date'] as String?) == null
+                  ? null
+                  : '${row['date'] as String}T00:00:00Z',
+            };
+          })
+          .toList(),
+      'debt_borrow_transactions': borrowItems
+          .where(
+            ((row) => ((row['summary_amount'] as num?)?.toDouble() ?? 0) > 0),
+          )
+          .map((row) {
+            final subItems =
+                (row['sub_items'] as List?)?.cast<Map<String, dynamic>>() ??
+                const <Map<String, dynamic>>[];
+            final created = subItems.firstWhere(
+              (sub) => (sub['type'] as String?) == 'record_income',
+              orElse: () => const <String, dynamic>{},
+            );
+            return <String, dynamic>{
+              'kind': 'debt_borrow',
+              'bucket_id': row['id'] as String?,
+              'bucket_name': row['name'] as String?,
+              'title': (row['name'] as String?) ?? 'Khoản mượn nợ',
+              'icon_key': 'request_quote',
+              'amount': (row['summary_amount'] as num?)?.toDouble() ?? 0,
+              'date': created['date'] as String?,
+              'created_at': (created['date'] as String?) == null
+                  ? null
+                  : '${created['date'] as String}T00:00:00Z',
+            };
+          })
+          .toList(),
+      'debt_lend_transactions': lendItems
+          .where(
+            ((row) => ((row['summary_amount'] as num?)?.toDouble() ?? 0) > 0),
+          )
+          .map((row) {
+            final subItems =
+                (row['sub_items'] as List?)?.cast<Map<String, dynamic>>() ??
+                const <Map<String, dynamic>>[];
+            final created = subItems.firstWhere(
+              (sub) => (sub['type'] as String?) == 'record_expense',
+              orElse: () => const <String, dynamic>{},
+            );
+            return <String, dynamic>{
+              'kind': 'debt_lend',
+              'bucket_id': row['id'] as String?,
+              'bucket_name': row['name'] as String?,
+              'title': (row['name'] as String?) ?? 'Khoản cho mượn',
+              'icon_key': 'account_balance_wallet',
+              'amount': (row['summary_amount'] as num?)?.toDouble() ?? 0,
+              'date': created['date'] as String?,
+              'created_at': (created['date'] as String?) == null
+                  ? null
+                  : '${created['date'] as String}T00:00:00Z',
+            };
+          })
+          .toList(),
+      'debt_payment_made_transactions': debtRows
+          .where((row) => ((row['debt_kind'] as String?) ?? 'debt') != 'lend')
+          .expand((row) {
+            final debtId = row['id'] as String;
+            final payments =
+                paymentsByDebtId[debtId] ?? const <Map<String, dynamic>>[];
+            final debtName = (row['name'] as String?) ?? 'Khoản nợ';
+            return payments.map((payment) {
+              return <String, dynamic>{
+                'kind': 'debt_payment_made',
+                'bucket_id': debtId,
+                'bucket_name': debtName,
+                'title': (payment['note'] as String?)?.trim().isNotEmpty == true
+                    ? (payment['note'] as String).trim()
+                    : 'Trả nợ $debtName',
+                'icon_key': 'outbox',
+                'amount': (payment['amount'] as num?)?.toDouble() ?? 0,
+                'date': payment['date'] as String?,
+                'created_at': (payment['date'] as String?) == null
+                    ? null
+                    : '${payment['date'] as String}T00:00:00Z',
+              };
+            });
+          })
+          .toList(),
+      'debt_payment_received_transactions': debtRows
+          .where((row) => ((row['debt_kind'] as String?) ?? 'debt') == 'lend')
+          .expand((row) {
+            final debtId = row['id'] as String;
+            final payments =
+                paymentsByDebtId[debtId] ?? const <Map<String, dynamic>>[];
+            final debtName = (row['name'] as String?) ?? 'Khoản cho mượn';
+            return payments.map((payment) {
+              return <String, dynamic>{
+                'kind': 'debt_payment_received',
+                'bucket_id': debtId,
+                'bucket_name': debtName,
+                'title': (payment['note'] as String?)?.trim().isNotEmpty == true
+                    ? (payment['note'] as String).trim()
+                    : 'Nhận trả nợ $debtName',
+                'icon_key': 'move_to_inbox',
+                'amount': (payment['amount'] as num?)?.toDouble() ?? 0,
+                'date': payment['date'] as String?,
+                'created_at': (payment['date'] as String?) == null
+                    ? null
+                    : '${payment['date'] as String}T00:00:00Z',
+              };
+            });
+          })
+          .toList(),
       'income_by_source': sortByAmountDesc(incomeMap.values),
       'expense_by_category': sortByAmountDesc(expenseMap.values),
       'fund_contribution_by_item': sortByAmountDesc(contributionMap.values),
