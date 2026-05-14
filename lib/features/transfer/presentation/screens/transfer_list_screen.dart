@@ -838,8 +838,8 @@ class _TransferListScreenState extends State<TransferListScreen> {
                                 .withValues(alpha: 0.12),
                             child: Icon(
                               isIncoming
-                                  ? Icons.south_west_rounded
-                                  : Icons.north_east_rounded,
+                                  ? Icons.move_to_inbox_rounded
+                                  : Icons.send_rounded,
                               color: amountColor,
                               size: 20,
                             ),

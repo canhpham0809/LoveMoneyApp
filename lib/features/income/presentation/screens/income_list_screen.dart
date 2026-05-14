@@ -720,7 +720,9 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                                       height: 72,
                                       decoration: BoxDecoration(
                                         color: selected
-                                            ? AppColors.successSoft
+                                            ? AppColors.successSoft.withValues(
+                                                alpha: 0.6,
+                                              )
                                             : Colors.white,
                                         borderRadius: BorderRadius.circular(14),
                                         border: Border.all(
@@ -747,8 +749,8 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                                               ),
                                               color: selected
                                                   ? AppColors.success
-                                                  : Colors.black54,
-                                              size: 20,
+                                                  : Colors.black45,
+                                              size: 18,
                                             ),
                                             const SizedBox(height: 4),
                                             Text(
@@ -1099,12 +1101,12 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                             item.editableIncome == null) {
                           final icon = switch (item.kind) {
                             _IncomeFeedKind.fundWithdrawal =>
-                              Icons.south_west_rounded,
+                              Icons.savings_outlined,
                             _IncomeFeedKind.debtCollection =>
                               Icons.account_balance_wallet_outlined,
                             _IncomeFeedKind.transferReceived =>
-                              Icons.swap_horiz,
-                            _IncomeFeedKind.income => Icons.attach_money,
+                              Icons.move_to_inbox_rounded,
+                            _IncomeFeedKind.income => Icons.payments_outlined,
                           };
                           return Container(
                             margin: const EdgeInsets.only(bottom: 8),

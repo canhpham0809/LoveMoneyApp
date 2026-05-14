@@ -593,20 +593,43 @@ class _MonthlyOperationsDashboardScreenState
                       alignment: Alignment.centerLeft,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
+                          horizontal: 16,
+                          vertical: 10,
                         ),
                         decoration: BoxDecoration(
-                          color: AppColors.tealSoft.withValues(alpha: 0.45),
-                          borderRadius: BorderRadius.circular(999),
+                          color: Theme.of(context).brightness == Brightness.dark
+                              ? Colors.white.withValues(alpha: 0.05)
+                              : AppColors.tealSoft.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: Theme.of(context).brightness == Brightness.dark
+                                ? Colors.white.withValues(alpha: 0.1)
+                                : AppColors.teal.withValues(alpha: 0.1),
+                          ),
                         ),
-                        child: Text(
-                          'Đang xem: $_viewerLabel',
-                          style: Theme.of(context).textTheme.labelMedium
-                              ?.copyWith(
-                                color: AppColors.tealDeep,
-                                fontWeight: FontWeight.w700,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              _viewerUserId == widget.currentUserId
+                                  ? Icons.person_rounded
+                                  : Icons.people_alt_rounded,
+                              size: 18,
+                              color: Theme.of(context).brightness == Brightness.dark
+                                  ? AppColors.teal
+                                  : AppColors.tealDeep,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Đang xem: $_viewerLabel',
+                              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                                color: Theme.of(context).brightness == Brightness.dark
+                                    ? Colors.white
+                                    : AppColors.tealDeep,
+                                fontWeight: FontWeight.w800,
                               ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -755,151 +778,125 @@ class _SummaryHeader extends StatelessWidget {
         totalFundContribution -
         transferSent;
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          children: [
-            // Row 1: Tổng Thu | Tổng Chi
-            Row(
-              children: [
-                Expanded(
-                  child: _miniTile(
-                    'Tổng Thu',
-                    totalIncome,
-                    Colors.green[700]!,
-                    Icons.south_west_rounded,
-                    onTap: onTapIncome,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _miniTile(
-                    'Tổng Chi',
-                    totalExpense,
-                    Colors.red[700]!,
-                    Icons.north_east_rounded,
-                    onTap: onTapExpense,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            // Row 2: Nhận từ | Chuyển cho
-            Row(
-              children: [
-                Expanded(
-                  child: _miniTile(
-                    'Nhận tiền',
-                    transferReceived,
-                    Colors.green[700]!,
-                    Icons.arrow_downward,
-                    onTap: onTapTransferReceived,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _miniTile(
-                    'Chuyển tiền',
-                    transferSent,
-                    Colors.red[700]!,
-                    Icons.arrow_upward,
-                    onTap: onTapTransferSent,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            // Row 3: Mượn Nợ | Cho Mượn
-            Row(
-              children: [
-                Expanded(
-                  child: _miniTile(
-                    'Mượn Nợ',
-                    totalDebtBorrow,
-                    Colors.blue[700]!,
-                    Icons.request_quote_outlined,
-                    onTap: onTapDebtBorrow,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _miniTile(
-                    'Cho Mượn',
-                    totalDebtLend,
-                    Colors.deepPurple[700]!,
-                    Icons.account_balance_wallet_outlined,
-                    onTap: onTapDebtLend,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            // Row 4: Được trả | Trả nợ
-            Row(
-              children: [
-                Expanded(
-                  child: _miniTile(
-                    'Được trả',
-                    totalDebtPaymentReceived,
-                    Colors.teal[700]!,
-                    Icons.move_to_inbox_outlined,
-                    onTap: onTapDebtPaymentReceived,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _miniTile(
-                    'Trả nợ',
-                    totalDebtPaymentMade,
-                    Colors.orange[800]!,
-                    Icons.outbox_outlined,
-                    onTap: onTapDebtPaymentMade,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            // Row 5: Rút Quỹ | Góp Quỹ
-            Row(
-              children: [
-                Expanded(
-                  child: _miniTile(
-                    'Rút Quỹ',
-                    totalFundWithdrawal,
-                    Colors.lightBlue[700]!,
-                    Icons.download_outlined,
-                    onTap: onTapFundWithdrawal,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _miniTile(
-                    'Góp Quỹ',
-                    totalFundContribution,
-                    Colors.orange[700]!,
-                    Icons.savings_outlined,
-                    onTap: onTapFundContribution,
-                  ),
-                ),
-              ],
-            ),
-            const Divider(height: 18),
-            // Row 6: Còn lại
-            Row(
-              children: [
-                Expanded(
-                  child: _miniTile(
-                    'Còn lại',
-                    net,
-                    net >= 0 ? Colors.blue[700]! : Colors.red[700]!,
-                    Icons.account_balance_wallet_outlined,
-                  ),
-                ),
-              ],
-            ),
-          ],
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkCard : Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.1)
+              : AppColors.border.withValues(alpha: 0.8),
         ),
+      ),
+      child: Column(
+        children: [
+          _miniTile(
+            'Tổng cộng thực tế',
+            net,
+            net >= 0 ? AppColors.teal : AppColors.danger,
+            Icons.account_balance_wallet_outlined,
+            isLarge: true,
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _miniTile(
+                  'Tổng Thu',
+                  totalIncome,
+                  AppColors.success,
+                  Icons.payments_outlined,
+                  onTap: onTapIncome,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _miniTile(
+                  'Tổng Chi',
+                  totalExpense,
+                  AppColors.danger,
+                  Icons.shopping_bag_outlined,
+                  onTap: onTapExpense,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _miniTile(
+                  'Nhận tiền',
+                  transferReceived,
+                  AppColors.success,
+                  Icons.move_to_inbox_rounded,
+                  onTap: onTapTransferReceived,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _miniTile(
+                  'Chuyển tiền',
+                  transferSent,
+                  AppColors.danger,
+                  Icons.send_rounded,
+                  onTap: onTapTransferSent,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _miniTile(
+                  'Tổng nợ',
+                  totalDebtBorrow,
+                  AppColors.success,
+                  Icons.handshake_outlined,
+                  onTap: onTapDebtBorrow,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _miniTile(
+                  'Cho nợ',
+                  totalDebtLend,
+                  AppColors.danger,
+                  Icons.outbox_outlined,
+                  onTap: onTapDebtLend,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _miniTile(
+                  'Rút quỹ',
+                  totalFundWithdrawal,
+                  AppColors.success,
+                  Icons.savings_outlined,
+                  onTap: onTapFundWithdrawal,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _miniTile(
+                  'Góp quỹ',
+                  totalFundContribution,
+                  AppColors.danger,
+                  Icons.add_task_outlined,
+                  onTap: onTapFundContribution,
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -910,55 +907,87 @@ class _SummaryHeader extends StatelessWidget {
     Color color,
     IconData icon, {
     VoidCallback? onTap,
+    bool isLarge = false,
   }) {
-    final content = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 15, color: color),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: color,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            formatVnd(value),
-            style: TextStyle(fontWeight: FontWeight.bold, color: color),
-          ),
-        ],
-      ),
-    );
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: onTap == null
-          ? content
-          : Material(
-              color: Colors.transparent,
-              child: InkWell(
+    return Builder(builder: (context) {
+      final isDark = Theme.of(context).brightness == Brightness.dark;
+      final content = Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: isLarge ? 16 : 10,
+          vertical: isLarge ? 16 : 10,
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: EdgeInsets.all(isLarge ? 8 : 6),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(10),
-                onTap: onTap,
-                child: content,
+              ),
+              child: Icon(icon, size: isLarge ? 24 : 16, color: color),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: isLarge ? 14 : 11,
+                      color: isDark ? Colors.white60 : AppColors.textMuted,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    formatVnd(value),
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontSize: isLarge ? 20 : 13,
+                      fontWeight: FontWeight.w900,
+                      color: isLarge
+                          ? (isDark ? Colors.white : AppColors.tealDeep)
+                          : color,
+                      letterSpacing: -0.4,
+                    ),
+                  ),
+                ],
               ),
             ),
-    );
+            if (onTap != null && isLarge)
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 20,
+                color: isDark ? Colors.white24 : Colors.black12,
+              ),
+          ],
+        ),
+      );
+
+      return Container(
+        decoration: BoxDecoration(
+          color: isLarge
+              ? color.withValues(alpha: 0.05)
+              : (isDark ? Colors.white.withValues(alpha: 0.03) : Colors.grey.withValues(alpha: 0.05)),
+          borderRadius: BorderRadius.circular(16),
+          border: isLarge
+              ? Border.all(color: color.withValues(alpha: 0.1))
+              : null,
+        ),
+        child: onTap == null
+            ? content
+            : Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: onTap,
+                  child: content,
+                ),
+              ),
+      );
+    });
   }
 }
 
@@ -1096,8 +1125,8 @@ class _BreakdownSection extends StatelessWidget {
                                 children: [
                                   Icon(
                                     isOutgoing
-                                        ? Icons.arrow_upward
-                                        : Icons.arrow_downward,
+                                        ? Icons.call_made_rounded
+                                        : Icons.call_received_rounded,
                                     size: 12,
                                     color: subColor,
                                   ),
@@ -1176,7 +1205,7 @@ class _TransferSection extends StatelessWidget {
             _row(
               label: 'Tổng tiền đã chuyển',
               amount: transferSent,
-              icon: Icons.north_east_rounded,
+              icon: Icons.send_rounded,
               color: Colors.red[700]!,
             ),
             if (sentTransactions.isNotEmpty) ...[
@@ -1187,7 +1216,7 @@ class _TransferSection extends StatelessWidget {
             _row(
               label: 'Tổng tiền đã nhận',
               amount: transferReceived,
-              icon: Icons.south_west_rounded,
+              icon: Icons.move_to_inbox_rounded,
               color: Colors.green[700]!,
             ),
             if (receivedTransactions.isNotEmpty) ...[
@@ -1267,7 +1296,7 @@ class _TransferSection extends StatelessWidget {
         child: Row(
           children: [
             Icon(
-              isOutgoing ? Icons.arrow_upward : Icons.arrow_downward,
+              isOutgoing ? Icons.call_made_rounded : Icons.call_received_rounded,
               size: 12,
               color: color,
             ),

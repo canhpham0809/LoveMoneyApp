@@ -322,7 +322,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
                                         decoration: BoxDecoration(
                                           color: selected
                                               ? AppColors.tealSoft.withValues(
-                                                  alpha: 0.32,
+                                                  alpha: 0.24,
                                                 )
                                               : Colors.white,
                                           borderRadius: BorderRadius.circular(
@@ -344,13 +344,13 @@ class _AppShellScreenState extends State<AppShellScreen> {
                                             mainAxisAlignment:
                                                 MainAxisAlignment.center,
                                             children: [
-                                              Icon(
-                                                iconFromKey(c.icon),
-                                                color: selected
-                                                    ? AppColors.tealDeep
-                                                    : Colors.black54,
-                                                size: 20,
-                                              ),
+                                                Icon(
+                                                  iconFromKey(c.icon),
+                                                  color: selected
+                                                      ? AppColors.tealDeep
+                                                      : Colors.black45,
+                                                  size: 18,
+                                                ),
                                               const SizedBox(height: 4),
                                               Text(
                                                 c.name,

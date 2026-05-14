@@ -1,4 +1,4 @@
-﻿import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -676,7 +676,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                                           decoration: BoxDecoration(
                                             color: selected
                                                 ? AppColors.tealSoft.withValues(
-                                                    alpha: 0.32,
+                                                    alpha: 0.24,
                                                   )
                                                 : Colors.white,
                                             borderRadius: BorderRadius.circular(
@@ -702,8 +702,8 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                                                   icon,
                                                   color: selected
                                                       ? AppColors.tealDeep
-                                                      : Colors.black54,
-                                                  size: 20,
+                                                      : Colors.black45,
+                                                  size: 18,
                                                 ),
                                                 const SizedBox(height: 4),
                                                 Text(
@@ -1064,7 +1064,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                             _ExpenseFeedKind.fundContribution =>
                               Icons.savings_outlined,
                             _ExpenseFeedKind.debtPayment => Icons.credit_card,
-                            _ExpenseFeedKind.transferSent => Icons.swap_horiz,
+                            _ExpenseFeedKind.transferSent => Icons.send_rounded,
                             _ExpenseFeedKind.expense =>
                               Icons.shopping_bag_outlined,
                           };

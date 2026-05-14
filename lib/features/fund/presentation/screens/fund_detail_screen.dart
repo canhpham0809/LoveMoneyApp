@@ -489,6 +489,7 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                                 ],
                               ),
                               if (hasTarget) ...[
+                                const SizedBox(height: 14),
                                 ClipRRect(
                                   borderRadius: BorderRadius.circular(999),
                                   child: LinearProgressIndicator(
@@ -501,7 +502,7 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                                         ),
                                   ),
                                 ),
-                                const SizedBox(height: 5),
+                                const SizedBox(height: 8),
                                 Text(
                                   'Tiến độ: ${(progress * 100).toStringAsFixed(0)}%',
                                   style: const TextStyle(
@@ -510,7 +511,7 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
-                                const SizedBox(height: 6),
+                                const SizedBox(height: 12),
                               ],
                               if (hasTarget)
                                 Text(
@@ -521,7 +522,7 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
-                              if (hasTarget) const SizedBox(height: 2),
+                              if (hasTarget) const SizedBox(height: 4),
                               Text(
                                 hasTarget
                                     ? 'Còn lại: ${formatVnd(remaining)}'
@@ -532,7 +533,7 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
-                              const SizedBox(height: 2),
+                              const SizedBox(height: 10),
                               Text(
                                 fund.deadline != null
                                     ? 'Hạn: ${formatDate(fund.deadline!)}'

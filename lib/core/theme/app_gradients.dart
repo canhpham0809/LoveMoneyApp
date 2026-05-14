@@ -7,24 +7,30 @@ class AppGradients {
 
   static const LinearGradient heroTeal = LinearGradient(
     colors: [AppColors.tealDeep, AppColors.teal],
-    begin: Alignment.centerLeft,
-    end: Alignment.centerRight,
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
+  static const LinearGradient premiumCard = LinearGradient(
+    colors: [Color(0xFF0D9488), Color(0xFF0F766E)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
   );
 
   static const LinearGradient incomeCard = LinearGradient(
-    colors: [Color(0xFF4FBE7D), Color(0xFF85D97A)],
+    colors: [Color(0xFF059669), Color(0xFF10B981)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
   static const LinearGradient expenseCard = LinearGradient(
-    colors: [Color(0xFFF15F68), Color(0xFFF38F82)],
+    colors: [Color(0xFFDC2626), Color(0xFFEF4444)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
   static const LinearGradient softTeal = LinearGradient(
-    colors: [Color(0xFFD8F4F1), Color(0xFFBEE8E5)],
+    colors: [Color(0xFFF0FDFA), Color(0xFFCCFBF1)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );

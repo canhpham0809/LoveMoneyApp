@@ -371,12 +371,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textTheme = Theme.of(context).textTheme;
     final selectedSummary = _monthlySummaries.isEmpty
         ? null
         : _monthlySummaries[_selectedMonthIndex];
     final titleText = selectedSummary == null
-        ? 'Dashboard'
-        : 'Dashboard ${selectedSummary.month.toString().padLeft(2, '0')}/${selectedSummary.year}';
+        ? 'Tổng quan'
+        : 'Tháng ${selectedSummary.month.toString().padLeft(2, '0')}/${selectedSummary.year}';
 
     return Scaffold(
       appBar: AppBar(
@@ -439,27 +441,46 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     children: [
                       Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
+                          horizontal: 16,
+                          vertical: 10,
                         ),
                         decoration: BoxDecoration(
-                          color: AppColors.tealSoft.withValues(alpha: 0.45),
-                          borderRadius: BorderRadius.circular(999),
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.05)
+                              : AppColors.tealSoft.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: isDark
+                                ? Colors.white.withValues(alpha: 0.1)
+                                : AppColors.teal.withValues(alpha: 0.1),
+                          ),
                         ),
-                        child: Text(
-                          'Đang xem: ${widget.viewerLabel}',
-                          style: Theme.of(context).textTheme.labelMedium
-                              ?.copyWith(
-                                color: AppColors.tealDeep,
-                                fontWeight: FontWeight.w700,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              widget.viewerUserId == widget.currentUserId
+                                  ? Icons.person_rounded
+                                  : Icons.people_alt_rounded,
+                              size: 18,
+                              color: isDark ? AppColors.teal : AppColors.tealDeep,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Đang xem: ${widget.viewerLabel}',
+                              style: textTheme.labelLarge?.copyWith(
+                                color: isDark ? Colors.white : AppColors.tealDeep,
+                                fontWeight: FontWeight.w800,
                               ),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 12),
                       // Monthly swipeable summary cards
                       if (_monthlySummaries.isNotEmpty)
                         SizedBox(
-                          height: 172,
+                          height: 200,
                           child: PageView.builder(
                             controller: _monthPageController,
                             itemCount: _monthlySummaries.length,

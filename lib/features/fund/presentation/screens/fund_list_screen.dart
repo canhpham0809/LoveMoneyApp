@@ -725,9 +725,9 @@ class _FundListScreenState extends State<FundListScreen> {
                                           ),
                                       ],
                                     ),
-                                    if (item.targetAmount != null) ...[
-                                      const SizedBox(height: 8),
-                                      LinearProgressIndicator(
+                                      if (item.targetAmount != null) ...[
+                                        const SizedBox(height: 12),
+                                        LinearProgressIndicator(
                                         value: progress,
                                         minHeight: 12,
                                         borderRadius: BorderRadius.circular(
@@ -739,7 +739,7 @@ class _FundListScreenState extends State<FundListScreen> {
                                             ),
                                         backgroundColor: Colors.grey[200],
                                       ),
-                                      const SizedBox(height: 8),
+                                      const SizedBox(height: 10),
                                       Row(
                                         mainAxisAlignment:
                                             MainAxisAlignment.spaceBetween,

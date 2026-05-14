@@ -22,83 +22,123 @@ class MonthlyCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final cardColor = isSelected
-        ? null
-        : Theme.of(context).colorScheme.surfaceContainerLow;
-    final borderColor = isSelected ? Colors.transparent : AppColors.border;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return DecoratedBox(
+    return Container(
       decoration: BoxDecoration(
-        gradient: isSelected ? AppGradients.softTeal : null,
-        color: cardColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: borderColor),
+        gradient: isSelected ? AppGradients.premiumCard : null,
+        color: isSelected
+            ? null
+            : (isDark ? AppColors.darkCard : Colors.white),
+        borderRadius: BorderRadius.circular(24),
+        border: isSelected
+            ? null
+            : Border.all(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.1)
+                    : AppColors.border,
+              ),
         boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
-          ),
+          if (isSelected)
+            BoxShadow(
+              color: AppColors.tealDeep.withValues(alpha: 0.3),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
+            )
+          else
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
         ],
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(24),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.all(20),
             child: Column(
-              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Expanded(
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? Colors.white.withValues(alpha: 0.1)
+                            : AppColors.tealSoft.withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                       child: Text(
-                        'Tháng ${summary.month}/${summary.year}',
-                        style: textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.tealDeep,
+                        '${summary.month}/${summary.year}',
+                        style: textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: isSelected ? Colors.white : AppColors.tealDeep,
                         ),
                       ),
                     ),
-                    InkWell(
-                      onTap: onCarryOverPressed,
-                      borderRadius: BorderRadius.circular(999),
-                      child: const Padding(
-                        padding: EdgeInsets.all(2),
-                        child: Tooltip(
-                          message: 'Chuyển dư sang tháng sau',
-                          child: Icon(Icons.add_circle_outline, size: 18),
+                    if (onCarryOverPressed != null)
+                      IconButton(
+                        onPressed: onCarryOverPressed,
+                        icon: Icon(
+                          Icons.swap_horizontal_circle_outlined,
+                          color: isSelected ? Colors.white70 : AppColors.teal,
+                          size: 24,
                         ),
+                        visualDensity: VisualDensity.compact,
+                        tooltip: 'Chuyển dư',
                       ),
-                    ),
                   ],
                 ),
+                const Spacer(),
+                Text(
+                  'Số dư khả dụng',
+                  style: textTheme.labelMedium?.copyWith(
+                    color: isSelected ? Colors.white70 : AppColors.textMuted,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 const SizedBox(height: 4),
-                _statRow(
-                  context: context,
-                  label: 'Thu nhập',
-                  value: summary.income,
-                  amountColor: AppColors.success,
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    formatVnd(summary.balance),
+                    style: textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w900,
+                      color: isSelected
+                          ? Colors.white
+                          : (summary.balance >= 0
+                              ? AppColors.tealDeep
+                              : AppColors.danger),
+                      letterSpacing: -0.5,
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 2),
-                _statRow(
-                  context: context,
-                  label: 'Chi tiêu',
-                  value: summary.expense,
-                  amountColor: AppColors.danger,
-                ),
-                const Divider(height: 10, thickness: 1),
-                _statRow(
-                  context: context,
-                  label: 'Còn lại',
-                  value: summary.balance,
-                  amountColor: summary.balance >= 0
-                      ? AppColors.tealDeep
-                      : AppColors.danger,
-                  emphasize: true,
+                const Spacer(),
+                Row(
+                  children: [
+                    _miniStat(
+                      label: 'Thu',
+                      value: summary.income,
+                      color: isSelected ? Colors.white.withValues(alpha: 0.9) : AppColors.success,
+                      isDark: isSelected,
+                    ),
+                    const SizedBox(width: 16),
+                    _miniStat(
+                      label: 'Chi',
+                      value: summary.expense,
+                      color: isSelected ? Colors.white.withValues(alpha: 0.7) : AppColors.danger,
+                      isDark: isSelected,
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -108,29 +148,30 @@ class MonthlyCard extends StatelessWidget {
     );
   }
 
-  Widget _statRow({
-    required BuildContext context,
+  Widget _miniStat({
     required String label,
     required double value,
-    required Color amountColor,
-    bool emphasize = false,
+    required Color color,
+    required bool isDark,
   }) {
-    final textTheme = Theme.of(context).textTheme;
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
-          style: textTheme.bodyMedium?.copyWith(
-            fontSize: 15,
-            fontWeight: emphasize ? FontWeight.w700 : FontWeight.w600,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: isDark ? Colors.white60 : AppColors.textMuted,
+            letterSpacing: 0.5,
           ),
         ),
         Text(
           formatVnd(value),
-          style: textTheme.titleMedium?.copyWith(
+          style: TextStyle(
+            fontSize: 13,
             fontWeight: FontWeight.w800,
-            color: amountColor,
+            color: color,
           ),
         ),
       ],

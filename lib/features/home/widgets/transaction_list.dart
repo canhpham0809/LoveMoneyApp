@@ -19,13 +19,36 @@ class TransactionList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textTheme = Theme.of(context).textTheme;
+
     if (transactions.isEmpty) {
-      return const Center(child: Text('No transactions'));
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.receipt_long_outlined,
+              size: 48,
+              color: AppColors.textMuted.withValues(alpha: 0.5),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Chưa có giao dịch nào',
+              style: textTheme.bodyLarge?.copyWith(
+                color: AppColors.textMuted,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      );
     }
-    return ListView.builder(
+    return ListView.separated(
       shrinkWrap: shrinkWrap,
       physics: physics,
       itemCount: transactions.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 12),
       itemBuilder: (context, idx) {
         final tx = transactions[idx];
         final inferredIncomingFromTitle = tx.title.startsWith('Nhận từ');
@@ -50,38 +73,48 @@ class TransactionList extends StatelessWidget {
             ? (isIncomingTransfer ? '+' : (isOutgoingTransfer ? '-' : ''))
             : '-';
         return Container(
-          margin: const EdgeInsets.only(bottom: 10),
           decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.border),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.06),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
+            color: isDark ? AppColors.darkCard : Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.1)
+                  : AppColors.border.withValues(alpha: 0.8),
+            ),
           ),
           child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: color.withValues(alpha: 0.16),
-              child: Icon(iconData, color: color),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            leading: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(iconData, color: color, size: 22),
             ),
             title: Text(
               tx.title,
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: textTheme.bodyLarge?.copyWith(
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.2,
+              ),
             ),
             subtitle: Text(
               '${formatDate(tx.date)} · ${formatTimeUtcPlus7(tx.createdAt)}',
-              style: const TextStyle(color: AppColors.textMuted),
+              style: textTheme.bodySmall?.copyWith(
+                color: AppColors.textMuted,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             trailing: Text(
               '$sign${formatVnd(tx.amount.abs())}',
-              style: TextStyle(
+              style: textTheme.titleMedium?.copyWith(
                 color: color,
-                fontWeight: FontWeight.w700,
-                fontSize: 13,
+                fontWeight: FontWeight.w900,
+                fontSize: 15,
               ),
             ),
           ),
@@ -93,17 +126,17 @@ class TransactionList extends StatelessWidget {
   IconData _iconForType(TransactionType type, bool isIncomingTransfer) {
     switch (type) {
       case TransactionType.income:
-        return Icons.arrow_downward;
+        return Icons.payments_outlined;
       case TransactionType.expense:
-        return Icons.arrow_upward;
+        return Icons.shopping_bag_outlined;
       case TransactionType.fund:
         return Icons.savings;
       case TransactionType.debt:
         return Icons.payments;
       case TransactionType.transfer:
         return isIncomingTransfer
-            ? Icons.south_west_rounded
-            : Icons.north_east_rounded;
+            ? Icons.move_to_inbox_rounded
+            : Icons.send_rounded;
     }
   }
 
