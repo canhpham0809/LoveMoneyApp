@@ -488,29 +488,30 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 8),
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(999),
-                                child: LinearProgressIndicator(
-                                  value: progress,
-                                  minHeight: 8,
-                                  backgroundColor: AppColors.tealSoft,
-                                  valueColor:
-                                      const AlwaysStoppedAnimation<Color>(
-                                        AppColors.tealDeep,
-                                      ),
+                              if (hasTarget) ...[
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(999),
+                                  child: LinearProgressIndicator(
+                                    value: progress,
+                                    minHeight: 8,
+                                    backgroundColor: AppColors.tealSoft,
+                                    valueColor:
+                                        const AlwaysStoppedAnimation<Color>(
+                                          AppColors.tealDeep,
+                                        ),
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 5),
-                              Text(
-                                'Tiến độ: ${(progress * 100).toStringAsFixed(0)}%',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: AppColors.tealDeep,
-                                  fontWeight: FontWeight.w600,
+                                const SizedBox(height: 5),
+                                Text(
+                                  'Tiến độ: ${(progress * 100).toStringAsFixed(0)}%',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.tealDeep,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 6),
+                                const SizedBox(height: 6),
+                              ],
                               if (hasTarget)
                                 Text(
                                   'Mục tiêu: ${formatVnd(target)}',

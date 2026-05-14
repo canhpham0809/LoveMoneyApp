@@ -450,6 +450,12 @@ class FundService {
   Future<Map<String, dynamic>> _createFundContributionRemote(
     Map<String, dynamic> payload,
   ) async {
+    final fundName =
+        (payload['fund_name'] as String?)?.trim().isNotEmpty == true
+            ? payload['fund_name'] as String
+            : 'Quỹ';
+    payload.remove('fund_name');
+
     final row = await _db
         .from('fund_contributions')
         .insert(payload)
@@ -466,10 +472,6 @@ class FundService {
     final walletId = payload['wallet_id'] as String;
     final amount = (payload['amount'] as num).toDouble();
     final note = payload['note'] as String?;
-    final fundName =
-        (payload['fund_name'] as String?)?.trim().isNotEmpty == true
-        ? payload['fund_name'] as String
-        : 'Quỹ';
     final incomeSourceId = await _ensureFundWithdrawIncomeSource(coupleId);
     final incomeRow = await _db
         .from('incomes')
@@ -498,13 +500,30 @@ class FundService {
   }
 
   Future<void> _refreshFundFromRemote(String fundId) async {
-    final row = await _db
+    final rows = await _db
+        .from('fund_contributions')
+        .select('amount, contribution_type')
+        .eq('fund_id', fundId)
+        .eq('is_deleted', false);
+
+    double total = 0;
+    for (final row in rows) {
+      final amount = (row['amount'] as num?)?.toDouble() ?? 0;
+      final type = (row['contribution_type'] as String?) ?? 'contribution';
+      if (type == 'contribution') {
+        total += amount;
+      } else if (type == 'withdrawal') {
+        total -= amount;
+      }
+    }
+
+    await _db
         .from('funds')
-        .select('current_amount')
-        .eq('id', fundId)
-        .single();
-    final amount = (row['current_amount'] as num?)?.toDouble() ?? 0;
-    await _db.from('funds').update({'current_amount': amount}).eq('id', fundId);
+        .update({
+          'current_amount': total,
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        })
+        .eq('id', fundId);
   }
 
   Future<double> previewDeleteContributionImpact(String contributionId) async {

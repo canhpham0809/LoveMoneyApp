@@ -33,6 +33,9 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen> {
   @override
   void initState() {
     super.initState();
+    for (final node in _focusNodes) {
+      node.onKeyEvent = _onKey;
+    }
     _startCountdown();
   }
 
@@ -77,14 +80,17 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen> {
     if (_otp.length == _otpLength) _verifyOtp();
   }
 
-  void _onKeyEvent(int index, KeyEvent event) {
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
     if (event is KeyDownEvent &&
-        event.logicalKey == LogicalKeyboardKey.backspace &&
-        _controllers[index].text.isEmpty &&
-        index > 0) {
-      _focusNodes[index - 1].requestFocus();
-      _controllers[index - 1].clear();
+        event.logicalKey == LogicalKeyboardKey.backspace) {
+      final index = _focusNodes.indexOf(node);
+      if (_controllers[index].text.isEmpty && index > 0) {
+        _focusNodes[index - 1].requestFocus();
+        _controllers[index - 1].clear();
+        return KeyEventResult.handled;
+      }
     }
+    return KeyEventResult.ignored;
   }
 
   Future<void> _verifyOtp() async {
@@ -103,7 +109,7 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen> {
         email: widget.email,
         token: otp,
       );
-      // _AuthGate tự điều hướng khi session thay đổi
+      // _AuthGate will handle navigation
     } on AuthException catch (e) {
       setState(() => _otpError = _mapError(e.message));
     } catch (_) {
@@ -142,14 +148,17 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen> {
   }
 
   String _mapError(String msg) {
-    if (msg.contains('expired') || msg.contains('Token has expired')) {
+    final lowerMsg = msg.toLowerCase();
+    if (lowerMsg.contains('expired') || lowerMsg.contains('token has expired')) {
       return 'Mã OTP đã hết hạn. Vui lòng yêu cầu gửi lại.';
     }
-    if (msg.contains('invalid') || msg.contains('incorrect')) {
+    if (lowerMsg.contains('invalid') || 
+        lowerMsg.contains('incorrect') ||
+        lowerMsg.contains('not found')) {
       return 'Mã OTP không đúng. Vui lòng kiểm tra lại email.';
     }
-    if (msg.contains('rate limit') ||
-        msg.contains('over_email_send_rate_limit')) {
+    if (lowerMsg.contains('rate limit') ||
+        lowerMsg.contains('over_email_send_rate_limit')) {
       return 'Hệ thống đang giới hạn số email gửi đi. Vui lòng đợi vài phút rồi thử lại.';
     }
     return msg;
@@ -235,41 +244,43 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen> {
             return SizedBox(
               width: 48,
               height: 56,
-              child: KeyboardListener(
-                focusNode: FocusNode(),
-                onKeyEvent: (e) => _onKeyEvent(i, e),
-                child: TextFormField(
-                  controller: _controllers[i],
-                  focusNode: _focusNodes[i],
-                  textAlign: TextAlign.center,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly,
-                    LengthLimitingTextInputFormatter(1),
-                  ],
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                  decoration: InputDecoration(
-                    filled: true,
-                    fillColor: _controllers[i].text.isNotEmpty
-                        ? theme.colorScheme.primaryContainer.withAlpha(150)
-                        : theme.colorScheme.surfaceContainerHighest,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                        color: theme.colorScheme.primary,
-                        width: 2,
-                      ),
-                    ),
-                    counterText: '',
-                  ),
-                  onChanged: (v) => _onDigitChanged(i, v),
+              child: TextFormField(
+                controller: _controllers[i],
+                focusNode: _focusNodes[i],
+                textAlign: TextAlign.center,
+                keyboardType: TextInputType.number,
+                obscureText: false,
+                autocorrect: false,
+                enableSuggestions: false,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(1),
+                ],
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  fontFamily: 'monospace', // Ensure digits are standard
                 ),
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: _controllers[i].text.isNotEmpty
+                      ? theme.colorScheme.primaryContainer.withAlpha(150)
+                      : theme.colorScheme.surfaceContainerHighest,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                      color: theme.colorScheme.primary,
+                      width: 2,
+                    ),
+                  ),
+                  counterText: '',
+                  contentPadding: EdgeInsets.zero,
+                ),
+                onChanged: (v) => _onDigitChanged(i, v),
               ),
             );
           }),
