@@ -38,7 +38,9 @@ class TransferService {
       }
     }
 
-    final ordered = query.order('created_at', ascending: false);
+    final ordered = query
+        .order('date', ascending: false)
+        .order('created_at', ascending: false);
     final rows = (limit != null && offset != null)
         ? await ordered.range(offset, offset + limit - 1)
         : await ordered;

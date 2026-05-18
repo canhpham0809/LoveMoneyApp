@@ -16,6 +16,7 @@ class ExpenseModel extends Equatable {
   final String? updatedBy;
   final bool isDeleted;
   final DateTime? deletedAt;
+  final String? eventId;
 
   const ExpenseModel({
     required this.id,
@@ -33,6 +34,7 @@ class ExpenseModel extends Equatable {
     this.updatedBy,
     required this.isDeleted,
     this.deletedAt,
+    this.eventId,
   });
 
   factory ExpenseModel.fromJson(Map<String, dynamic> json) {
@@ -54,6 +56,7 @@ class ExpenseModel extends Equatable {
       deletedAt: json['deleted_at'] != null
           ? DateTime.parse(json['deleted_at'] as String)
           : null,
+      eventId: json['event_id'] as String?,
     );
   }
 
@@ -74,6 +77,7 @@ class ExpenseModel extends Equatable {
       'updated_by': updatedBy,
       'is_deleted': isDeleted,
       'deleted_at': deletedAt?.toIso8601String(),
+      'event_id': eventId,
     };
   }
 
@@ -94,5 +98,6 @@ class ExpenseModel extends Equatable {
     updatedBy,
     isDeleted,
     deletedAt,
+    eventId,
   ];
 }

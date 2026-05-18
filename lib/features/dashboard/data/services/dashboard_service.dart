@@ -209,10 +209,18 @@ class DashboardService {
         row['id'] as String: ((row['current_amount'] as num?)?.toDouble() ?? 0),
     };
 
+    final events = await _db
+        .from('events')
+        .select('id, name')
+        .eq('couple_id', coupleId);
+    final eventNameById = {
+      for (final row in events) row['id'] as String: row['name'] as String,
+    };
+
     var expensesQuery = _db
         .from('expenses')
         .select(
-          'id, amount, category_id, category_name, date, description, created_at',
+          'id, amount, category_id, category_name, date, description, created_at, event_id, user_id',
         )
         .eq('couple_id', coupleId)
         .eq('is_deleted', false)
@@ -220,7 +228,7 @@ class DashboardService {
         .lt('date', to);
     var incomesQuery = _db
         .from('incomes')
-        .select('id, amount, income_source_id, date, description, created_at')
+        .select('id, amount, income_source_id, date, description, created_at, user_id')
         .eq('couple_id', coupleId)
         .eq('is_deleted', false)
         .or('is_from_transfer.is.null,is_from_transfer.eq.false')
@@ -229,7 +237,7 @@ class DashboardService {
     var contributionsQuery = _db
         .from('fund_contributions')
         .select(
-          'amount, fund_id, contribution_type, date, note, linked_income_id',
+          'amount, fund_id, contribution_type, date, note, linked_income_id, user_id',
         )
         .eq('couple_id', coupleId)
         .eq('is_deleted', false)
@@ -406,12 +414,22 @@ class DashboardService {
     for (final row in manualExpenses) {
       final categoryId = row['category_id'] as String?;
       final fallbackName = (row['category_name'] as String?) ?? 'Khác';
-      final name =
-          (categoryId != null ? categoryNameById[categoryId] : null) ??
-          fallbackName;
-      final iconKey =
-          (categoryId != null ? categoryIconById[categoryId] : null) ?? 'label';
-      final key = categoryId ?? fallbackName;
+      final eventId = row['event_id'] as String?;
+
+      final String key;
+      final String name;
+      final String iconKey;
+
+      if (eventId != null) {
+        key = 'event_$eventId';
+        name = eventNameById[eventId] ?? 'Sự kiện';
+        iconKey = 'event_note';
+      } else {
+        key = categoryId ?? fallbackName;
+        name = (categoryId != null ? categoryNameById[categoryId] : null) ?? fallbackName;
+        iconKey = (categoryId != null ? categoryIconById[categoryId] : null) ?? 'label';
+      }
+
       final bucket = expenseMap.putIfAbsent(
         key,
         () => {
@@ -595,6 +613,7 @@ class DashboardService {
           'amount': (row['amount'] as num?)?.toDouble() ?? 0,
           'date': row['date'] as String?,
           'created_at': createdAt,
+          'user_id': row['user_id'] as String?,
         };
       }).toList(),
       'expense_transactions': manualExpenses.map((row) {
@@ -610,18 +629,28 @@ class DashboardService {
         final createdAt =
             (row['created_at'] as String?) ??
             (dateValue == null ? null : '${dateValue}T00:00:00Z');
+
+        final eventId = row['event_id'] as String?;
+
+        final resolvedBucketId = eventId != null ? 'event_$eventId' : (categoryId ?? fallbackName);
+        final resolvedBucketName = eventId != null ? (eventNameById[eventId] ?? 'Sự kiện') : categoryName;
+        final resolvedIcon = categoryIcon;
+
+        String resolvedTitle = (row['description'] as String?)?.trim().isNotEmpty == true
+            ? (row['description'] as String).trim()
+            : categoryName;
+
         return <String, dynamic>{
           'id': row['id'] as String?,
           'kind': 'expense',
-          'bucket_id': categoryId ?? fallbackName,
-          'bucket_name': categoryName,
-          'title': (row['description'] as String?)?.trim().isNotEmpty == true
-              ? (row['description'] as String).trim()
-              : categoryName,
-          'icon_key': categoryIcon,
+          'bucket_id': resolvedBucketId,
+          'bucket_name': resolvedBucketName,
+          'title': resolvedTitle,
+          'icon_key': resolvedIcon,
           'amount': (row['amount'] as num?)?.toDouble() ?? 0,
           'date': row['date'] as String?,
           'created_at': createdAt,
+          'user_id': row['user_id'] as String?,
         };
       }).toList(),
       'transfer_sent_transactions': transfers
@@ -687,6 +716,7 @@ class DashboardService {
               'created_at': (row['date'] as String?) == null
                   ? null
                   : '${row['date'] as String}T00:00:00Z',
+              'user_id': row['user_id'] as String?,
             };
           })
           .toList(),
@@ -711,6 +741,7 @@ class DashboardService {
               'created_at': (row['date'] as String?) == null
                   ? null
                   : '${row['date'] as String}T00:00:00Z',
+              'user_id': row['user_id'] as String?,
             };
           })
           .toList(),
@@ -737,6 +768,7 @@ class DashboardService {
               'created_at': (created['date'] as String?) == null
                   ? null
                   : '${created['date'] as String}T00:00:00Z',
+              'user_id': row['user_id'] as String?,
             };
           })
           .toList(),
@@ -763,6 +795,7 @@ class DashboardService {
               'created_at': (created['date'] as String?) == null
                   ? null
                   : '${created['date'] as String}T00:00:00Z',
+              'user_id': row['user_id'] as String?,
             };
           })
           .toList(),
@@ -787,6 +820,7 @@ class DashboardService {
                 'created_at': (payment['date'] as String?) == null
                     ? null
                     : '${payment['date'] as String}T00:00:00Z',
+                'user_id': row['user_id'] as String?,
               };
             });
           })
@@ -812,6 +846,7 @@ class DashboardService {
                 'created_at': (payment['date'] as String?) == null
                     ? null
                     : '${payment['date'] as String}T00:00:00Z',
+                'user_id': row['user_id'] as String?,
               };
             });
           })

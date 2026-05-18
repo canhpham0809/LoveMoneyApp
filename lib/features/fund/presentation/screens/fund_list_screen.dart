@@ -815,9 +815,26 @@ class _FundListScreenState extends State<FundListScreen> {
                 ],
               ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _openFundPopup,
-        child: const Icon(Icons.add),
+      floatingActionButton: LayoutBuilder(
+        builder: (context, constraints) {
+          final isLarge = MediaQuery.of(context).size.width > 800;
+          if (isLarge) {
+            return FloatingActionButton.extended(
+              onPressed: _openFundPopup,
+              icon: const Icon(Icons.add_rounded),
+              label: const Text(
+                'Thêm quỹ',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              backgroundColor: AppColors.tealDeep,
+              foregroundColor: Colors.white,
+            );
+          }
+          return FloatingActionButton(
+            onPressed: _openFundPopup,
+            child: const Icon(Icons.add),
+          );
+        },
       ),
     );
   }

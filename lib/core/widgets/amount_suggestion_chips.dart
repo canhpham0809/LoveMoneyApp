@@ -27,43 +27,42 @@ class AmountSuggestionChips extends StatelessWidget {
         }
 
         return Padding(
-          padding: const EdgeInsets.only(top: 6),
-          child: SizedBox(
-            height: 30,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (int i = 0; i < options.length; i++) ...[
-                    if (i > 0) const SizedBox(width: 2),
-                    _buildSlot(options[i], 80),
-                  ],
-                ],
-              ),
-            ),
+          padding: const EdgeInsets.only(top: 8),
+          child: Row(
+            children: [
+              for (int i = 0; i < options.length; i++) ...[
+                if (i > 0) const SizedBox(width: 8),
+                _buildSlot(options[i]),
+              ],
+            ],
           ),
         );
       },
     );
   }
 
-  Widget _buildSlot(int value, double width) {
-    return SizedBox(
-      width: width,
-      height: 30,
-      child: OutlinedButton(
-        style: OutlinedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          visualDensity: VisualDensity(horizontal: -2, vertical: -2),
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        ),
-        onPressed: () => onSelected(value),
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text(
-            _formatWithComma(value),
-            style: const TextStyle(fontSize: 11),
+  Widget _buildSlot(int value) {
+    return Expanded(
+      child: SizedBox(
+        height: 32,
+        child: OutlinedButton(
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            visualDensity: VisualDensity.compact,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+          onPressed: () => onSelected(value),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              _formatWithComma(value),
+              style: const TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ),
       ),

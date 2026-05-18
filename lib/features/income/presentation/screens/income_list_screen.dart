@@ -620,6 +620,32 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
     return wallets.first.id;
   }
 
+  Future<bool> _confirmPartnerAction(BuildContext context, String partnerName) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Xác nhận thao tác'),
+            content: Text(
+              'Bạn đang thao tác trên giao dịch của "$partnerName". Bạn có chắc chắn muốn thực hiện?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Hủy'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.amber[800],
+                ),
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Tiếp tục'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
   Future<void> _openIncomePopup({IncomeModel? existing}) async {
     final sources = await _service.getIncomeFormSources(widget.coupleId);
     if (!mounted) return;
@@ -697,9 +723,9 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                       const SizedBox(height: 8),
                       LayoutBuilder(
                         builder: (context, constraints) {
-                          const spacing = 8.0;
+                          const spacing = 6.0;
                           final tileWidth =
-                              (constraints.maxWidth - (spacing * 2)) / 3;
+                              (constraints.maxWidth - (spacing * 4)) / 5;
                           return Wrap(
                             spacing: spacing,
                             runSpacing: spacing,
@@ -710,32 +736,32 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                                 child: Material(
                                   color: Colors.transparent,
                                   child: InkWell(
-                                    borderRadius: BorderRadius.circular(14),
+                                    borderRadius: BorderRadius.circular(10),
                                     onTap: () {
                                       setDialogState(() {
                                         selectedSourceId = s.id;
                                       });
                                     },
                                     child: Ink(
-                                      height: 72,
+                                      height: 48,
                                       decoration: BoxDecoration(
                                         color: selected
                                             ? AppColors.successSoft.withValues(
                                                 alpha: 0.6,
                                               )
                                             : Colors.white,
-                                        borderRadius: BorderRadius.circular(14),
+                                        borderRadius: BorderRadius.circular(10),
                                         border: Border.all(
                                           color: selected
                                               ? AppColors.success
                                               : AppColors.border,
-                                          width: selected ? 1.8 : 1,
+                                          width: selected ? 1.5 : 1,
                                         ),
                                       ),
                                       child: Padding(
                                         padding: const EdgeInsets.symmetric(
-                                          horizontal: 6,
-                                          vertical: 4,
+                                          horizontal: 4,
+                                          vertical: 2,
                                         ),
                                         child: Column(
                                           mainAxisAlignment:
@@ -750,16 +776,16 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                                               color: selected
                                                   ? AppColors.success
                                                   : Colors.black45,
-                                              size: 18,
+                                              size: 14,
                                             ),
-                                            const SizedBox(height: 4),
+                                            const SizedBox(height: 2),
                                             Text(
                                               s.name,
-                                              maxLines: 2,
+                                              maxLines: 1,
                                               textAlign: TextAlign.center,
                                               overflow: TextOverflow.ellipsis,
                                               style: TextStyle(
-                                                fontSize: 11,
+                                                fontSize: 9.5,
                                                 fontWeight: selected
                                                     ? FontWeight.w700
                                                     : FontWeight.w500,
@@ -903,10 +929,18 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
       ),
     );
     if (action == 'edit') {
+      if (widget.viewerUserId != widget.currentUserId) {
+        final confirmed = await _confirmPartnerAction(context, widget.viewerLabel);
+        if (!confirmed) return;
+      }
       await _openIncomePopup(existing: item);
       return;
     }
     if (action == 'delete') {
+      if (widget.viewerUserId != widget.currentUserId) {
+        final confirmed = await _confirmPartnerAction(context, widget.viewerLabel);
+        if (!confirmed) return;
+      }
       final confirmed = await _confirmDeleteIncome(item);
       if (!confirmed) return;
       await _delete(item);
@@ -1249,15 +1283,38 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                 ],
               ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          if (widget.viewerUserId != widget.currentUserId) {
-            await _showSwitchBackToSelfAlert();
-            return;
+      floatingActionButton: LayoutBuilder(
+        builder: (context, constraints) {
+          final isLarge = MediaQuery.of(context).size.width > 800;
+          if (isLarge) {
+            return FloatingActionButton.extended(
+              onPressed: () async {
+                if (widget.viewerUserId != widget.currentUserId) {
+                  await _showSwitchBackToSelfAlert();
+                  return;
+                }
+                await _openIncomePopup();
+              },
+              icon: const Icon(Icons.add_rounded),
+              label: const Text(
+                'Thêm thu nhập',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              backgroundColor: AppColors.tealDeep,
+              foregroundColor: Colors.white,
+            );
           }
-          await _openIncomePopup();
+          return FloatingActionButton(
+            onPressed: () async {
+              if (widget.viewerUserId != widget.currentUserId) {
+                await _showSwitchBackToSelfAlert();
+                return;
+              }
+              await _openIncomePopup();
+            },
+            child: const Icon(Icons.add),
+          );
         },
-        child: const Icon(Icons.add),
       ),
     );
   }

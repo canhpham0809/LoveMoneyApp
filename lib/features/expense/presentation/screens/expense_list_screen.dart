@@ -15,6 +15,9 @@ import 'package:flutter_app_demo/features/expense/presentation/screens/expense_s
 import 'package:flutter_app_demo/features/wallet/data/services/wallet_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:flutter_app_demo/features/settings/data/models/event_model.dart';
+import 'package:flutter_app_demo/features/settings/data/services/event_service.dart';
+
 class ExpenseListScreen extends StatefulWidget {
   final String coupleId;
   final String viewerUserId;
@@ -46,12 +49,14 @@ class _ExpenseFormResult {
   final String categoryId;
   final String? description;
   final DateTime date;
+  final String? eventId;
 
   const _ExpenseFormResult({
     required this.amount,
     required this.categoryId,
     required this.description,
     required this.date,
+    this.eventId,
   });
 }
 
@@ -489,6 +494,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
       updatedBy: uid,
       isDeleted: false,
       deletedAt: null,
+      eventId: payload.eventId,
     );
 
     if (mounted) {
@@ -506,6 +512,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
         amount: payload.amount,
         description: payload.description,
         date: payload.date,
+        eventId: payload.eventId,
       );
       if (!mounted) return;
       setState(() {
@@ -566,6 +573,32 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
     return wallets.first.id;
   }
 
+  Future<bool> _confirmPartnerAction(BuildContext context, String partnerName) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Xác nhận thao tác'),
+            content: Text(
+              'Bạn đang thao tác trên giao dịch của "$partnerName". Bạn có chắc chắn muốn thực hiện?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Hủy'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.amber[800],
+                ),
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Tiếp tục'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
   Future<void> _openExpensePopup({ExpenseModel? existing}) async {
     final categories = await _service.getExpenseFormCategories(widget.coupleId);
     if (!mounted) return;
@@ -584,10 +617,18 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
       return;
     }
 
+    List<EventModel> allEvents = [];
+    try {
+      allEvents = await EventService().getEvents(widget.coupleId);
+    } catch (e) {
+      debugPrint('Error loading events: $e');
+    }
+
     final amountCtrl = TextEditingController();
     final noteCtrl = TextEditingController();
     String selectedCategoryId = existing?.categoryId ?? categories.first.id;
     DateTime selectedDate = existing?.date ?? DateTime.now();
+    String? selectedEventId = existing?.eventId;
     if (existing != null) {
       amountCtrl.text = formatAmountInput(existing.amount.toStringAsFixed(0));
       noteCtrl.text = existing.description ?? '';
@@ -598,7 +639,16 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
       builder: (dialogContext) {
         final media = MediaQuery.of(dialogContext).size;
         return StatefulBuilder(
-          builder: (dialogContext, setDialogState) => Dialog(
+          builder: (dialogContext, setDialogState) {
+            final dateOnly = DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+            final matchingEvents = allEvents.where((e) {
+              if (selectedEventId == e.id) return true;
+              final startOnly = DateTime(e.startDate.year, e.startDate.month, e.startDate.day);
+              final endOnly = DateTime(e.endDate.year, e.endDate.month, e.endDate.day);
+              return !dateOnly.isBefore(startOnly) && !dateOnly.isAfter(endOnly);
+            }).toList();
+
+            return Dialog(
             insetPadding: const EdgeInsets.symmetric(
               horizontal: 18,
               vertical: 20,
@@ -651,9 +701,9 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                           const SizedBox(height: 8),
                           LayoutBuilder(
                             builder: (context, constraints) {
-                              const spacing = 8.0;
+                              const spacing = 6.0;
                               final tileWidth =
-                                  (constraints.maxWidth - (spacing * 2)) / 3;
+                                  (constraints.maxWidth - (spacing * 4)) / 5;
                               return Wrap(
                                 spacing: spacing,
                                 runSpacing: spacing,
@@ -665,14 +715,14 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                                     child: Material(
                                       color: Colors.transparent,
                                       child: InkWell(
-                                        borderRadius: BorderRadius.circular(14),
+                                        borderRadius: BorderRadius.circular(10),
                                         onTap: () {
                                           setDialogState(() {
                                             selectedCategoryId = c.id;
                                           });
                                         },
                                         child: Ink(
-                                          height: 72,
+                                          height: 48,
                                           decoration: BoxDecoration(
                                             color: selected
                                                 ? AppColors.tealSoft.withValues(
@@ -680,19 +730,19 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                                                   )
                                                 : Colors.white,
                                             borderRadius: BorderRadius.circular(
-                                              14,
+                                              10,
                                             ),
                                             border: Border.all(
                                               color: selected
                                                   ? AppColors.tealDeep
                                                   : AppColors.border,
-                                              width: selected ? 1.8 : 1,
+                                              width: selected ? 1.5 : 1,
                                             ),
                                           ),
                                           child: Padding(
                                             padding: const EdgeInsets.symmetric(
-                                              horizontal: 6,
-                                              vertical: 4,
+                                              horizontal: 4,
+                                              vertical: 2,
                                             ),
                                             child: Column(
                                               mainAxisAlignment:
@@ -703,17 +753,17 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                                                   color: selected
                                                       ? AppColors.tealDeep
                                                       : Colors.black45,
-                                                  size: 18,
+                                                  size: 14,
                                                 ),
-                                                const SizedBox(height: 4),
+                                                const SizedBox(height: 2),
                                                 Text(
                                                   c.name,
-                                                  maxLines: 2,
+                                                  maxLines: 1,
                                                   textAlign: TextAlign.center,
                                                   overflow:
                                                       TextOverflow.ellipsis,
                                                   style: TextStyle(
-                                                    fontSize: 11,
+                                                    fontSize: 9.5,
                                                     fontWeight: selected
                                                         ? FontWeight.w700
                                                         : FontWeight.w500,
@@ -749,12 +799,74 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                                 lastDate: DateTime.now(),
                               );
                               if (picked != null) {
-                                setDialogState(() => selectedDate = picked);
+                                setDialogState(() {
+                                  selectedDate = picked;
+                                  // Clear selectedEventId if it is not valid for the new date
+                                  if (selectedEventId != null) {
+                                    final ev = allEvents.firstWhere((e) => e.id == selectedEventId);
+                                    final dateOnly = DateTime(picked.year, picked.month, picked.day);
+                                    final startOnly = DateTime(ev.startDate.year, ev.startDate.month, ev.startDate.day);
+                                    final endOnly = DateTime(ev.endDate.year, ev.endDate.month, ev.endDate.day);
+                                    final isValid = !dateOnly.isBefore(startOnly) && !dateOnly.isAfter(endOnly);
+                                    if (!isValid && selectedEventId != existing?.eventId) {
+                                      selectedEventId = null;
+                                    }
+                                  }
+                                });
                               }
                             },
                             icon: const Icon(Icons.calendar_month_outlined),
                             label: Text('Ngày: ${formatDate(selectedDate)}'),
                           ),
+                          if (matchingEvents.isNotEmpty) ...[
+                            const SizedBox(height: 14),
+                            const Text(
+                              'Sự kiện diễn ra trong ngày này:',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black54,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: matchingEvents.map((event) {
+                                final isSelected = selectedEventId == event.id;
+                                return ChoiceChip(
+                                  label: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.event_note,
+                                        size: 14,
+                                        color: isSelected ? Colors.white : AppColors.tealDeep,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(event.name),
+                                    ],
+                                  ),
+                                  selected: isSelected,
+                                  selectedColor: AppColors.tealDeep,
+                                  labelStyle: TextStyle(
+                                    color: isSelected ? Colors.white : Colors.black87,
+                                    fontSize: 12,
+                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                  ),
+                                  onSelected: (bool selected) {
+                                    setDialogState(() {
+                                      if (selected) {
+                                        selectedEventId = event.id;
+                                      } else {
+                                        selectedEventId = null;
+                                      }
+                                    });
+                                  },
+                                );
+                              }).toList(),
+                            ),
+                          ],
                         ],
                       ),
                       const SizedBox(height: 8),
@@ -794,6 +906,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                                           ? null
                                           : noteCtrl.text.trim(),
                                       date: selectedDate,
+                                      eventId: selectedEventId,
                                     ),
                                   );
                                 }
@@ -808,10 +921,11 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                 ),
               ),
             ),
-          ),
-        );
-      },
-    );
+          );
+            },
+          );
+        },
+      );
 
     if (payload == null) return;
 
@@ -829,6 +943,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
           amount: payload.amount,
           description: payload.description,
           date: payload.date,
+          eventId: payload.eventId,
         );
         widget.onDataChanged?.call();
       });
@@ -862,10 +977,18 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
       ),
     );
     if (action == 'edit') {
+      if (widget.viewerUserId != widget.currentUserId) {
+        final confirmed = await _confirmPartnerAction(context, widget.viewerLabel);
+        if (!confirmed) return;
+      }
       await _openExpensePopup(existing: item);
       return;
     }
     if (action == 'delete') {
+      if (widget.viewerUserId != widget.currentUserId) {
+        final confirmed = await _confirmPartnerAction(context, widget.viewerLabel);
+        if (!confirmed) return;
+      }
       final confirmed = await _confirmDeleteExpense(item);
       if (!confirmed) return;
       await _delete(item);
@@ -1206,15 +1329,38 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                 ],
               ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          if (widget.viewerUserId != widget.currentUserId) {
-            await _showSwitchBackToSelfAlert();
-            return;
+      floatingActionButton: LayoutBuilder(
+        builder: (context, constraints) {
+          final isLarge = MediaQuery.of(context).size.width > 800;
+          if (isLarge) {
+            return FloatingActionButton.extended(
+              onPressed: () async {
+                if (widget.viewerUserId != widget.currentUserId) {
+                  await _showSwitchBackToSelfAlert();
+                  return;
+                }
+                await _openExpensePopup();
+              },
+              icon: const Icon(Icons.add_rounded),
+              label: const Text(
+                'Thêm chi tiêu',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              backgroundColor: AppColors.tealDeep,
+              foregroundColor: Colors.white,
+            );
           }
-          await _openExpensePopup();
+          return FloatingActionButton(
+            onPressed: () async {
+              if (widget.viewerUserId != widget.currentUserId) {
+                await _showSwitchBackToSelfAlert();
+                return;
+              }
+              await _openExpensePopup();
+            },
+            child: const Icon(Icons.add),
+          );
         },
-        child: const Icon(Icons.add),
       ),
     );
   }

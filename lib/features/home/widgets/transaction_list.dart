@@ -147,17 +147,17 @@ class TransactionList extends StatelessWidget {
   }) {
     switch (type) {
       case TransactionType.income:
-        return Colors.green;
+        return AppColors.success;
       case TransactionType.expense:
-        return Colors.red;
+        return AppColors.danger;
       case TransactionType.fund:
-        return Colors.orange;
+        return AppColors.warning;
       case TransactionType.debt:
-        return Colors.blue;
+        return AppColors.info;
       case TransactionType.transfer:
-        if (isIncomingTransfer) return Colors.green;
-        if (isOutgoingTransfer) return Colors.red;
-        return Colors.grey;
+        if (isIncomingTransfer) return AppColors.success;
+        if (isOutgoingTransfer) return AppColors.danger;
+        return AppColors.textMuted;
     }
   }
 }

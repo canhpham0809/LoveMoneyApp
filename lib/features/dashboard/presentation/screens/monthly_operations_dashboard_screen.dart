@@ -41,7 +41,7 @@ class _MonthlyOperationsDashboardScreenState
     extends State<MonthlyOperationsDashboardScreen> {
   final _service = DashboardService();
 
-  late String _viewerUserId;
+  String? _viewerUserId;
   late String _viewerLabel;
 
   bool _isLoading = true;
@@ -186,17 +186,11 @@ class _MonthlyOperationsDashboardScreenState
     }
   }
 
-  Future<void> _toggleViewerFromMonthlyDashboard() async {
-    if (widget.partnerUserId == null) return;
+  Future<void> _setViewerPerspective(String? newUserId, String newLabel) async {
     if (!mounted) return;
-    final goingToPartner = _viewerUserId == widget.currentUserId;
     setState(() {
-      _viewerUserId = goingToPartner
-          ? widget.partnerUserId!
-          : widget.currentUserId;
-      _viewerLabel = goingToPartner
-          ? (widget.partnerLabel ?? 'Người kia')
-          : (widget.selfLabel ?? 'Tôi');
+      _viewerUserId = newUserId;
+      _viewerLabel = newLabel;
     });
     widget.onToggleViewer?.call();
     await _load(showLoader: false, overlayMessage: 'Đang chuyển view...');
@@ -416,6 +410,14 @@ class _MonthlyOperationsDashboardScreenState
                                   tx['created_at'] as String?,
                                 );
                                 final subtitleParts = <String>[];
+                                final txUserId = tx['user_id'] as String?;
+                                if (_viewerUserId == null && txUserId != null) {
+                                  if (txUserId == widget.currentUserId) {
+                                    subtitleParts.add('👤 ' + (widget.selfLabel ?? 'Tôi'));
+                                  } else if (txUserId == widget.partnerUserId) {
+                                    subtitleParts.add('👥 ' + (widget.partnerLabel ?? 'Đối phương'));
+                                  }
+                                }
                                 if (bucketName != null &&
                                     bucketName.isNotEmpty) {
                                   subtitleParts.add(bucketName);
@@ -541,16 +543,53 @@ class _MonthlyOperationsDashboardScreenState
       appBar: AppBar(
         title: Text('Dashboard $monthLabel'),
         actions: [
-          if (widget.partnerUserId != null)
+          if (widget.partnerUserId != null) ...[
             IconButton(
-              onPressed: _toggleViewerFromMonthlyDashboard,
+              onPressed: () => _setViewerPerspective(
+                widget.currentUserId,
+                widget.selfLabel ?? 'Tôi',
+              ),
               icon: Icon(
                 _viewerUserId == widget.currentUserId
                     ? Icons.person
-                    : Icons.people_alt_outlined,
+                    : Icons.person_outlined,
+                color: _viewerUserId == widget.currentUserId
+                    ? AppColors.teal
+                    : Colors.grey[500],
               ),
-              tooltip: 'Đang xem: $_viewerLabel. Chạm để đổi.',
+              tooltip: 'Cá nhân (${widget.selfLabel ?? 'Tôi'})',
             ),
+            IconButton(
+              onPressed: () => _setViewerPerspective(
+                widget.partnerUserId!,
+                widget.partnerLabel ?? 'Đối phương',
+              ),
+              icon: Icon(
+                _viewerUserId == widget.partnerUserId
+                    ? Icons.people
+                    : Icons.people_outlined,
+                color: _viewerUserId == widget.partnerUserId
+                    ? AppColors.teal
+                    : Colors.grey[500],
+              ),
+              tooltip: 'Đối phương (${widget.partnerLabel ?? 'Đối phương'})',
+            ),
+            IconButton(
+              onPressed: () => _setViewerPerspective(
+                null,
+                'Cả gia đình',
+              ),
+              icon: Icon(
+                _viewerUserId == null
+                    ? Icons.family_restroom
+                    : Icons.family_restroom_outlined,
+                color: _viewerUserId == null
+                    ? AppColors.teal
+                    : Colors.grey[500],
+              ),
+              tooltip: 'Xem cả gia đình',
+            ),
+          ],
           IconButton(
             onPressed: () =>
                 _load(showLoader: false, overlayMessage: 'Đang tải dữ liệu...'),
@@ -611,9 +650,11 @@ class _MonthlyOperationsDashboardScreenState
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
-                              _viewerUserId == widget.currentUserId
-                                  ? Icons.person_rounded
-                                  : Icons.people_alt_rounded,
+                              _viewerUserId == null
+                                  ? Icons.family_restroom_rounded
+                                  : (_viewerUserId == widget.currentUserId
+                                      ? Icons.person_rounded
+                                      : Icons.people_alt_rounded),
                               size: 18,
                               color: Theme.of(context).brightness == Brightness.dark
                                   ? AppColors.teal
@@ -645,6 +686,7 @@ class _MonthlyOperationsDashboardScreenState
                       totalDebtLend: _totalDebtLend,
                       totalDebtPaymentMade: _totalDebtPaymentMade,
                       totalDebtPaymentReceived: _totalDebtPaymentReceived,
+                      showTransfers: _viewerUserId != null,
                       onTapIncome: () => _showSummaryTransactions('Tổng Thu'),
                       onTapExpense: () => _showSummaryTransactions('Tổng Chi'),
                       onTapTransferReceived: () =>
@@ -671,6 +713,7 @@ class _MonthlyOperationsDashboardScreenState
                       amountColor: Colors.green[700]!,
                       onRowTap: (row) =>
                           _showCategoryTransactions(isIncome: true, row: row),
+                      showTotalInHeader: true,
                     ),
                     const SizedBox(height: 12),
                     _BreakdownSection(
@@ -680,6 +723,7 @@ class _MonthlyOperationsDashboardScreenState
                       amountColor: Theme.of(context).colorScheme.error,
                       onRowTap: (row) =>
                           _showCategoryTransactions(isIncome: false, row: row),
+                      showTotalInHeader: true,
                     ),
                     const SizedBox(height: 12),
                     _BreakdownSection(
@@ -688,13 +732,15 @@ class _MonthlyOperationsDashboardScreenState
                       rows: _fundContributionByItem,
                       amountColor: Colors.orange[700]!,
                     ),
-                    const SizedBox(height: 12),
-                    _TransferSection(
-                      transferSent: _transferSent,
-                      transferReceived: _transferReceived,
-                      sentTransactions: _transferSentTransactions,
-                      receivedTransactions: _transferReceivedTransactions,
-                    ),
+                    if (_viewerUserId != null) ...[
+                      const SizedBox(height: 12),
+                      _TransferSection(
+                        transferSent: _transferSent,
+                        transferReceived: _transferReceived,
+                        sentTransactions: _transferSentTransactions,
+                        receivedTransactions: _transferReceivedTransactions,
+                      ),
+                    ],
                     const SizedBox(height: 12),
                     _BreakdownSection(
                       title: 'Tổng tiền Mượn Nợ',
@@ -730,6 +776,7 @@ class _SummaryHeader extends StatelessWidget {
   final double totalDebtLend;
   final double totalDebtPaymentMade;
   final double totalDebtPaymentReceived;
+  final bool showTransfers;
   final VoidCallback? onTapIncome;
   final VoidCallback? onTapExpense;
   final VoidCallback? onTapTransferSent;
@@ -752,6 +799,7 @@ class _SummaryHeader extends StatelessWidget {
     required this.totalDebtLend,
     required this.totalDebtPaymentMade,
     required this.totalDebtPaymentReceived,
+    required this.showTransfers,
     this.onTapIncome,
     this.onTapExpense,
     this.onTapTransferSent,
@@ -824,30 +872,32 @@ class _SummaryHeader extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _miniTile(
-                  'Nhận tiền',
-                  transferReceived,
-                  AppColors.success,
-                  Icons.move_to_inbox_rounded,
-                  onTap: onTapTransferReceived,
+          if (showTransfers) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _miniTile(
+                    'Nhận tiền',
+                    transferReceived,
+                    AppColors.success,
+                    Icons.move_to_inbox_rounded,
+                    onTap: onTapTransferReceived,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _miniTile(
-                  'Chuyển tiền',
-                  transferSent,
-                  AppColors.danger,
-                  Icons.send_rounded,
-                  onTap: onTapTransferSent,
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _miniTile(
+                    'Chuyển tiền',
+                    transferSent,
+                    AppColors.danger,
+                    Icons.send_rounded,
+                    onTap: onTapTransferSent,
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
+          ],
           const SizedBox(height: 10),
           Row(
             children: [
@@ -868,6 +918,30 @@ class _SummaryHeader extends StatelessWidget {
                   AppColors.danger,
                   Icons.outbox_outlined,
                   onTap: onTapDebtLend,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _miniTile(
+                  'Nhận nợ',
+                  totalDebtPaymentReceived,
+                  AppColors.success,
+                  Icons.assignment_returned_outlined,
+                  onTap: onTapDebtPaymentReceived,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _miniTile(
+                  'Trả nợ',
+                  totalDebtPaymentMade,
+                  AppColors.danger,
+                  Icons.assignment_turned_in_outlined,
+                  onTap: onTapDebtPaymentMade,
                 ),
               ),
             ],
@@ -998,6 +1072,7 @@ class _BreakdownSection extends StatelessWidget {
   final Color amountColor;
   final IconData defaultIcon;
   final void Function(Map<String, dynamic> row)? onRowTap;
+  final bool showTotalInHeader;
 
   const _BreakdownSection({
     required this.title,
@@ -1006,6 +1081,7 @@ class _BreakdownSection extends StatelessWidget {
     required this.amountColor,
     this.defaultIcon = Icons.label_outline,
     this.onRowTap,
+    this.showTotalInHeader = false,
   });
 
   @override
@@ -1022,10 +1098,57 @@ class _BreakdownSection extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+            if (showTotalInHeader && rows.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: amountColor.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 13,
+                        backgroundColor: amountColor.withValues(alpha: 0.2),
+                        child: Icon(
+                          title.contains('Thu')
+                              ? Icons.payments_outlined
+                              : Icons.shopping_bag_outlined,
+                          size: 14,
+                          color: amountColor,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          title.contains('Thu')
+                              ? 'Tổng thu nhập trong tháng'
+                              : 'Tổng chi tiêu trong tháng',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        formatVnd(total),
+                        style: TextStyle(
+                          color: amountColor,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 8),
             if (rows.isEmpty)
               Padding(
-                padding: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.only(left: 10, right: 10, bottom: 8),
                 child: Text(emptyText),
               )
             else
@@ -1045,10 +1168,12 @@ class _BreakdownSection extends StatelessWidget {
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: onRowTap == null ? null : () => onRowTap!(row),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
                           children: [
                             CircleAvatar(
                               radius: 14,
@@ -1167,8 +1292,9 @@ class _BreakdownSection extends StatelessWidget {
                       ],
                     ),
                   ),
-                );
-              }),
+                ),
+              );
+            }),
           ],
         ),
       ),

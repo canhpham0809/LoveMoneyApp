@@ -292,9 +292,9 @@ class _AppShellScreenState extends State<AppShellScreen> {
                       else
                         LayoutBuilder(
                           builder: (context, constraints) {
-                            const spacing = 8.0;
+                            const spacing = 6.0;
                             final tileWidth =
-                                (constraints.maxWidth - (spacing * 2)) / 3;
+                                (constraints.maxWidth - (spacing * 4)) / 5;
                             return Wrap(
                               spacing: spacing,
                               runSpacing: spacing,
@@ -305,7 +305,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
                                   child: Material(
                                     color: Colors.transparent,
                                     child: InkWell(
-                                      borderRadius: BorderRadius.circular(14),
+                                      borderRadius: BorderRadius.circular(10),
                                       onTap: () {
                                         setDialogState(() {
                                           if (selectedCategoryId == c.id) {
@@ -318,7 +318,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
                                         });
                                       },
                                       child: Ink(
-                                        height: 72,
+                                        height: 48,
                                         decoration: BoxDecoration(
                                           color: selected
                                               ? AppColors.tealSoft.withValues(
@@ -326,39 +326,39 @@ class _AppShellScreenState extends State<AppShellScreen> {
                                                 )
                                               : Colors.white,
                                           borderRadius: BorderRadius.circular(
-                                            14,
+                                            10,
                                           ),
                                           border: Border.all(
                                             color: selected
                                                 ? AppColors.tealDeep
                                                 : AppColors.border,
-                                            width: selected ? 1.8 : 1,
+                                            width: selected ? 1.5 : 1,
                                           ),
                                         ),
                                         child: Padding(
                                           padding: const EdgeInsets.symmetric(
-                                            horizontal: 6,
-                                            vertical: 4,
+                                            horizontal: 4,
+                                            vertical: 2,
                                           ),
                                           child: Column(
                                             mainAxisAlignment:
                                                 MainAxisAlignment.center,
                                             children: [
-                                                Icon(
-                                                  iconFromKey(c.icon),
-                                                  color: selected
-                                                      ? AppColors.tealDeep
-                                                      : Colors.black45,
-                                                  size: 18,
-                                                ),
-                                              const SizedBox(height: 4),
+                                              Icon(
+                                                iconFromKey(c.icon),
+                                                color: selected
+                                                    ? AppColors.tealDeep
+                                                    : Colors.black45,
+                                                size: 14,
+                                              ),
+                                              const SizedBox(height: 2),
                                               Text(
                                                 c.name,
-                                                maxLines: 2,
+                                                maxLines: 1,
                                                 textAlign: TextAlign.center,
                                                 overflow: TextOverflow.ellipsis,
                                                 style: TextStyle(
-                                                  fontSize: 11,
+                                                  fontSize: 9.5,
                                                   fontWeight: selected
                                                       ? FontWeight.w700
                                                       : FontWeight.w500,
@@ -426,10 +426,17 @@ class _AppShellScreenState extends State<AppShellScreen> {
       if (!mounted) return;
 
       if (!result.success && result.fallbackRequired) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Không parse được Quick Add. Vui lòng qua màn Chi tiêu để nhập form.',
+          SnackBar(
+            content: const Text(
+              'Không parse được. Chuyển sang nhập thủ công?',
+            ),
+            action: SnackBarAction(
+              label: 'Chi tiêu',
+              onPressed: () {
+                if (mounted) setState(() => _selectedIndex = 1);
+              },
             ),
           ),
         );
@@ -450,7 +457,58 @@ class _AppShellScreenState extends State<AppShellScreen> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF0D9488), Color(0xFF115E59)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF0D9488).withValues(alpha: 0.3),
+                      blurRadius: 16,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.account_balance_wallet_rounded,
+                  size: 36,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'FamilyMoney',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -0.5,
+                  color: Color(0xFF115E59),
+                ),
+              ),
+              const SizedBox(height: 24),
+              const SizedBox(
+                width: 28,
+                height: 28,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  color: Color(0xFF0D9488),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
     }
     if (_error != null || _coupleId == null) {
       return Scaffold(
@@ -607,11 +665,12 @@ class _AppShellScreenState extends State<AppShellScreen> {
     final isLargeScreen = screenWidth > 800;
 
     if (isLargeScreen) {
+      final isExtended = screenWidth > 1100;
       return Scaffold(
         body: Row(
           children: [
             NavigationRail(
-              extended: screenWidth > 1100,
+              extended: isExtended,
               selectedIndex: _selectedIndex,
               onDestinationSelected: (i) => setState(() => _selectedIndex = i),
               backgroundColor: Theme.of(context).cardColor,
@@ -626,13 +685,25 @@ class _AppShellScreenState extends State<AppShellScreen> {
               ),
               leading: Column(
                 children: [
-                  const SizedBox(height: 24),
-                  Icon(
-                    Icons.favorite_rounded,
-                    color: AppColors.tealDeep,
-                    size: 32,
+                  const SizedBox(height: 16),
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF0D9488), Color(0xFF115E59)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.account_balance_wallet_rounded,
+                      size: 20,
+                      color: Colors.white,
+                    ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 16),
                 ],
               ),
               destinations: const [
@@ -678,7 +749,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
               child: Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 1000),
-                  child: IndexedStack(
+                  child: _LazyIndexedStack(
                     index: _selectedIndex,
                     children: screens,
                   ),
@@ -691,7 +762,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
     }
 
     return Scaffold(
-      body: IndexedStack(index: _selectedIndex, children: screens),
+      body: _LazyIndexedStack(index: _selectedIndex, children: screens),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         type: BottomNavigationBarType.fixed,
@@ -726,10 +797,56 @@ class _AppShellScreenState extends State<AppShellScreen> {
           BottomNavigationBarItem(
             icon: Icon(Icons.settings_outlined),
             activeIcon: Icon(Icons.settings),
-            label: 'Settings',
+            label: 'Cài đặt',
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Lazy IndexedStack — only builds a child widget the first time it is selected.
+/// Prevents all 7 screens from firing initState + API calls simultaneously.
+class _LazyIndexedStack extends StatefulWidget {
+  final int index;
+  final List<Widget> children;
+
+  const _LazyIndexedStack({required this.index, required this.children});
+
+  @override
+  State<_LazyIndexedStack> createState() => _LazyIndexedStackState();
+}
+
+class _LazyIndexedStackState extends State<_LazyIndexedStack> {
+  late final List<bool> _activated;
+
+  @override
+  void initState() {
+    super.initState();
+    _activated = List.generate(
+      widget.children.length,
+      (i) => i == widget.index,
+    );
+  }
+
+  @override
+  void didUpdateWidget(_LazyIndexedStack oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.index != oldWidget.index) {
+      if (!_activated[widget.index]) {
+        setState(() => _activated[widget.index] = true);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IndexedStack(
+      index: widget.index,
+      children: [
+        for (int i = 0; i < widget.children.length; i++)
+          _activated[i] ? widget.children[i] : const SizedBox.shrink(),
+      ],
     );
   }
 }

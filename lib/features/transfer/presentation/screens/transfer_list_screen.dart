@@ -180,7 +180,11 @@ class _TransferListScreenState extends State<TransferListScreen> {
         limit: _pageSize,
         offset: 0,
       );
-      items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      items.sort((a, b) {
+        final dateCompare = b.date.compareTo(a.date);
+        if (dateCompare != 0) return dateCompare;
+        return b.createdAt.compareTo(a.createdAt);
+      });
       final userIds = <String>{
         ...items.map((item) => item.fromUserId),
         ...items.map((item) => item.toUserId),
@@ -246,9 +250,17 @@ class _TransferListScreenState extends State<TransferListScreen> {
         return;
       }
 
-      nextItems.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      nextItems.sort((a, b) {
+        final dateCompare = b.date.compareTo(a.date);
+        if (dateCompare != 0) return dateCompare;
+        return b.createdAt.compareTo(a.createdAt);
+      });
       final combined = [..._items, ...nextItems];
-      combined.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      combined.sort((a, b) {
+        final dateCompare = b.date.compareTo(a.date);
+        if (dateCompare != 0) return dateCompare;
+        return b.createdAt.compareTo(a.createdAt);
+      });
 
       final userIds = <String>{
         ...combined.map((item) => item.fromUserId),
@@ -386,7 +398,11 @@ class _TransferListScreenState extends State<TransferListScreen> {
         } else {
           _items.insert(0, created);
         }
-        _items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        _items.sort((a, b) {
+          final dateCompare = b.date.compareTo(a.date);
+          if (dateCompare != 0) return dateCompare;
+          return b.createdAt.compareTo(a.createdAt);
+        });
       });
       widget.onDataChanged?.call();
     } catch (e) {
@@ -398,6 +414,32 @@ class _TransferListScreenState extends State<TransferListScreen> {
         context,
       ).showSnackBar(SnackBar(content: Text('Lỗi lưu: $e')));
     }
+  }
+
+  Future<bool> _confirmPartnerAction(BuildContext context, String partnerName) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Xác nhận thao tác'),
+            content: Text(
+              'Bạn đang thao tác trên giao dịch của "$partnerName". Bạn có chắc chắn muốn thực hiện?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Hủy'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.amber[800],
+                ),
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Tiếp tục'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
   }
 
   Future<bool> _confirmDeleteTransfer(TransferModel item) async {
@@ -447,7 +489,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
 
     final recipients = members
         .map((m) => m['user_id'] as String)
-        .where((id) => id != uid)
+        .where((id) => id != widget.viewerUserId)
         .toList();
 
     if (!mounted) return;
@@ -678,10 +720,18 @@ class _TransferListScreenState extends State<TransferListScreen> {
       ),
     );
     if (action == 'edit') {
+      if (widget.viewerUserId != widget.currentUserId) {
+        final confirmed = await _confirmPartnerAction(context, widget.viewerLabel);
+        if (!confirmed) return;
+      }
       await _openTransferPopup(existing: item);
       return;
     }
     if (action == 'delete') {
+      if (widget.viewerUserId != widget.currentUserId) {
+        final confirmed = await _confirmPartnerAction(context, widget.viewerLabel);
+        if (!confirmed) return;
+      }
       final confirmed = await _confirmDeleteTransfer(item);
       if (!confirmed) return;
       await _delete(item);
@@ -892,15 +942,38 @@ class _TransferListScreenState extends State<TransferListScreen> {
                 ],
               ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          if (widget.viewerUserId != widget.currentUserId) {
-            await _showSwitchBackToSelfAlert();
-            return;
+      floatingActionButton: LayoutBuilder(
+        builder: (context, constraints) {
+          final isLarge = MediaQuery.of(context).size.width > 800;
+          if (isLarge) {
+            return FloatingActionButton.extended(
+              onPressed: () async {
+                if (widget.viewerUserId != widget.currentUserId) {
+                  await _showSwitchBackToSelfAlert();
+                  return;
+                }
+                await _openTransferPopup();
+              },
+              icon: const Icon(Icons.add_rounded),
+              label: const Text(
+                'Thêm chuyển khoản',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              backgroundColor: AppColors.tealDeep,
+              foregroundColor: Colors.white,
+            );
           }
-          await _openTransferPopup();
+          return FloatingActionButton(
+            onPressed: () async {
+              if (widget.viewerUserId != widget.currentUserId) {
+                await _showSwitchBackToSelfAlert();
+                return;
+              }
+              await _openTransferPopup();
+            },
+            child: const Icon(Icons.add),
+          );
         },
-        child: const Icon(Icons.add),
       ),
     );
   }

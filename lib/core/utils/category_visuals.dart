@@ -113,6 +113,9 @@ const List<Color> kCategoryColorChoices = [
 ];
 
 IconData iconFromKey(String key) {
+  if (key == 'event_note') {
+    return Icons.event_note_outlined;
+  }
   for (final choice in [...kCategoryIconChoices, ...kIncomeIconChoices]) {
     if (choice.key == key) {
       return choice.icon;

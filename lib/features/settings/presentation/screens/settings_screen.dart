@@ -7,6 +7,7 @@ import 'package:flutter_app_demo/features/settings/data/services/settings_servic
 import 'package:flutter_app_demo/features/settings/presentation/screens/debt_type_management_screen.dart';
 import 'package:flutter_app_demo/features/settings/presentation/screens/expense_category_management_screen.dart';
 import 'package:flutter_app_demo/features/settings/presentation/screens/income_source_management_screen.dart';
+import 'package:flutter_app_demo/features/settings/presentation/screens/event_management_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   final String coupleId;
@@ -321,6 +322,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               context,
                               MaterialPageRoute(
                                 builder: (_) => DebtTypeManagementScreen(
+                                  coupleId: widget.coupleId,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                        const Divider(height: 0),
+                        ListTile(
+                          leading: const Icon(Icons.event_note_outlined),
+                          title: const Text('Quản lý sự kiện'),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => EventManagementScreen(
                                   coupleId: widget.coupleId,
                                 ),
                               ),

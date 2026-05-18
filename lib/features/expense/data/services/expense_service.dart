@@ -55,6 +55,7 @@ class ExpenseService {
     required double amount,
     String? description,
     required DateTime date,
+    String? eventId,
   }) async {
     final row = await _db
         .from('expenses')
@@ -66,6 +67,7 @@ class ExpenseService {
           'amount': amount,
           'description': description,
           'date': date.toIso8601String().substring(0, 10),
+          'event_id': eventId,
         })
         .select()
         .single();
@@ -89,6 +91,7 @@ class ExpenseService {
     required double amount,
     String? description,
     required DateTime date,
+    String? eventId,
   }) async {
     await _db
         .from('expenses')
@@ -98,6 +101,7 @@ class ExpenseService {
           'amount': amount,
           'description': description,
           'date': date.toIso8601String().substring(0, 10),
+          'event_id': eventId,
         })
         .eq('id', expenseId);
   }

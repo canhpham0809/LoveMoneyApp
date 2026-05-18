@@ -398,13 +398,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             onPressed: () => _load(showLoader: false),
             icon: const Icon(Icons.refresh),
           ),
-          IconButton(
-            onPressed: () async {
-              await Supabase.instance.client.auth.signOut();
-            },
-            icon: const Icon(Icons.logout),
-            tooltip: 'Đăng xuất',
-          ),
         ],
       ),
       body: BusyOverlay(
@@ -570,9 +563,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
       floatingActionButton: widget.onCreatePressed == null
           ? null
-          : FloatingActionButton(
-              onPressed: () async => widget.onCreatePressed!.call(),
-              child: const Icon(Icons.add),
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                final isLarge = MediaQuery.of(context).size.width > 800;
+                if (isLarge) {
+                  return FloatingActionButton.extended(
+                    onPressed: () async => widget.onCreatePressed!.call(),
+                    icon: const Icon(Icons.add_rounded),
+                    label: const Text(
+                      'Thêm nhanh',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    backgroundColor: AppColors.tealDeep,
+                    foregroundColor: Colors.white,
+                  );
+                }
+                return FloatingActionButton(
+                  onPressed: () async => widget.onCreatePressed!.call(),
+                  child: const Icon(Icons.add),
+                );
+              },
             ),
     );
   }
