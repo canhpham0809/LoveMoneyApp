@@ -873,6 +873,18 @@ class _DebtListScreenState extends State<DebtListScreen> {
                         itemCount: visibleItems.length,
                         onReorder: _hasMore ? (_, _) {} : _onReorder,
                         buildDefaultDragHandles: false,
+                        footer: (!_hasMore)
+                            ? const Padding(
+                                key: ValueKey('footer'),
+                                padding: EdgeInsets.only(bottom: 24, top: 12),
+                                child: Center(
+                                  child: Text(
+                                    'Đã tải hết trang.',
+                                    style: TextStyle(color: Colors.black54),
+                                  ),
+                                ),
+                              )
+                            : null,
                         itemBuilder: (context, index) {
                           final item = visibleItems[index];
                           final isLend = item.debtKind == 'lend';
@@ -928,12 +940,14 @@ class _DebtListScreenState extends State<DebtListScreen> {
                                     widget.onDataChanged?.call();
                                   }
                                 },
-                                onLongPress: () => _showDebtActions(item),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(16),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
+
+                                child: Stack(
+                                  children: [
+                                    Padding(
+                                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                     children: [
                                       Row(
                                         children: [
@@ -970,6 +984,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
                                               color: accentColor,
                                             ),
                                           ),
+
                                           if (!_hasMore)
                                             ReorderableDragStartListener(
                                               index: index,
@@ -1040,10 +1055,24 @@ class _DebtListScreenState extends State<DebtListScreen> {
                                           ),
                                         ),
                                       ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
-                                ),
+                                  Positioned(
+                                    bottom: 0,
+                                    right: 4,
+                                    child: IconButton(
+                                      icon: const Icon(
+                                        Icons.edit_outlined,
+                                        size: 20,
+                                        color: Colors.black45,
+                                      ),
+                                      onPressed: () => _showDebtActions(item),
+                                    ),
+                                  ),
+                                ],
                               ),
+                            ),
                             ),
                           );
                         },
@@ -1054,16 +1083,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
                       padding: EdgeInsets.only(bottom: 12),
                       child: Center(child: CircularProgressIndicator()),
                     )
-                  else if (!_hasMore)
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 12),
-                      child: Center(
-                        child: Text(
-                          'Đã tải hết trang.',
-                          style: TextStyle(color: Colors.black54),
-                        ),
-                      ),
-                    ),
+
                 ],
               ),
       ),

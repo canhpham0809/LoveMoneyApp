@@ -6,6 +6,18 @@ import 'core/theme/app_theme.dart';
 import 'features/auth/presentation/screens/login_screen.dart';
 import 'features/shared/presentation/screens/app_shell_screen.dart';
 
+import 'dart:ui';
+
+class AppScrollBehavior extends MaterialScrollBehavior {
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.trackpad,
+        PointerDeviceKind.stylus,
+      };
+}
+
 class LoveMoneyApp extends StatelessWidget {
   const LoveMoneyApp({super.key});
 
@@ -17,6 +29,7 @@ class LoveMoneyApp extends StatelessWidget {
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: ThemeMode.system,
+      scrollBehavior: AppScrollBehavior(),
       home: const _AuthGate(),
     );
   }

@@ -417,24 +417,6 @@ class _FundListScreenState extends State<FundListScreen> {
           );
           return;
         }
-        final creatorUserId = item.creatorUserId;
-        if (creatorUserId != null && creatorUserId != currentUserId) {
-          if (!mounted) return;
-          await showDialog<void>(
-            context: context,
-            builder: (dialogContext) => AlertDialog(
-              title: const Text('Không có quyền xóa'),
-              content: const Text('Chỉ người tạo quỹ mới có quyền xóa.'),
-              actions: [
-                FilledButton(
-                  onPressed: () => Navigator.pop(dialogContext),
-                  child: const Text('Đã hiểu'),
-                ),
-              ],
-            ),
-          );
-          return;
-        }
         final confirmed = await showDialog<bool>(
           context: context,
           builder: (dialogContext) => AlertDialog(
@@ -641,6 +623,18 @@ class _FundListScreenState extends State<FundListScreen> {
                         itemCount: _items.length,
                         onReorder: _hasMore ? (_, _) {} : _onReorder,
                         buildDefaultDragHandles: false,
+                        footer: (!_hasMore)
+                            ? const Padding(
+                                key: ValueKey('footer'),
+                                padding: EdgeInsets.only(bottom: 24, top: 12),
+                                child: Center(
+                                  child: Text(
+                                    'Đã tải hết trang.',
+                                    style: TextStyle(color: Colors.black54),
+                                  ),
+                                ),
+                              )
+                            : null,
                         itemBuilder: (context, index) {
                           final item = _items[index];
                           final progress =
@@ -673,11 +667,12 @@ class _FundListScreenState extends State<FundListScreen> {
                                   widget.onDataChanged?.call();
                                 }
                               },
-                              onLongPress: () => _showFundActions(item),
                               borderRadius: BorderRadius.circular(18),
-                              child: Padding(
-                                padding: const EdgeInsets.all(16),
-                                child: Column(
+                              child: Stack(
+                                children: [
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                                    child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Row(
@@ -715,6 +710,7 @@ class _FundListScreenState extends State<FundListScreen> {
                                             fontSize: 16,
                                           ),
                                         ),
+
                                         if (!_hasMore)
                                           ReorderableDragStartListener(
                                             index: index,
@@ -790,6 +786,20 @@ class _FundListScreenState extends State<FundListScreen> {
                                       ),
                                   ],
                                 ),
+                                  ),
+                                  Positioned(
+                                    bottom: 0,
+                                    right: 4,
+                                    child: IconButton(
+                                      icon: const Icon(
+                                        Icons.edit_outlined,
+                                        size: 20,
+                                        color: Colors.black45,
+                                      ),
+                                      onPressed: () => _showFundActions(item),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           );
@@ -801,16 +811,7 @@ class _FundListScreenState extends State<FundListScreen> {
                       padding: EdgeInsets.only(bottom: 12),
                       child: Center(child: CircularProgressIndicator()),
                     )
-                  else if (!_hasMore)
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 12),
-                      child: Center(
-                        child: Text(
-                          'Đã tải hết trang.',
-                          style: TextStyle(color: Colors.black54),
-                        ),
-                      ),
-                    ),
+
                 ],
               ),
       ),

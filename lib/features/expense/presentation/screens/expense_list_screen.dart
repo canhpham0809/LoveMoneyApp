@@ -1158,7 +1158,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                                 size: 20,
                               ),
                             ),
-                            onLongPress: () => _showItemActions(expense),
+                            onTap: () => _showItemActions(expense),
                             title: Text(
                               item.title,
                               style: const TextStyle(

@@ -844,7 +844,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
                               size: 20,
                             ),
                           ),
-                          onLongPress: () => _showItemActions(item),
+                          onTap: () => _showItemActions(item),
                           title: Text(
                             item.note ?? '$directionLabel $partnerName',
                             style: const TextStyle(
@@ -888,6 +888,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
                         ),
                       ),
                     ),
+
                 ],
               ),
       ),

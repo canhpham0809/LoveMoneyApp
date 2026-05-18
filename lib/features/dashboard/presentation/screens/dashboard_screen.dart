@@ -479,32 +479,63 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       const SizedBox(height: 12),
                       // Monthly swipeable summary cards
                       if (_monthlySummaries.isNotEmpty)
-                        SizedBox(
-                          height: 200,
-                          child: PageView.builder(
-                            controller: _monthPageController,
-                            itemCount: _monthlySummaries.length,
-                            onPageChanged: _onMonthChanged,
-                            itemBuilder: (context, idx) => Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                              ),
-                              child: MonthlyCard(
-                                summary: _monthlySummaries[idx],
-                                isSelected: idx == _selectedMonthIndex,
-                                onTap: () async {
-                                  await _openMonthlyDashboard(
-                                    _monthlySummaries[idx],
-                                  );
-                                },
-                                onCarryOverPressed: () async {
-                                  await _onCarryOverPressed(
-                                    _monthlySummaries[idx],
-                                  );
-                                },
+                        Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            SizedBox(
+                              height: 200,
+                              child: PageView.builder(
+                                controller: _monthPageController,
+                                itemCount: _monthlySummaries.length,
+                                onPageChanged: _onMonthChanged,
+                                itemBuilder: (context, idx) => Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                  ),
+                                  child: MonthlyCard(
+                                    summary: _monthlySummaries[idx],
+                                    isSelected: idx == _selectedMonthIndex,
+                                    onTap: () async {
+                                      await _openMonthlyDashboard(
+                                        _monthlySummaries[idx],
+                                      );
+                                    },
+                                    onCarryOverPressed: () async {
+                                      await _onCarryOverPressed(
+                                        _monthlySummaries[idx],
+                                      );
+                                    },
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
+                            if (_selectedMonthIndex > 0)
+                              Positioned(
+                                left: 0,
+                                child: IconButton.filledTonal(
+                                  onPressed: () {
+                                    _monthPageController.previousPage(
+                                      duration: const Duration(milliseconds: 300),
+                                      curve: Curves.easeInOut,
+                                    );
+                                  },
+                                  icon: const Icon(Icons.chevron_left),
+                                ),
+                              ),
+                            if (_selectedMonthIndex < _monthlySummaries.length - 1)
+                              Positioned(
+                                right: 0,
+                                child: IconButton.filledTonal(
+                                  onPressed: () {
+                                    _monthPageController.nextPage(
+                                      duration: const Duration(milliseconds: 300),
+                                      curve: Curves.easeInOut,
+                                    );
+                                  },
+                                  icon: const Icon(Icons.chevron_right),
+                                ),
+                              ),
+                          ],
                         ),
                       const SizedBox(height: 16),
                       Row(

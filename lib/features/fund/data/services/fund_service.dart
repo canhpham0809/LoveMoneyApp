@@ -171,30 +171,8 @@ class FundService {
       throw Exception('Không tìm thấy phiên đăng nhập.');
     }
 
-    late final Map<String, dynamic> fundRow;
-    try {
-      fundRow = await _db
-          .from('funds')
-          .select(
-            'couple_id, name, current_amount, creator_user_id, updated_by',
-          )
-          .eq('id', fundId)
-          .single();
-    } catch (e) {
-      if (!_isMissingCreatorUserIdColumn(e)) rethrow;
-      fundRow = await _db
-          .from('funds')
-          .select('couple_id, name, current_amount, updated_by')
-          .eq('id', fundId)
-          .single();
-    }
 
-    final creatorUserId =
-        fundRow['creator_user_id'] as String? ??
-        fundRow['updated_by'] as String?;
-    if (creatorUserId != null && creatorUserId != currentUserId) {
-      throw Exception('Chỉ người tạo quỹ mới có quyền xóa.');
-    }
+
 
     await _deleteFundRemote(fundId, DateTime.now().toUtc().toIso8601String());
   }

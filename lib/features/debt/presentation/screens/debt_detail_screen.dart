@@ -592,7 +592,7 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                                       size: 20,
                                     ),
                                   ),
-                                  onLongPress: () => _showPaymentActions(p),
+                                  onTap: () => _showPaymentActions(p),
                                   title: Column(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,

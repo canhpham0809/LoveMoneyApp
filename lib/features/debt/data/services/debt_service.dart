@@ -343,7 +343,7 @@ class DebtService {
             .from('incomes')
             .insert({
               'couple_id': existingDebt['couple_id'] as String,
-              'user_id': existingDebt['user_id'] as String,
+              'user_id': _db.auth.currentUser!.id,
               'wallet_id': defaultWalletId,
               'income_source_id': incomeSourceId,
               'amount': originalAmount,
@@ -421,7 +421,7 @@ class DebtService {
             .from('expenses')
             .insert({
               'couple_id': existingDebt['couple_id'] as String,
-              'user_id': existingDebt['user_id'] as String,
+              'user_id': _db.auth.currentUser!.id,
               'wallet_id': defaultWalletId,
               'category_id': categoryId,
               'amount': originalAmount,
@@ -468,10 +468,8 @@ class DebtService {
         .eq('id', debtId)
         .single();
 
-    final creatorUserId = debt['user_id'] as String?;
-    if (creatorUserId != null && creatorUserId != currentUserId) {
-      throw Exception('Chỉ người tạo khoản nợ mới có quyền xóa.');
-    }
+    // Cả hai partner đều có quyền xóa nợ
+
 
     final paymentRows = List<Map<String, dynamic>>.from(
       await _db
@@ -801,7 +799,7 @@ class DebtService {
           .from('incomes')
           .insert({
             'couple_id': debt['couple_id'] as String,
-            'user_id': debt['user_id'] as String,
+            'user_id': _db.auth.currentUser!.id,
             'wallet_id': walletId,
             'income_source_id': incomeSourceId,
             'amount': amount,
@@ -885,7 +883,7 @@ class DebtService {
             .from('incomes')
             .insert({
               'couple_id': debt['couple_id'] as String,
-              'user_id': debt['user_id'] as String,
+              'user_id': _db.auth.currentUser!.id,
               'wallet_id': existingPayment['wallet_id'] as String,
               'income_source_id': incomeSourceId,
               'amount': amount,

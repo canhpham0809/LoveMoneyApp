@@ -1201,7 +1201,7 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
                                 size: 20,
                               ),
                             ),
-                            onLongPress: () => _showItemActions(income),
+                            onTap: () => _showItemActions(income),
                             title: Text(
                               item.title,
                               style: const TextStyle(

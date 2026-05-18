@@ -603,6 +603,93 @@ class _AppShellScreenState extends State<AppShellScreen> {
       ),
     ];
 
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isLargeScreen = screenWidth > 800;
+
+    if (isLargeScreen) {
+      return Scaffold(
+        body: Row(
+          children: [
+            NavigationRail(
+              extended: screenWidth > 1100,
+              selectedIndex: _selectedIndex,
+              onDestinationSelected: (i) => setState(() => _selectedIndex = i),
+              backgroundColor: Theme.of(context).cardColor,
+              selectedIconTheme: const IconThemeData(color: AppColors.tealDeep),
+              selectedLabelTextStyle: const TextStyle(
+                color: AppColors.tealDeep,
+                fontWeight: FontWeight.bold,
+              ),
+              unselectedIconTheme: const IconThemeData(color: Colors.black45),
+              unselectedLabelTextStyle: const TextStyle(
+                color: Colors.black45,
+              ),
+              leading: Column(
+                children: [
+                  const SizedBox(height: 24),
+                  Icon(
+                    Icons.favorite_rounded,
+                    color: AppColors.tealDeep,
+                    size: 32,
+                  ),
+                  const SizedBox(height: 24),
+                ],
+              ),
+              destinations: const [
+                NavigationRailDestination(
+                  icon: Icon(Icons.dashboard_outlined),
+                  selectedIcon: Icon(Icons.dashboard),
+                  label: Text('Home'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.shopping_bag_outlined),
+                  selectedIcon: Icon(Icons.shopping_bag),
+                  label: Text('Chi tiêu'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.attach_money),
+                  selectedIcon: Icon(Icons.monetization_on),
+                  label: Text('Thu nhập'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.swap_horiz),
+                  selectedIcon: Icon(Icons.swap_horizontal_circle),
+                  label: Text('Chuyển khoản'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.savings_outlined),
+                  selectedIcon: Icon(Icons.savings),
+                  label: Text('Quỹ tích lũy'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.credit_card_outlined),
+                  selectedIcon: Icon(Icons.credit_card),
+                  label: Text('Ghi nợ'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.settings_outlined),
+                  selectedIcon: Icon(Icons.settings),
+                  label: Text('Cài đặt'),
+                ),
+              ],
+            ),
+            const VerticalDivider(thickness: 1, width: 1),
+            Expanded(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1000),
+                  child: IndexedStack(
+                    index: _selectedIndex,
+                    children: screens,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Scaffold(
       body: IndexedStack(index: _selectedIndex, children: screens),
       bottomNavigationBar: BottomNavigationBar(

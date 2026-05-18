@@ -617,7 +617,7 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                                       size: 20,
                                     ),
                                   ),
-                                  onLongPress: () =>
+                                  onTap: () =>
                                       _showContributionActions(c),
                                   title: Column(
                                     crossAxisAlignment:
