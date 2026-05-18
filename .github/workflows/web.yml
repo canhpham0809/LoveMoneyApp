@@ -1,0 +1,64 @@
+name: Build & Deploy Flutter Web
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # Cho phép chạy thủ công từ tab Actions
+
+# Phân quyền cho GITHUB_TOKEN để có thể deploy lên GitHub Pages
+permissions:
+  contents: write
+
+jobs:
+  build-and-deploy:
+    name: 🌐 Build & Deploy Web
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Tải mã nguồn
+      - name: ⬇️ Tải Mã Nguồn (Checkout)
+        uses: actions/checkout@v4
+
+      # 2. Thiết lập Java
+      - name: ☕ Thiết Lập Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      # 3. Thiết lập Flutter
+      - name: 🎯 Thiết Lập Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true # Bật cache để tăng tốc độ build các lần sau
+
+      # 4. Clean & Tải Pub
+      - name: 🧹 Dọn Dẹp và Tải Gói (Pub Get)
+        run: |
+          flutter clean
+          flutter pub get
+
+      # 5. Xây dựng Flutter Web cho GitHub Pages
+      # Sử dụng tên repo làm base-href giúp chạy chính xác trên GitHub Pages (ví dụ: /LoveMoneyApp/)
+      - name: 🔨 Xây Dựng Flutter Web
+        run: |
+          flutter build web --release --base-href "/${{ github.event.repository.name }}/"
+
+      # 6. Đóng gói & Tải lên Artifact
+      - name: 📤 Tải Lên Artifact (Thư Mục Web Build)
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-web-build
+          path: build/web
+          retention-days: 7
+
+      # 7. Triển khai lên GitHub Pages (chỉ chạy khi push vào nhánh main)
+      - name: 🚀 Triển Khai Lên GitHub Pages
+        if: github.ref == 'refs/heads/main'
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: build/web # Thư mục build cần deploy
+          branch: gh-pages # Nhánh đích lưu trữ code web tĩnh
+          clean: true # Dọn dẹp các file cũ trước khi đẩy file mới
