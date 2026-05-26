@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -32,6 +33,7 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
   DebtModel? _debt;
   List<DebtPaymentModel> _payments = [];
   Map<String, String> _memberNameById = {};
+  String? _defaultWalletId;
   bool _isLoading = true;
   bool _isMutating = false;
 
@@ -96,11 +98,22 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
       };
       final memberNameById = await _loadMemberNamesByIds(memberIds);
 
+      final wallets = await _walletService.getWallets(widget.coupleId);
+      String? defaultWalletId;
+      if (wallets.isNotEmpty) {
+        wallets.sort((a, b) {
+          if (a.isDefault == b.isDefault) return 0;
+          return a.isDefault ? -1 : 1;
+        });
+        defaultWalletId = wallets.first.id;
+      }
+
       if (!mounted) return;
       setState(() {
         _debt = debt;
         _payments = payments;
         _memberNameById = memberNameById;
+        _defaultWalletId = defaultWalletId;
       });
     } finally {
       if (showLoader && mounted) {
@@ -134,153 +147,162 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
       noteCtrl.text = existing.note ?? '';
     }
 
-    final saved = await showDialog<bool>(
+    final saved = await showGeneralDialog<bool>(
       context: context,
-      builder: (dialogContext) {
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss',
+      barrierColor: Colors.black54,
+      transitionDuration: Duration.zero,
+      pageBuilder: (dialogContext, anim1, anim2) {
         final isLend = _debt?.debtKind == 'lend';
-        final media = MediaQuery.of(dialogContext).size;
+        final media = MediaQuery.sizeOf(dialogContext);
         return StatefulBuilder(
           builder: (dialogContext, setDialogState) => Dialog(
-            insetPadding: const EdgeInsets.symmetric(
-              horizontal: 18,
-              vertical: 20,
-            ),
+            alignment: Alignment.center,
+            insetAnimationDuration: Duration.zero,
+            insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
             child: ConstrainedBox(
               constraints: BoxConstraints(
                 maxWidth: 520,
                 maxHeight: media.height * 0.8,
               ),
-              child: SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        existing == null
-                            ? (isLend ? 'Thu hồi nợ' : 'Trả nợ')
-                            : (isLend ? 'Sửa đợt thu hồi' : 'Sửa đợt trả nợ'),
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                        ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      existing == null
+                          ? (isLend ? 'Thu hồi nợ' : 'Trả nợ')
+                          : (isLend ? 'Sửa đợt thu hồi' : 'Sửa đợt trả nợ'),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
                       ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: amountCtrl,
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                          ThousandsSeparatorInputFormatter(),
-                        ],
-                        decoration: const InputDecoration(hintText: 'Số tiền'),
-                      ),
-                      AmountSuggestionChips(
-                        controller: amountCtrl,
-                        onSelected: (value) {
-                          amountCtrl.text = formatAmountInput(value.toString());
-                        },
-                      ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: noteCtrl,
-                        maxLines: 2,
-                        minLines: 2,
-                        decoration: const InputDecoration(hintText: 'Ghi chú'),
-                      ),
-                      const SizedBox(height: 10),
-                      OutlinedButton.icon(
-                        onPressed: () async {
-                          final picked = await showDatePicker(
-                            context: dialogContext,
-                            initialDate: selectedDate,
-                            firstDate: DateTime(2020),
-                            lastDate: DateTime.now(),
-                          );
-                          if (picked != null) {
-                            setDialogState(() => selectedDate = picked);
-                          }
-                        },
-                        icon: const Icon(Icons.calendar_month_outlined),
-                        label: Text('Ngày: ${formatDate(selectedDate)}'),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextButton(
-                              onPressed: isSubmitting
-                                  ? null
-                                  : () => Navigator.pop(dialogContext, false),
-                              child: const Text('Hủy'),
+                    ),
+                    const SizedBox(height: 10),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            TextField(
+                              controller: amountCtrl,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                                ThousandsSeparatorInputFormatter(),
+                              ],
+                              decoration: const InputDecoration(hintText: 'Số tiền'),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: FilledButton(
+                            AmountSuggestionChips(
+                              controller: amountCtrl,
+                              onSelected: (value) {
+                                amountCtrl.text = formatAmountInput(value.toString());
+                              },
+                            ),
+                            const SizedBox(height: 10),
+                            TextField(
+                              controller: noteCtrl,
+                              decoration: const InputDecoration(hintText: 'Ghi chú'),
+                            ),
+                            const SizedBox(height: 10),
+                            OutlinedButton.icon(
                               onPressed: () async {
-                                if (isSubmitting) return;
-                                final amount = parseAmountInput(
-                                  amountCtrl.text.trim(),
+                                final picked = await showDatePicker(
+                                  context: dialogContext,
+                                  initialDate: selectedDate,
+                                  firstDate: DateTime(2020),
+                                  lastDate: DateTime.now(),
                                 );
-                                if (amount == null || amount <= 0) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Số tiền không hợp lệ.'),
-                                    ),
-                                  );
-                                  return;
-                                }
-                                setDialogState(() => isSubmitting = true);
-                                try {
-                                  if (existing == null) {
-                                    await _debtService.createPayment(
-                                      coupleId: widget.coupleId,
-                                      debtId: widget.debtId,
-                                      walletId: walletId,
-                                      amount: amount,
-                                      date: selectedDate,
-                                      note: noteCtrl.text.trim().isEmpty
-                                          ? null
-                                          : noteCtrl.text.trim(),
-                                    );
-                                  } else {
-                                    await _debtService.updatePayment(
-                                      paymentId: existing.id,
-                                      debtId: widget.debtId,
-                                      amount: amount,
-                                      date: selectedDate,
-                                      note: noteCtrl.text.trim().isEmpty
-                                          ? null
-                                          : noteCtrl.text.trim(),
-                                    );
-                                  }
-                                } finally {
-                                  if (dialogContext.mounted) {
-                                    setDialogState(() => isSubmitting = false);
-                                  }
-                                }
-                                if (dialogContext.mounted) {
-                                  Navigator.pop(dialogContext, true);
+                                if (picked != null) {
+                                  setDialogState(() => selectedDate = picked);
                                 }
                               },
-                              child: isSubmitting
-                                  ? const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Text('Lưu'),
+                              icon: const Icon(Icons.calendar_month_outlined),
+                              label: Text('Ngày: ${formatDate(selectedDate)}'),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextButton(
+                            onPressed: isSubmitting
+                                ? null
+                                : () => Navigator.pop(dialogContext, false),
+                            child: const Text('Hủy'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: () async {
+                              if (isSubmitting) return;
+                              final amount = parseAmountInput(
+                                amountCtrl.text.trim(),
+                              );
+                              if (amount == null || amount <= 0) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Số tiền không hợp lệ.'),
+                                  ),
+                                );
+                                return;
+                              }
+                              setDialogState(() => isSubmitting = true);
+                              try {
+                                if (existing == null) {
+                                  await _debtService.createPayment(
+                                    coupleId: widget.coupleId,
+                                    debtId: widget.debtId,
+                                    walletId: walletId,
+                                    amount: amount,
+                                    date: selectedDate,
+                                    note: noteCtrl.text.trim().isEmpty
+                                        ? null
+                                        : noteCtrl.text.trim(),
+                                  );
+                                } else {
+                                  await _debtService.updatePayment(
+                                    paymentId: existing.id,
+                                    debtId: widget.debtId,
+                                    amount: amount,
+                                    date: selectedDate,
+                                    note: noteCtrl.text.trim().isEmpty
+                                        ? null
+                                        : noteCtrl.text.trim(),
+                                  );
+                                }
+                              } finally {
+                                if (dialogContext.mounted) {
+                                  setDialogState(() => isSubmitting = false);
+                                }
+                              }
+                              if (dialogContext.mounted) {
+                                Navigator.pop(dialogContext, true);
+                              }
+                            },
+                            child: isSubmitting
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text('Lưu'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -295,6 +317,17 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
   }
 
   Future<void> _showPaymentActions(DebtPaymentModel item) async {
+    if (_debt?.isSplitBill == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Vui lòng sử dụng danh sách check chọn ở trên để cập nhật trạng thái.',
+          ),
+        ),
+      );
+      return;
+    }
+
     final action = await showModalBottomSheet<String>(
       context: context,
       builder: (sheetContext) => SafeArea(
@@ -367,6 +400,77 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
           context,
         ).showSnackBar(SnackBar(content: Text('Lỗi xóa: $e')));
       }
+    }
+  }
+
+  Future<void> _toggleSharePaidStatus(
+    DebtModel debt,
+    SplitBillInfo info,
+    int index,
+    bool paid,
+  ) async {
+    final defaultWalletId = _defaultWalletId;
+    if (defaultWalletId == null && paid) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Chưa có ví mặc định để nhận tiền.')),
+      );
+      return;
+    }
+
+    try {
+      await _runMutation(() async {
+        final share = info.shares[index];
+        String? paymentId = share.paymentId;
+
+        if (paid) {
+          final createdPayment = await _debtService.createPayment(
+            coupleId: widget.coupleId,
+            debtId: widget.debtId,
+            walletId: defaultWalletId!,
+            amount: info.shareAmount,
+            date: DateTime.now(),
+            note: '${share.name} trả tiền ${debt.name}',
+          );
+          paymentId = createdPayment.id;
+        } else {
+          if (paymentId != null) {
+            await _debtService.deletePayment(
+              paymentId: paymentId,
+              debtId: widget.debtId,
+            );
+            paymentId = null;
+          }
+        }
+
+        final updatedShares = List<SplitShare>.from(info.shares);
+        updatedShares[index] = SplitShare(
+          name: share.name,
+          paid: paid,
+          paymentId: paymentId,
+        );
+
+        final updatedInfo = SplitBillInfo(
+          totalBill: info.totalBill,
+          peopleCount: info.peopleCount,
+          shareAmount: info.shareAmount,
+          userNote: info.userNote,
+          shares: updatedShares,
+        );
+
+        final noteString = jsonEncode(updatedInfo.toJson());
+
+        await _debtService.updateSplitBillNote(
+          debtId: widget.debtId,
+          note: noteString,
+        );
+
+        await _load(showLoader: false);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Lỗi cập nhật trạng thái: $e')),
+      );
     }
   }
 
@@ -524,7 +628,7 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                'Ghi chú: ${debt.note?.trim().isNotEmpty == true ? debt.note!.trim() : 'Không có'}',
+                                'Ghi chú: ${debt.isSplitBill ? (debt.splitBillInfo?.userNote ?? 'Không có') : (debt.note?.trim().isNotEmpty == true ? debt.note!.trim() : 'Không có')}',
                                 style: const TextStyle(
                                   fontSize: 12,
                                   color: Colors.black54,
@@ -536,6 +640,69 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                       );
                     },
                   ),
+                  if (debt.isSplitBill) ...[
+                    Container(
+                      margin: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: Border.all(color: AppColors.border),
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Chi tiết chia tiền',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Builder(
+                            builder: (context) {
+                              final info = debt.splitBillInfo!;
+                              return Column(
+                                children: List.generate(info.shares.length, (i) {
+                                  final share = info.shares[i];
+                                  return CheckboxListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    dense: true,
+                                    title: Text(
+                                      '${share.name} (${formatVnd(info.shareAmount)})',
+                                      style: TextStyle(
+                                        decoration: share.paid
+                                            ? TextDecoration.lineThrough
+                                            : null,
+                                        color: share.paid
+                                            ? Colors.black45
+                                            : Colors.black87,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    value: share.paid,
+                                    onChanged: (val) {
+                                      if (val != null) {
+                                        _toggleSharePaidStatus(debt, info, i, val);
+                                      }
+                                    },
+                                  );
+                                }),
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   Padding(
                     padding: EdgeInsets.symmetric(horizontal: 12),
                     child: Align(
@@ -652,10 +819,12 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                 ],
               ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _openPaymentPopup,
-        child: const Icon(Icons.add),
-      ),
+      floatingActionButton: (debt?.isSplitBill == true)
+          ? null
+          : FloatingActionButton(
+              onPressed: _openPaymentPopup,
+              child: const Icon(Icons.add),
+            ),
     );
   }
 }

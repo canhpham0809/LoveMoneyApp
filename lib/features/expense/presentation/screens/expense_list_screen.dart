@@ -600,14 +600,23 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
   }
 
   Future<void> _openExpensePopup({ExpenseModel? existing}) async {
-    final categories = await _service.getExpenseFormCategories(widget.coupleId);
+    final payload = await showGeneralDialog<_ExpenseFormResult>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss',
+      barrierColor: Colors.black54,
+      transitionDuration: Duration.zero,
+      pageBuilder: (dialogContext, anim1, anim2) => _ExpenseFormDialog(
+        coupleId: widget.coupleId,
+        existing: existing,
+      ),
+    );
+
+    if (payload == null) return;
+
+    await Future.delayed(const Duration(milliseconds: 250));
     if (!mounted) return;
-    if (categories.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Chưa có danh mục chi tiêu.')),
-      );
-      return;
-    }
+
     final walletId = await _resolveDefaultWalletId();
     if (!mounted) return;
     if (walletId == null) {
@@ -616,318 +625,6 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
       ).showSnackBar(const SnackBar(content: Text('Chưa có ví để ghi nhận.')));
       return;
     }
-
-    List<EventModel> allEvents = [];
-    try {
-      allEvents = await EventService().getEvents(widget.coupleId);
-    } catch (e) {
-      debugPrint('Error loading events: $e');
-    }
-
-    final amountCtrl = TextEditingController();
-    final noteCtrl = TextEditingController();
-    String selectedCategoryId = existing?.categoryId ?? categories.first.id;
-    DateTime selectedDate = existing?.date ?? DateTime.now();
-    String? selectedEventId = existing?.eventId;
-    if (existing != null) {
-      amountCtrl.text = formatAmountInput(existing.amount.toStringAsFixed(0));
-      noteCtrl.text = existing.description ?? '';
-    }
-
-    final payload = await showDialog<_ExpenseFormResult>(
-      context: context,
-      builder: (dialogContext) {
-        final media = MediaQuery.of(dialogContext).size;
-        return StatefulBuilder(
-          builder: (dialogContext, setDialogState) {
-            final dateOnly = DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
-            final matchingEvents = allEvents.where((e) {
-              if (selectedEventId == e.id) return true;
-              final startOnly = DateTime(e.startDate.year, e.startDate.month, e.startDate.day);
-              final endOnly = DateTime(e.endDate.year, e.endDate.month, e.endDate.day);
-              return !dateOnly.isBefore(startOnly) && !dateOnly.isAfter(endOnly);
-            }).toList();
-
-            return Dialog(
-            insetPadding: const EdgeInsets.symmetric(
-              horizontal: 18,
-              vertical: 20,
-            ),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: 520,
-                maxHeight: media.height * 0.8,
-              ),
-              child: SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        existing == null ? 'Thêm chi tiêu' : 'Sửa chi tiêu',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          TextField(
-                            controller: amountCtrl,
-                            keyboardType: TextInputType.number,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.digitsOnly,
-                              ThousandsSeparatorInputFormatter(),
-                            ],
-                            decoration: const InputDecoration(
-                              hintText: 'Số tiền',
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          AmountSuggestionChips(
-                            controller: amountCtrl,
-                            onSelected: (value) {
-                              amountCtrl.text = formatAmountInput(
-                                value.toString(),
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 8),
-                          LayoutBuilder(
-                            builder: (context, constraints) {
-                              const spacing = 6.0;
-                              final tileWidth =
-                                  (constraints.maxWidth - (spacing * 4)) / 5;
-                              return Wrap(
-                                spacing: spacing,
-                                runSpacing: spacing,
-                                children: categories.map((c) {
-                                  final selected = selectedCategoryId == c.id;
-                                  final icon = iconFromKey(c.icon);
-                                  return SizedBox(
-                                    width: tileWidth,
-                                    child: Material(
-                                      color: Colors.transparent,
-                                      child: InkWell(
-                                        borderRadius: BorderRadius.circular(10),
-                                        onTap: () {
-                                          setDialogState(() {
-                                            selectedCategoryId = c.id;
-                                          });
-                                        },
-                                        child: Ink(
-                                          height: 48,
-                                          decoration: BoxDecoration(
-                                            color: selected
-                                                ? AppColors.tealSoft.withValues(
-                                                    alpha: 0.24,
-                                                  )
-                                                : Colors.white,
-                                            borderRadius: BorderRadius.circular(
-                                              10,
-                                            ),
-                                            border: Border.all(
-                                              color: selected
-                                                  ? AppColors.tealDeep
-                                                  : AppColors.border,
-                                              width: selected ? 1.5 : 1,
-                                            ),
-                                          ),
-                                          child: Padding(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 4,
-                                              vertical: 2,
-                                            ),
-                                            child: Column(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment.center,
-                                              children: [
-                                                Icon(
-                                                  icon,
-                                                  color: selected
-                                                      ? AppColors.tealDeep
-                                                      : Colors.black45,
-                                                  size: 14,
-                                                ),
-                                                const SizedBox(height: 2),
-                                                Text(
-                                                  c.name,
-                                                  maxLines: 1,
-                                                  textAlign: TextAlign.center,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: TextStyle(
-                                                    fontSize: 9.5,
-                                                    fontWeight: selected
-                                                        ? FontWeight.w700
-                                                        : FontWeight.w500,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                }).toList(),
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 8),
-                          TextField(
-                            controller: noteCtrl,
-                            maxLines: 2,
-                            minLines: 2,
-                            decoration: const InputDecoration(
-                              hintText: 'Ghi chú',
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          OutlinedButton.icon(
-                            onPressed: () async {
-                              final picked = await showDatePicker(
-                                context: dialogContext,
-                                initialDate: selectedDate,
-                                firstDate: DateTime(2020),
-                                lastDate: DateTime.now(),
-                              );
-                              if (picked != null) {
-                                setDialogState(() {
-                                  selectedDate = picked;
-                                  // Clear selectedEventId if it is not valid for the new date
-                                  if (selectedEventId != null) {
-                                    final ev = allEvents.firstWhere((e) => e.id == selectedEventId);
-                                    final dateOnly = DateTime(picked.year, picked.month, picked.day);
-                                    final startOnly = DateTime(ev.startDate.year, ev.startDate.month, ev.startDate.day);
-                                    final endOnly = DateTime(ev.endDate.year, ev.endDate.month, ev.endDate.day);
-                                    final isValid = !dateOnly.isBefore(startOnly) && !dateOnly.isAfter(endOnly);
-                                    if (!isValid && selectedEventId != existing?.eventId) {
-                                      selectedEventId = null;
-                                    }
-                                  }
-                                });
-                              }
-                            },
-                            icon: const Icon(Icons.calendar_month_outlined),
-                            label: Text('Ngày: ${formatDate(selectedDate)}'),
-                          ),
-                          if (matchingEvents.isNotEmpty) ...[
-                            const SizedBox(height: 14),
-                            const Text(
-                              'Sự kiện diễn ra trong ngày này:',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.black54,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: matchingEvents.map((event) {
-                                final isSelected = selectedEventId == event.id;
-                                return ChoiceChip(
-                                  label: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.event_note,
-                                        size: 14,
-                                        color: isSelected ? Colors.white : AppColors.tealDeep,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(event.name),
-                                    ],
-                                  ),
-                                  selected: isSelected,
-                                  selectedColor: AppColors.tealDeep,
-                                  labelStyle: TextStyle(
-                                    color: isSelected ? Colors.white : Colors.black87,
-                                    fontSize: 12,
-                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                  ),
-                                  onSelected: (bool selected) {
-                                    setDialogState(() {
-                                      if (selected) {
-                                        selectedEventId = event.id;
-                                      } else {
-                                        selectedEventId = null;
-                                      }
-                                    });
-                                  },
-                                );
-                              }).toList(),
-                            ),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextButton(
-                              onPressed: () =>
-                                  Navigator.of(dialogContext).maybePop(),
-                              child: const Text('Hủy'),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: FilledButton(
-                              onPressed: () async {
-                                final amount = parseAmountInput(
-                                  amountCtrl.text.trim(),
-                                );
-                                if (amount == null || amount <= 0) {
-                                  ScaffoldMessenger.of(
-                                    dialogContext,
-                                  ).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Số tiền không hợp lệ.'),
-                                    ),
-                                  );
-                                  return;
-                                }
-
-                                if (dialogContext.mounted) {
-                                  Navigator.of(dialogContext).maybePop(
-                                    _ExpenseFormResult(
-                                      amount: amount,
-                                      categoryId: selectedCategoryId,
-                                      description: noteCtrl.text.trim().isEmpty
-                                          ? null
-                                          : noteCtrl.text.trim(),
-                                      date: selectedDate,
-                                      eventId: selectedEventId,
-                                    ),
-                                  );
-                                }
-                              },
-                              child: const Text('Lưu'),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          );
-            },
-          );
-        },
-      );
-
-    if (payload == null) return;
 
     if (existing == null) {
       await _createExpenseOptimistic(walletId: walletId, payload: payload);
@@ -1031,6 +728,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
     }
 
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(
         title: const Text('Chi tiêu'),
         actions: [
@@ -1331,7 +1029,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
       ),
       floatingActionButton: LayoutBuilder(
         builder: (context, constraints) {
-          final isLarge = MediaQuery.of(context).size.width > 800;
+          final isLarge = MediaQuery.sizeOf(context).width > 800;
           if (isLarge) {
             return FloatingActionButton.extended(
               onPressed: () async {
@@ -1365,3 +1063,377 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
     );
   }
 }
+
+class _ExpenseFormDialog extends StatefulWidget {
+  final String coupleId;
+  final ExpenseModel? existing;
+
+  const _ExpenseFormDialog({
+    required this.coupleId,
+    this.existing,
+  });
+
+  @override
+  State<_ExpenseFormDialog> createState() => _ExpenseFormDialogState();
+}
+
+class _ExpenseFormDialogState extends State<_ExpenseFormDialog> {
+  final _service = ExpenseService();
+  final _amountCtrl = TextEditingController();
+  final _noteCtrl = TextEditingController();
+
+  List<CategoryModel> _categories = [];
+  List<EventModel> _allEvents = [];
+  bool _isLoading = true;
+
+  late String _selectedCategoryId;
+  late DateTime _selectedDate;
+  String? _selectedEventId;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedDate = widget.existing?.date ?? DateTime.now();
+    _selectedEventId = widget.existing?.eventId;
+
+    if (widget.existing != null) {
+      _amountCtrl.text = formatAmountInput(widget.existing!.amount.toStringAsFixed(0));
+      _noteCtrl.text = widget.existing!.description ?? '';
+    }
+
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    try {
+      final results = await Future.wait([
+        _service.getExpenseFormCategories(widget.coupleId),
+        EventService().getEvents(widget.coupleId),
+      ]);
+      if (mounted) {
+        setState(() {
+          _categories = List<CategoryModel>.from(results[0] as List<CategoryModel>);
+          _allEvents = List<EventModel>.from(results[1] as List<EventModel>);
+          _selectedCategoryId = widget.existing?.categoryId ?? (_categories.isNotEmpty ? _categories.first.id : '');
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Lỗi tải dữ liệu: $e')),
+        );
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _amountCtrl.dispose();
+    _noteCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.sizeOf(context);
+
+    return Dialog(
+      alignment: Alignment.center,
+      insetAnimationDuration: Duration.zero,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 520,
+          maxHeight: media.height * 0.8,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                widget.existing == null ? 'Thêm chi tiêu' : 'Sửa chi tiêu',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      TextField(
+                        controller: _amountCtrl,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          ThousandsSeparatorInputFormatter(),
+                        ],
+                        decoration: const InputDecoration(
+                          hintText: 'Số tiền',
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      AmountSuggestionChips(
+                        controller: _amountCtrl,
+                        onSelected: (value) {
+                          _amountCtrl.text = formatAmountInput(value.toString());
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      if (_isLoading)
+                        const SizedBox(
+                          height: 60,
+                          child: Center(
+                            child: CircularProgressIndicator(),
+                          ),
+                        )
+                      else if (_categories.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: Text(
+                            'Chưa có danh mục chi tiêu.',
+                            style: TextStyle(fontSize: 12, color: Colors.grey),
+                          ),
+                        )
+                      else
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            const spacing = 6.0;
+                            final tileWidth = (constraints.maxWidth - (spacing * 4)) / 5;
+                            return Wrap(
+                              spacing: spacing,
+                              runSpacing: spacing,
+                              children: _categories.map((c) {
+                                final selected = _selectedCategoryId == c.id;
+                                final icon = iconFromKey(c.icon);
+                                return SizedBox(
+                                  width: tileWidth,
+                                  child: Material(
+                                    color: Colors.transparent,
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(10),
+                                      onTap: () {
+                                        setState(() {
+                                          _selectedCategoryId = c.id;
+                                        });
+                                      },
+                                      child: Ink(
+                                        height: 48,
+                                        decoration: BoxDecoration(
+                                          color: selected
+                                              ? AppColors.tealSoft.withValues(
+                                                  alpha: 0.24,
+                                                )
+                                              : Colors.white,
+                                          borderRadius: BorderRadius.circular(10),
+                                          border: Border.all(
+                                            color: selected
+                                                ? AppColors.tealDeep
+                                                : AppColors.border,
+                                            width: selected ? 1.5 : 1,
+                                          ),
+                                        ),
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 4,
+                                            vertical: 2,
+                                          ),
+                                          child: Column(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              Icon(
+                                                icon,
+                                                color: selected
+                                                    ? AppColors.tealDeep
+                                                    : Colors.black45,
+                                                size: 14,
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                c.name,
+                                                maxLines: 1,
+                                                textAlign: TextAlign.center,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  fontSize: 9.5,
+                                                  fontWeight: selected
+                                                      ? FontWeight.w700
+                                                      : FontWeight.w500,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            );
+                          },
+                        ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _noteCtrl,
+                        decoration: const InputDecoration(
+                          hintText: 'Ghi chú',
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: _selectedDate,
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime.now(),
+                          );
+                          if (picked != null) {
+                            setState(() {
+                              _selectedDate = picked;
+                              if (_selectedEventId != null && _allEvents.isNotEmpty) {
+                                final ev = _allEvents.firstWhere(
+                                  (e) => e.id == _selectedEventId,
+                                  orElse: () => _allEvents.first,
+                                );
+                                final dateOnly = DateTime(picked.year, picked.month, picked.day);
+                                final startOnly = DateTime(ev.startDate.year, ev.startDate.month, ev.startDate.day);
+                                final endOnly = DateTime(ev.endDate.year, ev.endDate.month, ev.endDate.day);
+                                final isValid = !dateOnly.isBefore(startOnly) && !dateOnly.isAfter(endOnly);
+                                if (!isValid && _selectedEventId != widget.existing?.eventId) {
+                                  _selectedEventId = null;
+                                }
+                              }
+                            });
+                          }
+                        },
+                        icon: const Icon(Icons.calendar_month_outlined),
+                        label: Text('Ngày: ${formatDate(_selectedDate)}'),
+                      ),
+                      if (!_isLoading && _allEvents.isNotEmpty) ...[
+                        Builder(
+                          builder: (context) {
+                            final dateOnly = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+                            final matchingEvents = _allEvents.where((e) {
+                              if (_selectedEventId == e.id) return true;
+                              final startOnly = DateTime(e.startDate.year, e.startDate.month, e.startDate.day);
+                              final endOnly = DateTime(e.endDate.year, e.endDate.month, e.endDate.day);
+                              return !dateOnly.isBefore(startOnly) && !dateOnly.isAfter(endOnly);
+                            }).toList();
+
+                            if (matchingEvents.isEmpty) return const SizedBox();
+                            return Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                const SizedBox(height: 14),
+                                const Text(
+                                    'Sự kiện diễn ra trong ngày này:',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.black54,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: matchingEvents.map((event) {
+                                      final isSelected = _selectedEventId == event.id;
+                                      return ChoiceChip(
+                                        label: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.event_note,
+                                              size: 14,
+                                              color: isSelected ? Colors.white : AppColors.tealDeep,
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(event.name),
+                                          ],
+                                        ),
+                                        selected: isSelected,
+                                        selectedColor: AppColors.tealDeep,
+                                        labelStyle: TextStyle(
+                                          color: isSelected ? Colors.white : Colors.black87,
+                                          fontSize: 12,
+                                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                        ),
+                                        onSelected: (bool selected) {
+                                          setState(() {
+                                            if (selected) {
+                                              _selectedEventId = event.id;
+                                            } else {
+                                              _selectedEventId = null;
+                                            }
+                                          });
+                                        },
+                                      );
+                                    }).toList(),
+                                  ),
+                              ],
+                            );
+                          }
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.of(context).maybePop(),
+                      child: const Text('Hủy'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: _isLoading ? null : () {
+                        final amount = parseAmountInput(_amountCtrl.text.trim());
+                        if (amount == null || amount <= 0) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Số tiền không hợp lệ.'),
+                            ),
+                          );
+                          return;
+                        }
+                        Navigator.of(context).maybePop(
+                          _ExpenseFormResult(
+                            amount: amount,
+                            categoryId: _selectedCategoryId,
+                            description: _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
+                            date: _selectedDate,
+                            eventId: _selectedEventId,
+                          ),
+                        );
+                      },
+                      child: const Text('Lưu'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+

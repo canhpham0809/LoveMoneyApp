@@ -468,207 +468,25 @@ class _TransferListScreenState extends State<TransferListScreen> {
   }
 
   Future<void> _openTransferPopup({TransferModel? existing}) async {
-    final members = await _service.getCoupleMembers(widget.coupleId);
-    final uid = Supabase.instance.client.auth.currentUser!.id;
-    final memberIds = members.map((m) => m['user_id'] as String).toList();
-    final users = memberIds.isEmpty
-        ? <Map<String, dynamic>>[]
-        : List<Map<String, dynamic>>.from(
-            await Supabase.instance.client
-                .from('users')
-                .select('id, display_name, email')
-                .inFilter('id', memberIds),
-          );
-    final memberLabelById = {
-      for (final user in users)
-        user['id'] as String:
-            ((user['display_name'] as String?)?.trim().isNotEmpty == true
-            ? (user['display_name'] as String).trim()
-            : ((user['email'] as String?) ?? 'User')),
-    };
-
-    final recipients = members
-        .map((m) => m['user_id'] as String)
-        .where((id) => id != widget.viewerUserId)
-        .toList();
-
-    if (!mounted) return;
-
-    if (recipients.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Chưa có người kia trong couple.')),
-      );
-      return;
-    }
-
-    final amountCtrl = TextEditingController();
-    final noteCtrl = TextEditingController();
-    String selectedRecipientId = existing?.toUserId ?? recipients.first;
-    DateTime selectedDate = existing?.date ?? DateTime.now();
-    var isClosingDialog = false;
-    if (existing != null) {
-      amountCtrl.text = formatAmountInput(existing.amount.toStringAsFixed(0));
-      noteCtrl.text = existing.note ?? '';
-    }
-
-    final payload = await showDialog<_TransferFormResult>(
+    final payload = await showGeneralDialog<_TransferFormResult>(
       context: context,
-      builder: (dialogContext) {
-        final media = MediaQuery.of(dialogContext).size;
-        return StatefulBuilder(
-          builder: (dialogContext, setDialogState) => Dialog(
-            insetPadding: const EdgeInsets.symmetric(
-              horizontal: 18,
-              vertical: 20,
-            ),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: 520,
-                maxHeight: media.height * 0.8,
-              ),
-              child: SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        existing == null
-                            ? 'Thêm chuyển tiền'
-                            : 'Sửa chuyển tiền',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: amountCtrl,
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                          ThousandsSeparatorInputFormatter(),
-                        ],
-                        decoration: const InputDecoration(hintText: 'Số tiền'),
-                      ),
-                      AmountSuggestionChips(
-                        controller: amountCtrl,
-                        onSelected: (value) {
-                          amountCtrl.text = formatAmountInput(value.toString());
-                        },
-                      ),
-                      const SizedBox(height: 10),
-                      DropdownButtonFormField<String>(
-                        initialValue: selectedRecipientId,
-                        decoration: const InputDecoration(
-                          hintText: 'Người nhận',
-                        ),
-                        items: recipients
-                            .map(
-                              (id) => DropdownMenuItem(
-                                value: id,
-                                child: Text(memberLabelById[id] ?? 'Người kia'),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (v) {
-                          if (v != null) {
-                            setDialogState(() => selectedRecipientId = v);
-                          }
-                        },
-                      ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: noteCtrl,
-                        maxLines: 2,
-                        minLines: 2,
-                        decoration: const InputDecoration(hintText: 'Ghi chú'),
-                      ),
-                      const SizedBox(height: 10),
-                      OutlinedButton.icon(
-                        onPressed: () async {
-                          final picked = await showDatePicker(
-                            context: dialogContext,
-                            initialDate: selectedDate,
-                            firstDate: DateTime(2020),
-                            lastDate: DateTime.now(),
-                          );
-                          if (picked != null) {
-                            setDialogState(() => selectedDate = picked);
-                          }
-                        },
-                        icon: const Icon(Icons.calendar_month_outlined),
-                        label: Text('Ngày: ${formatDate(selectedDate)}'),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextButton(
-                              onPressed: () {
-                                if (isClosingDialog) return;
-                                isClosingDialog = true;
-                                WidgetsBinding.instance.addPostFrameCallback((
-                                  _,
-                                ) {
-                                  if (!dialogContext.mounted) return;
-                                  Navigator.of(dialogContext).maybePop();
-                                });
-                              },
-                              child: const Text('Hủy'),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: FilledButton(
-                              onPressed: () async {
-                                if (isClosingDialog) return;
-                                final amount = parseAmountInput(
-                                  amountCtrl.text.trim(),
-                                );
-                                if (amount == null || amount <= 0) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Số tiền không hợp lệ.'),
-                                    ),
-                                  );
-                                  return;
-                                }
-                                isClosingDialog = true;
-                                WidgetsBinding.instance.addPostFrameCallback((
-                                  _,
-                                ) {
-                                  if (!dialogContext.mounted) return;
-                                  Navigator.of(dialogContext).maybePop(
-                                    _TransferFormResult(
-                                      amount: amount,
-                                      toUserId: selectedRecipientId,
-                                      note: noteCtrl.text.trim().isEmpty
-                                          ? null
-                                          : noteCtrl.text.trim(),
-                                      date: selectedDate,
-                                    ),
-                                  );
-                                });
-                              },
-                              child: const Text('Lưu'),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss',
+      barrierColor: Colors.black54,
+      transitionDuration: Duration.zero,
+      pageBuilder: (dialogContext, anim1, anim2) => _TransferFormDialog(
+        coupleId: widget.coupleId,
+        viewerUserId: widget.viewerUserId,
+        existing: existing,
+      ),
     );
 
-    if (payload == null) return;
+    if (payload == null || !mounted) return;
+
+    await Future.delayed(const Duration(milliseconds: 250));
+    if (!mounted) return;
+
+    final uid = Supabase.instance.client.auth.currentUser!.id;
 
     if (existing == null) {
       await _createTransferOptimistic(payload);
@@ -748,6 +566,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
     }
 
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(
         title: const Text('Chuyển tiền'),
         actions: [
@@ -944,7 +763,7 @@ class _TransferListScreenState extends State<TransferListScreen> {
       ),
       floatingActionButton: LayoutBuilder(
         builder: (context, constraints) {
-          final isLarge = MediaQuery.of(context).size.width > 800;
+          final isLarge = MediaQuery.sizeOf(context).width > 800;
           if (isLarge) {
             return FloatingActionButton.extended(
               onPressed: () async {
@@ -974,6 +793,265 @@ class _TransferListScreenState extends State<TransferListScreen> {
             child: const Icon(Icons.add),
           );
         },
+      ),
+    );
+  }
+}
+
+class _TransferFormDialog extends StatefulWidget {
+  final String coupleId;
+  final String viewerUserId;
+  final TransferModel? existing;
+
+  const _TransferFormDialog({
+    required this.coupleId,
+    required this.viewerUserId,
+    this.existing,
+  });
+
+  @override
+  State<_TransferFormDialog> createState() => _TransferFormDialogState();
+}
+
+class _TransferFormDialogState extends State<_TransferFormDialog> {
+  final _service = TransferService();
+  bool _isLoading = true;
+  String? _error;
+  List<String> _recipients = [];
+  Map<String, String> _memberLabelById = {};
+
+  final _amountCtrl = TextEditingController();
+  final _noteCtrl = TextEditingController();
+  String? _selectedRecipientId;
+  DateTime _selectedDate = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.existing != null) {
+      _amountCtrl.text = formatAmountInput(widget.existing!.amount.toStringAsFixed(0));
+      _noteCtrl.text = widget.existing!.note ?? '';
+      _selectedDate = widget.existing!.date;
+    }
+    _loadData();
+  }
+
+  @override
+  void dispose() {
+    _amountCtrl.dispose();
+    _noteCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadData() async {
+    try {
+      final members = await _service.getCoupleMembers(widget.coupleId);
+      final memberIds = members.map((m) => m['user_id'] as String).toList();
+      final users = memberIds.isEmpty
+          ? <Map<String, dynamic>>[]
+          : List<Map<String, dynamic>>.from(
+              await Supabase.instance.client
+                  .from('users')
+                  .select('id, display_name, email')
+                  .inFilter('id', memberIds),
+            );
+      final memberLabelById = {
+        for (final user in users)
+          user['id'] as String:
+              ((user['display_name'] as String?)?.trim().isNotEmpty == true
+              ? (user['display_name'] as String).trim()
+              : ((user['email'] as String?) ?? 'User')),
+      };
+
+      final recipients = members
+          .map((m) => m['user_id'] as String)
+          .where((id) => id != widget.viewerUserId)
+          .toList();
+
+      if (!mounted) return;
+      if (recipients.isEmpty) {
+        setState(() {
+          _error = 'Chưa có người kia trong couple.';
+          _isLoading = false;
+        });
+        return;
+      }
+
+      setState(() {
+        _recipients = recipients;
+        _memberLabelById = memberLabelById;
+        _selectedRecipientId = widget.existing?.toUserId ?? recipients.first;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.sizeOf(context);
+
+    return Dialog(
+      alignment: Alignment.center,
+      insetAnimationDuration: Duration.zero,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 520,
+          maxHeight: media.height * 0.8,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                widget.existing == null
+                    ? 'Thêm chuyển tiền'
+                    : 'Sửa chuyển tiền',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      TextField(
+                        controller: _amountCtrl,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          ThousandsSeparatorInputFormatter(),
+                        ],
+                        decoration: const InputDecoration(hintText: 'Số tiền'),
+                      ),
+                      AmountSuggestionChips(
+                        controller: _amountCtrl,
+                        onSelected: (value) {
+                          _amountCtrl.text = formatAmountInput(value.toString());
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      if (_isLoading)
+                        const SizedBox(
+                          height: 60,
+                          child: Center(
+                            child: CircularProgressIndicator(),
+                          ),
+                        )
+                      else if (_error != null || _recipients.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Text(
+                            _error ?? 'Chưa có người kia trong couple.',
+                            style: const TextStyle(color: Colors.grey, fontSize: 12),
+                            textAlign: TextAlign.center,
+                          ),
+                        )
+                      else
+                        DropdownButtonFormField<String>(
+                          value: _selectedRecipientId,
+                          decoration: const InputDecoration(
+                            hintText: 'Người nhận',
+                          ),
+                          items: _recipients
+                              .map(
+                                (id) => DropdownMenuItem(
+                                  value: id,
+                                  child: Text(_memberLabelById[id] ?? 'Người kia'),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (v) {
+                            if (v != null) {
+                              setState(() => _selectedRecipientId = v);
+                            }
+                          },
+                        ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _noteCtrl,
+                        decoration: const InputDecoration(hintText: 'Ghi chú'),
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: _selectedDate,
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime.now(),
+                          );
+                          if (picked != null) {
+                            setState(() => _selectedDate = picked);
+                          }
+                        },
+                        icon: const Icon(Icons.calendar_month_outlined),
+                        label: Text('Ngày: ${formatDate(_selectedDate)}'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () {
+                        Navigator.of(context).maybePop();
+                      },
+                      child: const Text('Hủy'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: (_isLoading || _error != null || _recipients.isEmpty)
+                          ? null
+                          : () {
+                              final amount = parseAmountInput(
+                                _amountCtrl.text.trim(),
+                              );
+                              if (amount == null || amount <= 0) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Số tiền không hợp lệ.'),
+                                  ),
+                                );
+                                return;
+                              }
+                              Navigator.of(context).maybePop(
+                                _TransferFormResult(
+                                  amount: amount,
+                                  toUserId: _selectedRecipientId!,
+                                  note: _noteCtrl.text.trim().isEmpty
+                                      ? null
+                                      : _noteCtrl.text.trim(),
+                                  date: _selectedDate,
+                                ),
+                              );
+                            },
+                      child: const Text('Lưu'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

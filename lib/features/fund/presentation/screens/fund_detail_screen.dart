@@ -143,149 +143,148 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
     final isWithdrawalTx =
         isWithdrawal || existing?.contributionType == 'withdrawal';
 
-    final saved = await showDialog<bool>(
+    final saved = await showGeneralDialog<bool>(
       context: context,
-      builder: (dialogContext) {
-        final media = MediaQuery.of(dialogContext).size;
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss',
+      barrierColor: Colors.black54,
+      transitionDuration: Duration.zero,
+      pageBuilder: (dialogContext, anim1, anim2) {
+        final media = MediaQuery.sizeOf(dialogContext);
         return StatefulBuilder(
           builder: (dialogContext, setDialogState) => Dialog(
-            insetPadding: const EdgeInsets.symmetric(
-              horizontal: 18,
-              vertical: 20,
-            ),
+            alignment: Alignment.center,
+            insetAnimationDuration: Duration.zero,
+            insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
             child: ConstrainedBox(
               constraints: BoxConstraints(
                 maxWidth: 520,
                 maxHeight: media.height * 0.8,
               ),
-              child: SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        existing == null
-                            ? (isWithdrawalTx ? 'Rút quỹ' : 'Góp quỹ')
-                            : (isWithdrawalTx ? 'Sửa đợt rút' : 'Sửa đợt góp'),
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      existing == null
+                          ? (isWithdrawalTx ? 'Rút quỹ' : 'Góp quỹ')
+                          : (isWithdrawalTx ? 'Sửa đợt rút' : 'Sửa đợt góp'),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            TextField(
+                              controller: amountCtrl,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                                ThousandsSeparatorInputFormatter(),
+                              ],
+                              decoration: const InputDecoration(hintText: 'Số tiền'),
+                            ),
+                            AmountSuggestionChips(
+                              controller: amountCtrl,
+                              onSelected: (value) {
+                                amountCtrl.text = formatAmountInput(value.toString());
+                              },
+                            ),
+                            const SizedBox(height: 10),
+                            TextField(
+                              controller: noteCtrl,
+                              decoration: const InputDecoration(hintText: 'Ghi chú'),
+                            ),
+                            const SizedBox(height: 10),
+                            OutlinedButton.icon(
+                              onPressed: () async {
+                                final picked = await showDatePicker(
+                                  context: dialogContext,
+                                  initialDate: selectedDate,
+                                  firstDate: DateTime(2020),
+                                  lastDate: DateTime.now(),
+                                );
+                                if (picked != null) {
+                                  setDialogState(() => selectedDate = picked);
+                                }
+                              },
+                              icon: const Icon(Icons.calendar_month_outlined),
+                              label: Text('Ngày: ${formatDate(selectedDate)}'),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: amountCtrl,
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                          ThousandsSeparatorInputFormatter(),
-                        ],
-                        decoration: const InputDecoration(hintText: 'Số tiền'),
-                      ),
-                      AmountSuggestionChips(
-                        controller: amountCtrl,
-                        onSelected: (value) {
-                          amountCtrl.text = formatAmountInput(value.toString());
-                        },
-                      ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: noteCtrl,
-                        maxLines: 2,
-                        minLines: 2,
-                        decoration: const InputDecoration(hintText: 'Ghi chú'),
-                      ),
-                      const SizedBox(height: 10),
-                      OutlinedButton.icon(
-                        onPressed: () async {
-                          final picked = await showDatePicker(
-                            context: dialogContext,
-                            initialDate: selectedDate,
-                            firstDate: DateTime(2020),
-                            lastDate: DateTime.now(),
-                          );
-                          if (picked != null) {
-                            setDialogState(() => selectedDate = picked);
-                          }
-                        },
-                        icon: const Icon(Icons.calendar_month_outlined),
-                        label: Text('Ngày: ${formatDate(selectedDate)}'),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextButton(
-                              onPressed: () {
-                                if (isClosingDialog || isSubmitting) return;
-                                isClosingDialog = true;
-                                WidgetsBinding.instance.addPostFrameCallback((
-                                  _,
-                                ) {
-                                  if (!dialogContext.mounted) return;
-                                  Navigator.of(dialogContext).maybePop(false);
-                                });
-                              },
-                              child: const Text('Hủy'),
-                            ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextButton(
+                            onPressed: () {
+                              if (isClosingDialog || isSubmitting) return;
+                              isClosingDialog = true;
+                              WidgetsBinding.instance.addPostFrameCallback((
+                                _,
+                              ) {
+                                if (!dialogContext.mounted) return;
+                                Navigator.of(dialogContext).maybePop(false);
+                              });
+                            },
+                            child: const Text('Hủy'),
                           ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: FilledButton(
-                              onPressed: () async {
-                                if (isClosingDialog || isSubmitting) return;
-                                final amount = parseAmountInput(
-                                  amountCtrl.text.trim(),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: () async {
+                              if (isClosingDialog || isSubmitting) return;
+                              final amount = parseAmountInput(
+                                amountCtrl.text.trim(),
+                              );
+                              if (amount == null || amount <= 0) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Số tiền không hợp lệ.'),
+                                  ),
                                 );
-                                if (amount == null || amount <= 0) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Số tiền không hợp lệ.'),
-                                    ),
-                                  );
-                                  return;
-                                }
-                                setDialogState(() => isSubmitting = true);
-                                try {
-                                  if (existing == null) {
-                                    final uid = Supabase
-                                        .instance
-                                        .client
-                                        .auth
-                                        .currentUser!
-                                        .id;
-                                    if (isWithdrawalTx) {
-                                      await _fundService.createWithdrawal(
-                                        coupleId: widget.coupleId,
-                                        userId: uid,
-                                        fundId: widget.fundId,
-                                        walletId: walletId,
-                                        amount: amount,
-                                        note: noteCtrl.text.trim().isEmpty
-                                            ? null
-                                            : noteCtrl.text.trim(),
-                                        date: selectedDate,
-                                      );
-                                    } else {
-                                      await _fundService.createContribution(
-                                        coupleId: widget.coupleId,
-                                        userId: uid,
-                                        fundId: widget.fundId,
-                                        walletId: walletId,
-                                        amount: amount,
-                                        note: noteCtrl.text.trim().isEmpty
-                                            ? null
-                                            : noteCtrl.text.trim(),
-                                        date: selectedDate,
-                                      );
-                                    }
-                                  } else {
-                                    await _fundService.updateContribution(
-                                      contributionId: existing.id,
+                                return;
+                              }
+                              setDialogState(() => isSubmitting = true);
+                              try {
+                                if (existing == null) {
+                                  final uid = Supabase
+                                      .instance
+                                      .client
+                                      .auth
+                                      .currentUser!
+                                      .id;
+                                  if (isWithdrawalTx) {
+                                    await _fundService.createWithdrawal(
+                                      coupleId: widget.coupleId,
+                                      userId: uid,
                                       fundId: widget.fundId,
+                                      walletId: walletId,
+                                      amount: amount,
+                                      note: noteCtrl.text.trim().isEmpty
+                                          ? null
+                                          : noteCtrl.text.trim(),
+                                      date: selectedDate,
+                                    );
+                                  } else {
+                                    await _fundService.createContribution(
+                                      coupleId: widget.coupleId,
+                                      userId: uid,
+                                      fundId: widget.fundId,
+                                      walletId: walletId,
                                       amount: amount,
                                       note: noteCtrl.text.trim().isEmpty
                                           ? null
@@ -293,34 +292,44 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                                       date: selectedDate,
                                     );
                                   }
-                                } finally {
-                                  if (dialogContext.mounted) {
-                                    setDialogState(() => isSubmitting = false);
-                                  }
+                                } else {
+                                  await _fundService.updateContribution(
+                                    contributionId: existing.id,
+                                    fundId: widget.fundId,
+                                    amount: amount,
+                                    note: noteCtrl.text.trim().isEmpty
+                                        ? null
+                                        : noteCtrl.text.trim(),
+                                    date: selectedDate,
+                                  );
                                 }
-                                isClosingDialog = true;
-                                WidgetsBinding.instance.addPostFrameCallback((
-                                  _,
-                                ) {
-                                  if (!dialogContext.mounted) return;
-                                  Navigator.of(dialogContext).maybePop(true);
-                                });
-                              },
-                              child: isSubmitting
-                                  ? const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Text('Lưu'),
-                            ),
+                              } finally {
+                                if (dialogContext.mounted) {
+                                  setDialogState(() => isSubmitting = false);
+                                }
+                              }
+                              isClosingDialog = true;
+                              WidgetsBinding.instance.addPostFrameCallback((
+                                _,
+                              ) {
+                                if (!dialogContext.mounted) return;
+                                Navigator.of(dialogContext).maybePop(true);
+                              });
+                            },
+                            child: isSubmitting
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text('Lưu'),
                           ),
-                        ],
-                      ),
-                    ],
-                  ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
             ),

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:equatable/equatable.dart';
 
 class DebtModel extends Equatable {
@@ -137,4 +138,94 @@ class DebtModel extends Equatable {
     isDeleted,
     deletedAt,
   ];
+
+  bool get isSplitBill {
+    if (note == null || !note!.trim().startsWith('{')) return false;
+    try {
+      final data = jsonDecode(note!);
+      return data['is_split'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  SplitBillInfo? get splitBillInfo {
+    if (!isSplitBill) return null;
+    return SplitBillInfo.fromJson(jsonDecode(note!));
+  }
+}
+
+class SplitBillInfo {
+  final double totalBill;
+  final int peopleCount;
+  final double shareAmount;
+  final String? userNote;
+  final List<SplitShare> shares;
+
+  SplitBillInfo({
+    required this.totalBill,
+    required this.peopleCount,
+    required this.shareAmount,
+    this.userNote,
+    required this.shares,
+  });
+
+  factory SplitBillInfo.fromJson(Map<String, dynamic> json) {
+    return SplitBillInfo(
+      totalBill: (json['total_bill'] as num).toDouble(),
+      peopleCount: (json['people_count'] as num).toInt(),
+      shareAmount: (json['share_amount'] as num).toDouble(),
+      userNote: json['user_note'] as String?,
+      shares: (json['shares'] as List)
+          .map((e) => SplitShare.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'is_split': true,
+      'total_bill': totalBill,
+      'people_count': peopleCount,
+      'share_amount': shareAmount,
+      'user_note': userNote,
+      'shares': shares.map((e) => e.toJson()).toList(),
+    };
+  }
+}
+
+class SplitShare {
+  final String name;
+  final bool paid;
+  final String? paymentId;
+
+  SplitShare({
+    required this.name,
+    required this.paid,
+    this.paymentId,
+  });
+
+  factory SplitShare.fromJson(Map<String, dynamic> json) {
+    return SplitShare(
+      name: json['name'] as String,
+      paid: json['paid'] as bool? ?? false,
+      paymentId: json['payment_id'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'name': name,
+      'paid': paid,
+      'payment_id': paymentId,
+    };
+  }
+
+  SplitShare copyWith({bool? paid, String? paymentId}) {
+    return SplitShare(
+      name: name,
+      paid: paid ?? this.paid,
+      paymentId: paymentId ?? this.paymentId,
+    );
+  }
 }

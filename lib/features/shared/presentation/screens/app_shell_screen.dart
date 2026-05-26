@@ -245,160 +245,171 @@ class _AppShellScreenState extends State<AppShellScreen> {
     String? selectedCategoryName = categories.isNotEmpty
         ? categories.first.name
         : null;
-    final payload = await showDialog<Map<String, String?>>(
+    final payload = await showGeneralDialog<Map<String, String?>>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss',
+      barrierColor: Colors.black54,
+      transitionDuration: Duration.zero,
+      pageBuilder: (dialogContext, anim1, anim2) => StatefulBuilder(
         builder: (dialogContext, setDialogState) {
-          final media = MediaQuery.of(dialogContext).size;
+          final media = MediaQuery.sizeOf(dialogContext);
           return Dialog(
-            insetPadding: const EdgeInsets.symmetric(
-              horizontal: 18,
-              vertical: 20,
-            ),
+            alignment: Alignment.center,
+            insetAnimationDuration: Duration.zero,
+            insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
             child: ConstrainedBox(
               constraints: BoxConstraints(
                 maxWidth: 520,
                 maxHeight: media.height * 0.8,
               ),
-              child: SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Text(
-                        'Thêm nhanh chi tiêu',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                        ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'Thêm nhanh chi tiêu',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
                       ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: ctrl,
-                        autofocus: true,
-                        decoration: const InputDecoration(
-                          hintText: 'Vi du: 50k breakfast',
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      if (categories.isEmpty)
-                        const Text(
-                          'Chưa có danh mục chi tiêu.',
-                          style: TextStyle(fontSize: 12, color: Colors.grey),
-                        )
-                      else
-                        LayoutBuilder(
-                          builder: (context, constraints) {
-                            const spacing = 6.0;
-                            final tileWidth =
-                                (constraints.maxWidth - (spacing * 4)) / 5;
-                            return Wrap(
-                              spacing: spacing,
-                              runSpacing: spacing,
-                              children: categories.map((c) {
-                                final selected = selectedCategoryId == c.id;
-                                return SizedBox(
-                                  width: tileWidth,
-                                  child: Material(
-                                    color: Colors.transparent,
-                                    child: InkWell(
-                                      borderRadius: BorderRadius.circular(10),
-                                      onTap: () {
-                                        setDialogState(() {
-                                          if (selectedCategoryId == c.id) {
-                                            selectedCategoryId = null;
-                                            selectedCategoryName = null;
-                                          } else {
-                                            selectedCategoryId = c.id;
-                                            selectedCategoryName = c.name;
-                                          }
-                                        });
-                                      },
-                                      child: Ink(
-                                        height: 48,
-                                        decoration: BoxDecoration(
-                                          color: selected
-                                              ? AppColors.tealSoft.withValues(
-                                                  alpha: 0.24,
-                                                )
-                                              : Colors.white,
-                                          borderRadius: BorderRadius.circular(
-                                            10,
-                                          ),
-                                          border: Border.all(
-                                            color: selected
-                                                ? AppColors.tealDeep
-                                                : AppColors.border,
-                                            width: selected ? 1.5 : 1,
-                                          ),
-                                        ),
-                                        child: Padding(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 4,
-                                            vertical: 2,
-                                          ),
-                                          child: Column(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.center,
-                                            children: [
-                                              Icon(
-                                                iconFromKey(c.icon),
+                    ),
+                    const SizedBox(height: 10),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            TextField(
+                              controller: ctrl,
+                              autofocus: true,
+                              decoration: const InputDecoration(
+                                hintText: 'Vi du: 50k breakfast',
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            if (categories.isEmpty)
+                              const Text(
+                                'Chưa có danh mục chi tiêu.',
+                                style: TextStyle(fontSize: 12, color: Colors.grey),
+                              )
+                            else
+                              LayoutBuilder(
+                                builder: (context, constraints) {
+                                  const spacing = 6.0;
+                                  final tileWidth =
+                                      (constraints.maxWidth - (spacing * 4)) / 5;
+                                  return Wrap(
+                                    spacing: spacing,
+                                    runSpacing: spacing,
+                                    children: categories.map((c) {
+                                      final selected = selectedCategoryId == c.id;
+                                      return SizedBox(
+                                        width: tileWidth,
+                                        child: Material(
+                                          color: Colors.transparent,
+                                          child: InkWell(
+                                            borderRadius: BorderRadius.circular(10),
+                                            onTap: () {
+                                              setDialogState(() {
+                                                if (selectedCategoryId == c.id) {
+                                                  selectedCategoryId = null;
+                                                  selectedCategoryName = null;
+                                                } else {
+                                                  selectedCategoryId = c.id;
+                                                  selectedCategoryName = c.name;
+                                                }
+                                              });
+                                            },
+                                            child: Ink(
+                                              height: 48,
+                                              decoration: BoxDecoration(
                                                 color: selected
-                                                    ? AppColors.tealDeep
-                                                    : Colors.black45,
-                                                size: 14,
-                                              ),
-                                              const SizedBox(height: 2),
-                                              Text(
-                                                c.name,
-                                                maxLines: 1,
-                                                textAlign: TextAlign.center,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: TextStyle(
-                                                  fontSize: 9.5,
-                                                  fontWeight: selected
-                                                      ? FontWeight.w700
-                                                      : FontWeight.w500,
+                                                    ? AppColors.tealSoft.withValues(
+                                                        alpha: 0.24,
+                                                      )
+                                                    : Colors.white,
+                                                borderRadius: BorderRadius.circular(
+                                                  10,
+                                                ),
+                                                border: Border.all(
+                                                  color: selected
+                                                      ? AppColors.tealDeep
+                                                      : AppColors.border,
+                                                  width: selected ? 1.5 : 1,
                                                 ),
                                               ),
-                                            ],
+                                              child: Padding(
+                                                padding: const EdgeInsets.symmetric(
+                                                  horizontal: 4,
+                                                  vertical: 2,
+                                                ),
+                                                child: Column(
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment.center,
+                                                  children: [
+                                                    Icon(
+                                                      iconFromKey(c.icon),
+                                                      color: selected
+                                                          ? AppColors.tealDeep
+                                                          : Colors.black45,
+                                                      size: 14,
+                                                    ),
+                                                    const SizedBox(height: 2),
+                                                    Text(
+                                                      c.name,
+                                                      maxLines: 1,
+                                                      textAlign: TextAlign.center,
+                                                      overflow: TextOverflow.ellipsis,
+                                                      style: TextStyle(
+                                                        fontSize: 9.5,
+                                                        fontWeight: selected
+                                                            ? FontWeight.w700
+                                                            : FontWeight.w500,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              }).toList(),
-                            );
-                          },
+                                      );
+                                    }).toList(),
+                                  );
+                                },
+                              ),
+                          ],
                         ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextButton(
-                              onPressed: () => Navigator.pop(dialogContext),
-                              child: const Text('Hủy'),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: FilledButton(
-                              onPressed: () => Navigator.pop(dialogContext, {
-                                'input': ctrl.text.trim(),
-                                'categoryId': selectedCategoryId,
-                                'categoryName': selectedCategoryName,
-                              }),
-                              child: const Text('Lưu'),
-                            ),
-                          ),
-                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextButton(
+                            onPressed: () => Navigator.pop(dialogContext),
+                            child: const Text('Hủy'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: () => Navigator.pop(dialogContext, {
+                              'input': ctrl.text.trim(),
+                              'categoryId': selectedCategoryId,
+                              'categoryName': selectedCategoryName,
+                            }),
+                            child: const Text('Lưu'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
             ),

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
@@ -162,9 +163,7 @@ class DebtService {
               'wallet_id': defaultWalletId,
               'income_source_id': incomeSourceId,
               'amount': originalAmount,
-              'description': note?.trim().isNotEmpty == true
-                  ? note!.trim()
-                  : 'Nhận nợ: $name',
+              'description': _resolveDebtDescription(name, note, 'Nhận nợ'),
               'is_from_transfer': false,
               'date': startDate.toIso8601String().substring(0, 10),
             })
@@ -191,9 +190,7 @@ class DebtService {
               'wallet_id': defaultWalletId,
               'category_id': categoryId,
               'amount': originalAmount,
-              'description': note?.trim().isNotEmpty == true
-                  ? note!.trim()
-                  : 'Cho mượn: $name',
+              'description': _resolveDebtDescription(name, note, 'Cho mượn'),
               'date': startDate.toIso8601String().substring(0, 10),
             })
             .select('id')
@@ -256,12 +253,8 @@ class DebtService {
     var linkedExpenseId = existingDebt['linked_expense_id'] as String?;
 
     final dateIso = startDate.toIso8601String().substring(0, 10);
-    final incomeDescription = note?.trim().isNotEmpty == true
-        ? note!.trim()
-        : 'Nhận nợ: $name';
-    final expenseDescription = note?.trim().isNotEmpty == true
-        ? note!.trim()
-        : 'Cho mượn: $name';
+    final incomeDescription = _resolveDebtDescription(name, note, 'Nhận nợ');
+    final expenseDescription = _resolveDebtDescription(name, note, 'Cho mượn');
 
     final payments = await _db
         .from('debt_payments')
@@ -1104,6 +1097,35 @@ class DebtService {
 
     if (rows.isEmpty) return null;
     return rows.first['id'] as String;
+  }
+
+  Future<void> updateSplitBillNote({
+    required String debtId,
+    required String note,
+  }) async {
+    await _db
+        .from('debts')
+        .update({
+          'note': note,
+        })
+        .eq('id', debtId);
+    await _recalculateDebtRemaining(debtId);
+  }
+
+  String _resolveDebtDescription(String name, String? note, String defaultPrefix) {
+    if (note != null && note.trim().startsWith('{')) {
+      try {
+        final data = jsonDecode(note);
+        if (data['is_split'] == true) {
+          final userNote = data['user_note'] as String?;
+          if (userNote != null && userNote.trim().isNotEmpty) {
+            return userNote.trim();
+          }
+          return '$defaultPrefix: $name';
+        }
+      } catch (_) {}
+    }
+    return note?.trim().isNotEmpty == true ? note!.trim() : '$defaultPrefix: $name';
   }
 
   Future<void> _recalculateDebtRemaining(String debtId) async {

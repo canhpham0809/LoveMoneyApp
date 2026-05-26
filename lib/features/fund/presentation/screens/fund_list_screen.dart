@@ -93,7 +93,6 @@ class _FundListScreenState extends State<FundListScreen> {
     if (_manualOrderIds.isEmpty) {
       _sortFundsByName(nextItems);
       _manualOrderIds = nextItems.map((e) => e.id).toList();
-      return nextItems;
     }
 
     final byId = {for (final item in nextItems) item.id: item};
@@ -107,8 +106,13 @@ class _FundListScreenState extends State<FundListScreen> {
     final rest = byId.values.toList();
     _sortFundsByName(rest);
     ordered.addAll(rest);
-    _manualOrderIds = ordered.map((e) => e.id).toList();
-    return ordered;
+
+    final incomplete = ordered.where((item) => !(item.targetAmount != null && item.currentAmount >= item.targetAmount!)).toList();
+    final completed = ordered.where((item) => item.targetAmount != null && item.currentAmount >= item.targetAmount!).toList();
+    final result = [...incomplete, ...completed];
+
+    _manualOrderIds = result.map((e) => e.id).toList();
+    return result;
   }
 
   void _onReorder(int oldIndex, int newIndex) {
@@ -120,6 +124,7 @@ class _FundListScreenState extends State<FundListScreen> {
       final moved = _items.removeAt(oldIndex);
       _items.insert(newIndex, moved);
       _manualOrderIds = _items.map((e) => e.id).toList();
+      _items = _applyFundOrder(_items);
     });
     unawaited(_persistFundOrder(previousOrder));
   }
@@ -193,137 +198,148 @@ class _FundListScreenState extends State<FundListScreen> {
       }
     }
 
-    final payload = await showDialog<Map<String, dynamic>>(
+    final payload = await showGeneralDialog<Map<String, dynamic>>(
       context: context,
-      builder: (dialogContext) {
-        final media = MediaQuery.of(dialogContext).size;
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss',
+      barrierColor: Colors.black54,
+      transitionDuration: Duration.zero,
+      pageBuilder: (dialogContext, anim1, anim2) {
+        final media = MediaQuery.sizeOf(dialogContext);
         return StatefulBuilder(
           builder: (dialogContext, setDialogState) => Dialog(
-            insetPadding: const EdgeInsets.symmetric(
-              horizontal: 18,
-              vertical: 20,
-            ),
+            alignment: Alignment.center,
+            insetAnimationDuration: Duration.zero,
+            insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
             child: ConstrainedBox(
               constraints: BoxConstraints(
                 maxWidth: 520,
                 maxHeight: media.height * 0.8,
               ),
-              child: SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        existing == null ? 'Thêm quỹ' : 'Sửa quỹ',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                        ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      existing == null ? 'Thêm quỹ' : 'Sửa quỹ',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
                       ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: nameCtrl,
-                        decoration: const InputDecoration(hintText: 'Tên quỹ'),
-                      ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: targetCtrl,
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                          ThousandsSeparatorInputFormatter(),
-                        ],
-                        decoration: const InputDecoration(
-                          hintText: 'Mục tiêu (tuỳ chọn)',
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      AmountSuggestionChips(
-                        controller: targetCtrl,
-                        onSelected: (value) {
-                          targetCtrl.text = formatAmountInput(value.toString());
-                        },
-                      ),
-                      const SizedBox(height: 10),
-                      OutlinedButton.icon(
-                        onPressed: () async {
-                          final picked = await showDatePicker(
-                            context: dialogContext,
-                            initialDate: deadline ?? DateTime.now(),
-                            firstDate: DateTime.now(),
-                            lastDate: DateTime(2100),
-                          );
-                          if (picked != null) {
-                            setDialogState(() => deadline = picked);
-                          }
-                        },
-                        icon: const Icon(Icons.calendar_month_outlined),
-                        label: Text(
-                          deadline == null
-                              ? 'Chọn hạn'
-                              : 'Hạn: ${formatDate(deadline!)}',
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextButton(
-                              onPressed: () {
-                                if (isClosingDialog) return;
-                                isClosingDialog = true;
-                                WidgetsBinding.instance.addPostFrameCallback((
-                                  _,
-                                ) {
-                                  if (!dialogContext.mounted) return;
-                                  Navigator.of(dialogContext).maybePop();
-                                });
-                              },
-                              child: const Text('Hủy'),
+                    ),
+                    const SizedBox(height: 10),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            TextField(
+                              controller: nameCtrl,
+                              decoration: const InputDecoration(hintText: 'Tên quỹ'),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: FilledButton(
-                              onPressed: () {
-                                if (isClosingDialog) return;
-                                final name = nameCtrl.text.trim();
-                                if (name.isEmpty) {
-                                  ScaffoldMessenger.of(
-                                    dialogContext,
-                                  ).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Nhập tên quỹ.'),
-                                    ),
-                                  );
-                                  return;
+                            const SizedBox(height: 10),
+                            TextField(
+                              controller: targetCtrl,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                                ThousandsSeparatorInputFormatter(),
+                              ],
+                              decoration: const InputDecoration(
+                                hintText: 'Mục tiêu (tuỳ chọn)',
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            AmountSuggestionChips(
+                              controller: targetCtrl,
+                              onSelected: (value) {
+                                targetCtrl.text = formatAmountInput(value.toString());
+                              },
+                            ),
+                            const SizedBox(height: 10),
+                            OutlinedButton.icon(
+                              onPressed: () async {
+                                final picked = await showDatePicker(
+                                  context: dialogContext,
+                                  initialDate: deadline ?? DateTime.now(),
+                                  firstDate: DateTime.now(),
+                                  lastDate: DateTime(2100),
+                                );
+                                if (picked != null) {
+                                  setDialogState(() => deadline = picked);
                                 }
-                                final targetAmount =
-                                    targetCtrl.text.trim().isEmpty
-                                    ? null
-                                    : parseAmountInput(targetCtrl.text.trim());
-                                isClosingDialog = true;
-                                WidgetsBinding.instance.addPostFrameCallback((
-                                  _,
-                                ) {
-                                  if (!dialogContext.mounted) return;
-                                  Navigator.of(dialogContext).maybePop({
-                                    'name': name,
-                                    'targetAmount': targetAmount,
-                                    'deadline': deadline,
-                                  });
-                                });
                               },
-                              child: const Text('Lưu'),
+                              icon: const Icon(Icons.calendar_month_outlined),
+                              label: Text(
+                                deadline == null
+                                    ? 'Chọn hạn'
+                                    : 'Hạn: ${formatDate(deadline!)}',
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextButton(
+                            onPressed: () {
+                              if (isClosingDialog) return;
+                              isClosingDialog = true;
+                              WidgetsBinding.instance.addPostFrameCallback((
+                                _,
+                              ) {
+                                if (!dialogContext.mounted) return;
+                                Navigator.of(dialogContext).maybePop();
+                              });
+                            },
+                            child: const Text('Hủy'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: () {
+                              if (isClosingDialog) return;
+                              final name = nameCtrl.text.trim();
+                              if (name.isEmpty) {
+                                ScaffoldMessenger.of(
+                                  dialogContext,
+                                ).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Nhập tên quỹ.'),
+                                  ),
+                                );
+                                return;
+                              }
+                              final targetAmount =
+                                  targetCtrl.text.trim().isEmpty
+                                  ? null
+                                  : parseAmountInput(targetCtrl.text.trim());
+                              isClosingDialog = true;
+                              WidgetsBinding.instance.addPostFrameCallback((
+                                _,
+                              ) {
+                                if (!dialogContext.mounted) return;
+                                Navigator.of(dialogContext).maybePop({
+                                  'name': name,
+                                  'targetAmount': targetAmount,
+                                  'deadline': deadline,
+                                });
+                              });
+                            },
+                            child: const Text('Lưu'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
             ),
