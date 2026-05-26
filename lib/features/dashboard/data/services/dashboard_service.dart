@@ -260,30 +260,24 @@ class DashboardService {
       );
     }
 
-    List<Map<String, dynamic>> debtRows;
+    List<Map<String, dynamic>> allDebts;
     try {
       var debtsQuery = _db
           .from('debts')
           .select(
-            'id, name, debt_kind, original_amount, record_to_income, linked_income_id, linked_expense_id, start_date',
+            'id, name, debt_kind, original_amount, record_to_income, linked_income_id, linked_expense_id, start_date, user_id',
           )
           .eq('couple_id', coupleId)
           .eq('is_deleted', false);
-      if (viewerUserId != null) {
-        debtsQuery = debtsQuery.eq('user_id', viewerUserId);
-      }
-      debtRows = List<Map<String, dynamic>>.from(await debtsQuery);
+      allDebts = List<Map<String, dynamic>>.from(await debtsQuery);
     } catch (e) {
       if (!_isMissingDebtKindColumn(e)) rethrow;
       var debtsQuery = _db
           .from('debts')
-          .select('id, name, original_amount, start_date')
+          .select('id, name, original_amount, start_date, user_id')
           .eq('couple_id', coupleId)
           .eq('is_deleted', false);
-      if (viewerUserId != null) {
-        debtsQuery = debtsQuery.eq('user_id', viewerUserId);
-      }
-      debtRows = List<Map<String, dynamic>>.from(await debtsQuery)
+      allDebts = List<Map<String, dynamic>>.from(await debtsQuery)
           .map(
             (row) => {
               ...row,
@@ -331,16 +325,16 @@ class DashboardService {
       }
     }
 
-    // Fetch payments in the month for ALL debts of this viewer, then decide
-    // inclusion in Dart (recorded+created-this-month OR has payments this month).
-    final allDebtIdsForCouple = debtRows.map((r) => r['id'] as String).toList();
+    // Fetch payments in the month for ALL debts of this couple, then decide
+    // inclusion in Dart (recorded+created-this-month OR has payments this month by viewerUserId).
+    final allDebtIdsForCouple = allDebts.map((r) => r['id'] as String).toList();
     final paymentsByDebtId = <String, List<Map<String, dynamic>>>{};
     if (allDebtIdsForCouple.isNotEmpty) {
       try {
         final paymentRows = List<Map<String, dynamic>>.from(
           await _db
               .from('debt_payments')
-              .select('debt_id, amount, date, note, linked_income_id')
+              .select('debt_id, amount, date, note, linked_income_id, updated_by')
               .inFilter('debt_id', allDebtIdsForCouple)
               .eq('is_deleted', false)
               .gte('date', from)
@@ -349,6 +343,15 @@ class DashboardService {
         for (final p in paymentRows) {
           final pid = p['debt_id'] as String?;
           if (pid == null) continue;
+
+          // If viewerUserId is specified, only include payments made by this viewer
+          if (viewerUserId != null) {
+            final updatedBy = p['updated_by'] as String?;
+            if (updatedBy != viewerUserId) {
+              continue;
+            }
+          }
+
           paymentsByDebtId.putIfAbsent(pid, () => []).add(p);
         }
       } catch (_) {
@@ -356,7 +359,7 @@ class DashboardService {
       }
     }
 
-    // Fetch all-time payments for non-recorded debts to compute remaining balance.
+    // Fetch all-time payments for all debts to compute remaining balance.
     final totalPaidAllTimeByDebtId = <String, double>{};
     if (allDebtIdsForCouple.isNotEmpty) {
       try {
@@ -381,7 +384,7 @@ class DashboardService {
       ...filteredContributions
           .map((row) => row['linked_income_id'] as String?)
           .whereType<String>(),
-      ...debtRows
+      ...allDebts
           .map((row) => row['linked_income_id'] as String?)
           .whereType<String>(),
       ...paymentsByDebtId.values
@@ -390,10 +393,36 @@ class DashboardService {
           .whereType<String>(),
     };
     final excludedExpenseIds = <String>{
-      ...debtRows
+      ...allDebts
           .map((row) => row['linked_expense_id'] as String?)
           .whereType<String>(),
     };
+
+    // Filter debts and count payments based on belongsToViewer and hasPaymentsThisMonth
+    final filteredDebts = <Map<String, dynamic>>[];
+    for (final row in allDebts) {
+      final debtId = row['id'] as String;
+      final belongsToViewer = viewerUserId == null || row['user_id'] == viewerUserId;
+      final payments = paymentsByDebtId[debtId] ?? const [];
+      final hasPaymentsThisMonth = payments.isNotEmpty;
+      final startDate = row['start_date'] as String?;
+      final isCreatedThisMonth =
+          startDate != null &&
+          startDate.compareTo(from) >= 0 &&
+          startDate.compareTo(to) < 0;
+      final debtKind = (row['debt_kind'] as String?) ?? 'debt';
+      final recordToIncome = (row['record_to_income'] as bool?) ?? false;
+      final linkedExpenseId = row['linked_expense_id'] as String?;
+      final isRecorded = debtKind == 'lend'
+          ? linkedExpenseId != null
+          : recordToIncome;
+
+      // Show if: (created this month AND recorded AND belongs to viewer) OR has payments this month
+      if (!isCreatedThisMonth && !hasPaymentsThisMonth) continue;
+      if (isCreatedThisMonth && ((!isRecorded || !belongsToViewer) && !hasPaymentsThisMonth)) continue;
+
+      filteredDebts.add(row);
+    }
 
     final manualIncomes = incomes.where((row) {
       final incomeId = row['id'] as String?;
@@ -496,7 +525,7 @@ class DashboardService {
 
     final borrowItems = <Map<String, dynamic>>[];
     final lendItems = <Map<String, dynamic>>[];
-    for (final row in debtRows) {
+    for (final row in filteredDebts) {
       final debtKind = (row['debt_kind'] as String?) ?? 'debt';
       final recordToIncome = (row['record_to_income'] as bool?) ?? false;
       final linkedExpenseId = row['linked_expense_id'] as String?;
@@ -511,12 +540,9 @@ class DashboardService {
           : recordToIncome;
       final payments = paymentsByDebtId[debtId] ?? const [];
 
-      // Show if: (created this month AND recorded) OR has payments this month
-      if (!isCreatedThisMonth && payments.isEmpty) continue;
-      if (isCreatedThisMonth && !isRecorded && payments.isEmpty) continue;
-
-      // Only count original amount if the debt was recorded AND created this month
-      final originalAmount = (isCreatedThisMonth && isRecorded)
+      // Only count original amount if the debt was recorded AND created this month AND belongs to the viewer
+      final belongsToViewer = viewerUserId == null || row['user_id'] == viewerUserId;
+      final originalAmount = (isCreatedThisMonth && isRecorded && belongsToViewer)
           ? ((row['original_amount'] as num?)?.toDouble() ?? 0)
           : 0.0;
       final debtOriginal = ((row['original_amount'] as num?)?.toDouble() ?? 0);
@@ -561,7 +587,7 @@ class DashboardService {
     // Compute total payments made (debt_kind == 'debt') and received (lend)
     double totalDebtPaymentMade = 0;
     double totalDebtPaymentReceived = 0;
-    for (final row in debtRows) {
+    for (final row in filteredDebts) {
       final debtKind = (row['debt_kind'] as String?) ?? 'debt';
       final debtId = row['id'] as String;
       final payments = paymentsByDebtId[debtId] ?? const [];
@@ -799,7 +825,7 @@ class DashboardService {
             };
           })
           .toList(),
-      'debt_payment_made_transactions': debtRows
+      'debt_payment_made_transactions': filteredDebts
           .where((row) => ((row['debt_kind'] as String?) ?? 'debt') != 'lend')
           .expand((row) {
             final debtId = row['id'] as String;
@@ -820,12 +846,12 @@ class DashboardService {
                 'created_at': (payment['date'] as String?) == null
                     ? null
                     : '${payment['date'] as String}T00:00:00Z',
-                'user_id': row['user_id'] as String?,
+                'user_id': payment['updated_by'] as String? ?? row['user_id'] as String?,
               };
             });
           })
           .toList(),
-      'debt_payment_received_transactions': debtRows
+      'debt_payment_received_transactions': filteredDebts
           .where((row) => ((row['debt_kind'] as String?) ?? 'debt') == 'lend')
           .expand((row) {
             final debtId = row['id'] as String;
@@ -846,7 +872,7 @@ class DashboardService {
                 'created_at': (payment['date'] as String?) == null
                     ? null
                     : '${payment['date'] as String}T00:00:00Z',
-                'user_id': row['user_id'] as String?,
+                'user_id': payment['updated_by'] as String? ?? row['user_id'] as String?,
               };
             });
           })
