@@ -153,6 +153,80 @@ class DebtModel extends Equatable {
     if (!isSplitBill) return null;
     return SplitBillInfo.fromJson(jsonDecode(note!));
   }
+
+  String? get displayNote {
+    if (note == null) return null;
+    if (!note!.trim().startsWith('{')) return note;
+    try {
+      final data = jsonDecode(note!);
+      return data['user_note'] as String?;
+    } catch (_) {
+      return note;
+    }
+  }
+
+  List<DebtIncrement> get increments {
+    if (note == null || !note!.trim().startsWith('{')) return [];
+    try {
+      final data = jsonDecode(note!);
+      if (data['increments'] is List) {
+        return (data['increments'] as List)
+            .map((e) => DebtIncrement.fromJson(Map<String, dynamic>.from(e)))
+            .toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+}
+
+class DebtIncrement extends Equatable {
+  final double amount;
+  final DateTime date;
+  final String? note;
+  final String? linkedIncomeId;
+  final String? linkedExpenseId;
+  final DateTime? createdAt;
+
+  const DebtIncrement({
+    required this.amount,
+    required this.date,
+    this.note,
+    this.linkedIncomeId,
+    this.linkedExpenseId,
+    this.createdAt,
+  });
+
+  factory DebtIncrement.fromJson(Map<String, dynamic> json) {
+    return DebtIncrement(
+      amount: (json['amount'] as num).toDouble(),
+      date: DateTime.parse(json['date'] as String),
+      note: json['note'] as String?,
+      linkedIncomeId: json['linked_income_id'] as String?,
+      linkedExpenseId: json['linked_expense_id'] as String?,
+      createdAt: json['created_at'] != null ? DateTime.parse(json['created_at'] as String) : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'amount': amount,
+      'date': date.toIso8601String().substring(0, 10),
+      'note': note,
+      'linked_income_id': linkedIncomeId,
+      'linked_expense_id': linkedExpenseId,
+      'created_at': createdAt?.toIso8601String(),
+    };
+  }
+
+  @override
+  List<Object?> get props => [
+        amount,
+        date,
+        note,
+        linkedIncomeId,
+        linkedExpenseId,
+        createdAt,
+      ];
 }
 
 class SplitBillInfo {

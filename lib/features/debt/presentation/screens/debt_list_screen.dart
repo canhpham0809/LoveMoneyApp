@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_app_demo/core/theme/app_colors.dart';
 import 'package:flutter_app_demo/core/utils/amount_input.dart';
@@ -72,6 +73,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
   bool _isLoading = true;
   bool _isMutating = false;
   String? _error;
+  bool _hideCompleted = false;
 
   Future<T> _runMutation<T>(Future<T> Function() action) async {
     if (mounted) {
@@ -86,8 +88,13 @@ class _DebtListScreenState extends State<DebtListScreen> {
     }
   }
 
-  List<DebtModel> get _filteredItems =>
-      _items.where((item) => item.debtKind == _selectedDebtKind).toList();
+  List<DebtModel> get _filteredItems {
+    var list = _items.where((item) => item.debtKind == _selectedDebtKind);
+    if (_hideCompleted) {
+      list = list.where((item) => !(item.remainingAmount <= 0 || item.isClosed));
+    }
+    return list.toList();
+  }
 
   String _resolveMemberName(String? userId) {
     if (userId == null || userId.isEmpty) return 'Không rõ';
@@ -179,11 +186,33 @@ class _DebtListScreenState extends State<DebtListScreen> {
     }
   }
 
+  Future<void> _loadSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (mounted) {
+        setState(() {
+          _hideCompleted = prefs.getBool('hide_completed_debts') ?? false;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _toggleHideCompleted(bool value) async {
+    setState(() {
+      _hideCompleted = value;
+    });
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('hide_completed_debts', value);
+    } catch (_) {}
+  }
+
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
     widget.refreshSignal?.addListener(_onExternalRefresh);
+    _loadSettings();
     _load();
   }
 
@@ -194,6 +223,7 @@ class _DebtListScreenState extends State<DebtListScreen> {
       oldWidget.refreshSignal?.removeListener(_onExternalRefresh);
       widget.refreshSignal?.addListener(_onExternalRefresh);
     }
+    _loadSettings();
   }
 
   @override
@@ -485,6 +515,22 @@ class _DebtListScreenState extends State<DebtListScreen> {
         title: const Text('Khoản nợ và cho mượn'),
         actions: [
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
+            tooltip: 'Tùy chọn',
+            onSelected: (value) {
+              if (value == 'toggle_hide_completed') {
+                _toggleHideCompleted(!_hideCompleted);
+              }
+            },
+            itemBuilder: (BuildContext context) => [
+              CheckedPopupMenuItem<String>(
+                value: 'toggle_hide_completed',
+                checked: _hideCompleted,
+                child: const Text('Ẩn nợ đã trả hoàn tất'),
+              ),
+            ],
+          ),
         ],
       ),
       body: BusyOverlay(
@@ -962,7 +1008,7 @@ class _DebtFormDialogState extends State<_DebtFormDialog> {
         _amountCtrl.text = formatAmountInput(
           widget.existing!.originalAmount.toStringAsFixed(0),
         );
-        _noteCtrl.text = widget.existing!.note ?? '';
+        _noteCtrl.text = widget.existing!.displayNote ?? '';
       }
     }
 

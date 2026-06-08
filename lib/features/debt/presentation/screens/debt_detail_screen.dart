@@ -474,10 +474,369 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
     }
   }
 
+  void _onFabPressed(DebtModel debt) {
+    final isLend = debt.debtKind == 'lend';
+    showModalBottomSheet(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(isLend ? Icons.call_received : Icons.call_made),
+              title: Text(isLend ? 'Thu hồi nợ' : 'Trả bớt nợ'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _openPaymentPopup();
+              },
+            ),
+            ListTile(
+              leading: Icon(isLend ? Icons.add_circle_outline : Icons.remove_circle_outline),
+              title: Text(isLend ? 'Cho mượn thêm' : 'Nợ thêm'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _openIncreaseDebtPopup();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openIncreaseDebtPopup({DebtHistoryItem? existing}) async {
+    final wallets = await _walletService.getWallets(widget.coupleId);
+    if (!mounted) return;
+    if (wallets.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Chưa có ví.')));
+      return;
+    }
+
+    final amountCtrl = TextEditingController();
+    final noteCtrl = TextEditingController();
+    DateTime selectedDate = existing?.date ?? DateTime.now();
+    var recordTransaction = true;
+    var isSubmitting = false;
+
+    if (existing != null) {
+      amountCtrl.text = formatAmountInput(existing.amount.toStringAsFixed(0));
+      noteCtrl.text = existing.note ?? '';
+      final isLend = _debt?.debtKind == 'lend';
+      recordTransaction = isLend ? existing.linkedExpenseId != null : existing.linkedIncomeId != null;
+    }
+
+    final saved = await showGeneralDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss',
+      barrierColor: Colors.black54,
+      transitionDuration: Duration.zero,
+      pageBuilder: (dialogContext, anim1, anim2) {
+        final isLend = _debt?.debtKind == 'lend';
+        final media = MediaQuery.sizeOf(dialogContext);
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) => Dialog(
+            alignment: Alignment.center,
+            insetAnimationDuration: Duration.zero,
+            insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 520,
+                maxHeight: media.height * 0.8,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      existing == null
+                          ? (isLend ? 'Cho mượn thêm' : 'Nợ thêm')
+                          : (isLend ? 'Sửa đợt cho mượn thêm' : 'Sửa đợt nợ thêm'),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            TextField(
+                              controller: amountCtrl,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                                ThousandsSeparatorInputFormatter(),
+                              ],
+                              decoration: const InputDecoration(hintText: 'Số tiền'),
+                            ),
+                            AmountSuggestionChips(
+                              controller: amountCtrl,
+                              onSelected: (value) {
+                                amountCtrl.text = formatAmountInput(value.toString());
+                              },
+                            ),
+                            const SizedBox(height: 10),
+                            TextField(
+                              controller: noteCtrl,
+                              decoration: const InputDecoration(hintText: 'Ghi chú'),
+                            ),
+                            const SizedBox(height: 10),
+                            OutlinedButton.icon(
+                              onPressed: () async {
+                                final picked = await showDatePicker(
+                                  context: dialogContext,
+                                  initialDate: selectedDate,
+                                  firstDate: DateTime(2020),
+                                  lastDate: DateTime.now(),
+                                );
+                                if (picked != null) {
+                                  setDialogState(() => selectedDate = picked);
+                                }
+                              },
+                              icon: const Icon(Icons.calendar_month_outlined),
+                              label: Text('Ngày: ${formatDate(selectedDate)}'),
+                            ),
+                            const SizedBox(height: 10),
+                            SwitchListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(
+                                isLend
+                                    ? 'Ghi nhận giao dịch Chi tiêu'
+                                    : 'Ghi nhận giao dịch Thu nhập',
+                                style: const TextStyle(fontSize: 14),
+                              ),
+                              subtitle: Text(
+                                isLend
+                                    ? 'Tiền mượn thêm sẽ tự động trừ vào ví mặc định'
+                                    : 'Tiền nợ thêm sẽ tự động cộng vào ví mặc định',
+                                style: const TextStyle(fontSize: 12, color: Colors.black54),
+                              ),
+                              value: recordTransaction,
+                              onChanged: (val) {
+                                setDialogState(() => recordTransaction = val);
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextButton(
+                            onPressed: isSubmitting
+                                ? null
+                                : () => Navigator.pop(dialogContext, false),
+                            child: const Text('Hủy'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: () async {
+                              if (isSubmitting) return;
+                              final amount = parseAmountInput(
+                                amountCtrl.text.trim(),
+                              );
+                              if (amount == null || amount <= 0) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Số tiền không hợp lệ.'),
+                                  ),
+                                );
+                                return;
+                              }
+                              setDialogState(() => isSubmitting = true);
+                              try {
+                                if (existing == null) {
+                                  await _debtService.increaseDebt(
+                                    debtId: widget.debtId,
+                                    incrementAmount: amount,
+                                    date: selectedDate,
+                                    recordTransaction: recordTransaction,
+                                    note: noteCtrl.text.trim().isEmpty
+                                        ? null
+                                        : noteCtrl.text.trim(),
+                                  );
+                                } else {
+                                  await _debtService.updateIncrement(
+                                    debtId: widget.debtId,
+                                    index: existing.index,
+                                    newAmount: amount,
+                                    date: selectedDate,
+                                    note: noteCtrl.text.trim().isEmpty
+                                        ? null
+                                        : noteCtrl.text.trim(),
+                                    recordTransaction: recordTransaction,
+                                  );
+                                }
+                              } finally {
+                                if (dialogContext.mounted) {
+                                  setDialogState(() => isSubmitting = false);
+                                }
+                              }
+                              if (dialogContext.mounted) {
+                                Navigator.pop(dialogContext, true);
+                              }
+                            },
+                            child: isSubmitting
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text('Lưu'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    if (saved == true) {
+      await _load(showLoader: false);
+    }
+  }
+
+  Future<void> _showIncrementActions(DebtHistoryItem item) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Sửa'),
+              onTap: () => Navigator.pop(sheetContext, 'edit'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Colors.red),
+              title: const Text('Xóa'),
+              onTap: () => Navigator.pop(sheetContext, 'delete'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (action == 'edit') {
+      await _openIncreaseDebtPopup(existing: item);
+      return;
+    }
+    if (action != 'delete') return;
+
+    final impact = await _debtService.previewDeleteIncrementImpact(
+      linkedIncomeId: item.linkedIncomeId,
+      linkedExpenseId: item.linkedExpenseId,
+    );
+    if (!mounted) return;
+
+    String message;
+    if (impact < 0) {
+      message =
+          'Nếu xác nhận xóa đợt này, số dư ví sẽ bị trừ lại ${formatVnd(impact.abs())}. Hệ thống đồng thời hủy giao dịch thu nhập liên kết.';
+    } else if (impact > 0) {
+      message =
+          'Nếu xác nhận xóa đợt này, số dư ví sẽ được cộng lại ${formatVnd(impact)}. Giao dịch chi tiêu liên kết sẽ bị hủy.';
+    } else {
+      message =
+          'Nếu xác nhận xóa đợt này, hệ thống không phát sinh giao dịch bù trừ mới (không có giao dịch liên kết).';
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(item.isIncrement
+            ? (_debt?.debtKind == 'lend' ? 'Xóa đợt cho mượn thêm' : 'Xóa đợt nợ thêm')
+            : 'Xóa đợt giao dịch nợ'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Xóa'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      await _runMutation(() async {
+        await _debtService.deleteIncrement(widget.debtId, item.index);
+        await _load(showLoader: false);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Lỗi xóa: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final debt = _debt;
     final isLend = debt?.debtKind == 'lend';
+
+    final paymentsList = _payments.map((p) => DebtHistoryItem(
+          id: p.id,
+          amount: p.amount,
+          date: p.date,
+          createdAt: p.createdAt,
+          note: p.note,
+          updatedBy: p.updatedBy,
+          isIncrement: false,
+          index: -1,
+          hasTime: true,
+        ));
+
+    var incIndex = 0;
+    final incrementsList = (debt?.increments ?? []).map((inc) {
+      final currentIdx = incIndex++;
+      return DebtHistoryItem(
+        id: '',
+        amount: inc.amount,
+        date: inc.date,
+        createdAt: inc.createdAt ?? inc.date,
+        note: inc.note,
+        updatedBy: debt!.userId,
+        isIncrement: true,
+        index: currentIdx,
+        linkedIncomeId: inc.linkedIncomeId,
+        linkedExpenseId: inc.linkedExpenseId,
+        hasTime: inc.createdAt != null,
+      );
+    });
+
+    final historyItems = [...paymentsList, ...incrementsList]
+      ..sort((a, b) {
+        final dateCompare = b.date.compareTo(a.date);
+        if (dateCompare != 0) return dateCompare;
+        return b.createdAt.compareTo(a.createdAt);
+      });
+
     return Scaffold(
       appBar: AppBar(title: Text(isLend ? 'Chi tiết Cho mượn' : 'Chi tiết Nợ')),
       body: BusyOverlay(
@@ -628,7 +987,7 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                'Ghi chú: ${debt.isSplitBill ? (debt.splitBillInfo?.userNote ?? 'Không có') : (debt.note?.trim().isNotEmpty == true ? debt.note!.trim() : 'Không có')}',
+                                'Ghi chú: ${debt.displayNote?.trim().isNotEmpty == true ? debt.displayNote!.trim() : 'Không có'}',
                                 style: const TextStyle(
                                   fontSize: 12,
                                   color: Colors.black54,
@@ -704,30 +1063,40 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                     ),
                   ],
                   Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
                     child: Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
-                        isLend ? 'Lịch sử trả nợ' : 'Lịch sử trả nợ',
-                        style: TextStyle(fontWeight: FontWeight.bold),
+                        isLend ? 'Lịch sử giao dịch' : 'Lịch sử giao dịch',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                     ),
                   ),
                   const SizedBox(height: 8),
                   Expanded(
-                    child: _payments.isEmpty
+                    child: historyItems.isEmpty
                         ? Center(
                             child: Text(
                               isLend
-                                  ? 'Chưa có đợt thu hồi nào.'
-                                  : 'Chưa có đợt trả nợ nào.',
+                                  ? 'Chưa có lịch sử thu hồi hoặc cho mượn thêm.'
+                                  : 'Chưa có lịch sử trả nợ hoặc nợ thêm.',
                             ),
                           )
                         : ListView.builder(
                             padding: const EdgeInsets.fromLTRB(12, 4, 12, 90),
-                            itemCount: _payments.length,
+                            itemCount: historyItems.length,
                             itemBuilder: (context, index) {
-                              final p = _payments[index];
+                              final item = historyItems[index];
+                              final isOutflow = isLend ? item.isIncrement : !item.isIncrement;
+                              final leadingIcon = item.isIncrement
+                                  ? Icons.add_circle_outline
+                                  : Icons.timeline;
+                              final leadingBg = isOutflow
+                                  ? AppColors.dangerSoft
+                                  : AppColors.successSoft;
+                              final leadingFg = isOutflow
+                                  ? AppColors.danger
+                                  : AppColors.success;
                               return Container(
                                 margin: const EdgeInsets.only(bottom: 8),
                                 decoration: BoxDecoration(
@@ -752,28 +1121,41 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                                   ),
                                   leading: CircleAvatar(
                                     radius: 22,
-                                    backgroundColor: AppColors.successSoft,
-                                    child: const Icon(
-                                      Icons.timeline,
-                                      color: AppColors.success,
+                                    backgroundColor: leadingBg,
+                                    child: Icon(
+                                      leadingIcon,
+                                      color: leadingFg,
                                       size: 20,
                                     ),
                                   ),
-                                  onTap: () => _showPaymentActions(p),
+                                  onTap: () {
+                                    if (item.isIncrement) {
+                                      _showIncrementActions(item);
+                                    } else {
+                                      final p = _payments.firstWhere(
+                                        (pay) => pay.id == item.id,
+                                      );
+                                      _showPaymentActions(p);
+                                    }
+                                  },
                                   title: Column(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
-                                      const Text(
-                                        'Trả nợ',
-                                        style: TextStyle(
+                                      Text(
+                                        item.isIncrement
+                                            ? (isLend ? 'Cho mượn thêm' : 'Nợ thêm')
+                                            : (isLend ? 'Thu hồi nợ' : 'Trả nợ'),
+                                        style: const TextStyle(
                                           fontSize: 15,
                                           fontWeight: FontWeight.w600,
                                         ),
                                       ),
                                       const SizedBox(height: 2),
                                       Text(
-                                        '${formatDate(p.date)} ${formatTimeUtcPlus7(p.updatedAt)}',
+                                        !item.hasTime
+                                            ? formatDate(item.date)
+                                            : '${formatDate(item.date)} ${formatTimeUtcPlus7(item.createdAt)}',
                                         style: const TextStyle(
                                           fontSize: 12,
                                           color: Colors.black54,
@@ -781,7 +1163,7 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                                       ),
                                       const SizedBox(height: 2),
                                       Text(
-                                        'Người tạo: ${p.updatedBy != null ? _resolveMemberName(p.updatedBy!) : 'Không rõ'}',
+                                        'Người tạo: ${item.updatedBy != null ? _resolveMemberName(item.updatedBy!) : 'Không rõ'}',
                                         style: const TextStyle(
                                           fontSize: 12,
                                           color: Colors.black54,
@@ -789,7 +1171,7 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                                       ),
                                       const SizedBox(height: 2),
                                       Text(
-                                        'Ghi chú: ${p.note?.trim().isNotEmpty == true ? p.note!.trim() : 'Không có'}',
+                                        'Ghi chú: ${item.note?.trim().isNotEmpty == true ? item.note!.trim() : 'Không có'}',
                                         style: const TextStyle(
                                           fontSize: 12,
                                           color: Colors.black54,
@@ -802,11 +1184,15 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                                     crossAxisAlignment: CrossAxisAlignment.end,
                                     children: [
                                       Text(
-                                        '+${formatVnd(p.amount)}',
-                                        style: const TextStyle(
+                                        isOutflow
+                                            ? '-${formatVnd(item.amount)}'
+                                            : '+${formatVnd(item.amount)}',
+                                        style: TextStyle(
                                           fontSize: 14,
                                           fontWeight: FontWeight.w600,
-                                          color: AppColors.success,
+                                          color: isOutflow
+                                              ? AppColors.danger
+                                              : AppColors.success,
                                         ),
                                       ),
                                     ],
@@ -822,9 +1208,37 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
       floatingActionButton: (debt?.isSplitBill == true)
           ? null
           : FloatingActionButton(
-              onPressed: _openPaymentPopup,
+              onPressed: () => _onFabPressed(debt!),
               child: const Icon(Icons.add),
             ),
     );
   }
+}
+
+class DebtHistoryItem {
+  final String id;
+  final double amount;
+  final DateTime date;
+  final DateTime createdAt;
+  final String? note;
+  final String? updatedBy;
+  final bool isIncrement;
+  final int index;
+  final String? linkedIncomeId;
+  final String? linkedExpenseId;
+  final bool hasTime;
+
+  DebtHistoryItem({
+    required this.id,
+    required this.amount,
+    required this.date,
+    required this.createdAt,
+    this.note,
+    this.updatedBy,
+    required this.isIncrement,
+    required this.index,
+    this.linkedIncomeId,
+    this.linkedExpenseId,
+    required this.hasTime,
+  });
 }

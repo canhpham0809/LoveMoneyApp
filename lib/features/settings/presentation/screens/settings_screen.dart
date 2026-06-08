@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:shared_preferences/shared_preferences.dart';
+
 import 'package:flutter_app_demo/core/services/notification_service.dart';
 import 'package:flutter_app_demo/features/settings/data/services/settings_service.dart';
 import 'package:flutter_app_demo/features/settings/presentation/screens/debt_type_management_screen.dart';
@@ -34,12 +36,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   bool _notifEnabled = false;
   TimeOfDay _notifTime = const TimeOfDay(hour: 21, minute: 0);
+  bool _hideCompletedDebts = false;
 
   @override
   void initState() {
     super.initState();
     _load();
     _loadNotifSettings();
+    _loadDisplaySettings();
   }
 
   Future<void> _loadNotifSettings() async {
@@ -75,6 +79,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } else {
       await _notifService.saveTime(picked);
     }
+  }
+
+  Future<void> _loadDisplaySettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (mounted) {
+        setState(() {
+          _hideCompletedDebts = prefs.getBool('hide_completed_debts') ?? false;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _onHideCompletedDebtsToggle(bool value) async {
+    setState(() {
+      _hideCompletedDebts = value;
+    });
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('hide_completed_debts', value);
+    } catch (_) {}
   }
 
   Future<void> _load({bool showLoader = true}) async {
@@ -345,6 +370,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           },
                         ),
                       ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Cài đặt hiển thị',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Card(
+                    child: SwitchListTile(
+                      secondary: const Icon(Icons.visibility_off_outlined),
+                      title: const Text('Ẩn những khoản nợ đã trả hoàn tất'),
+                      value: _hideCompletedDebts,
+                      onChanged: _onHideCompletedDebtsToggle,
                     ),
                   ),
                   const SizedBox(height: 16),

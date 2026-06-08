@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class DashboardService {
@@ -265,7 +266,7 @@ class DashboardService {
       var debtsQuery = _db
           .from('debts')
           .select(
-            'id, name, debt_kind, original_amount, record_to_income, linked_income_id, linked_expense_id, start_date, user_id',
+            'id, name, debt_kind, original_amount, record_to_income, linked_income_id, linked_expense_id, start_date, user_id, note',
           )
           .eq('couple_id', coupleId)
           .eq('is_deleted', false);
@@ -274,7 +275,7 @@ class DashboardService {
       if (!_isMissingDebtKindColumn(e)) rethrow;
       var debtsQuery = _db
           .from('debts')
-          .select('id, name, original_amount, start_date, user_id')
+          .select('id, name, original_amount, start_date, user_id, note')
           .eq('couple_id', coupleId)
           .eq('is_deleted', false);
       allDebts = List<Map<String, dynamic>>.from(await debtsQuery)
@@ -400,6 +401,9 @@ class DashboardService {
 
     // Filter debts and count payments based on belongsToViewer and hasPaymentsThisMonth
     final filteredDebts = <Map<String, dynamic>>[];
+    final incrementsTotalThisMonthByDebtId = <String, double>{};
+    final extraSubItemsByDebtId = <String, List<Map<String, dynamic>>>{};
+
     for (final row in allDebts) {
       final debtId = row['id'] as String;
       final belongsToViewer = viewerUserId == null || row['user_id'] == viewerUserId;
@@ -417,10 +421,52 @@ class DashboardService {
           ? linkedExpenseId != null
           : recordToIncome;
 
-      // Show if: (created this month AND recorded AND belongs to viewer) OR has payments this month
-      if (!isCreatedThisMonth && !hasPaymentsThisMonth) continue;
-      if (isCreatedThisMonth && ((!isRecorded || !belongsToViewer) && !hasPaymentsThisMonth)) continue;
+      // Parse increments
+      final note = row['note'] as String?;
+      double incrementRecordedThisMonthTotal = 0;
+      final extraSubItems = <Map<String, dynamic>>[];
+      if (note != null && note.trim().startsWith('{')) {
+        try {
+          final data = jsonDecode(note);
+          if (data['increments'] is List) {
+            for (final inc in data['increments']) {
+              final incDate = inc['date'] as String?;
+              final incAmount = ((inc['amount'] as num?)?.toDouble() ?? 0);
+              final incIncomeId = inc['linked_income_id'] as String?;
+              final incExpenseId = inc['linked_expense_id'] as String?;
+              final isIncRecorded = debtKind == 'lend'
+                  ? incExpenseId != null
+                  : incIncomeId != null;
+              final isIncThisMonth = incDate != null &&
+                  incDate.compareTo(from) >= 0 &&
+                  incDate.compareTo(to) < 0;
 
+              if (isIncThisMonth && isIncRecorded) {
+                if (belongsToViewer) {
+                  incrementRecordedThisMonthTotal += incAmount;
+                  extraSubItems.add({
+                    'type': debtKind == 'lend' ? 'record_expense' : 'record_income',
+                    'amount': incAmount,
+                    'date': incDate,
+                    'description': (inc['note'] as String?)?.trim().isNotEmpty == true
+                        ? 'Tăng thêm: ${inc['note']}'
+                        : 'Mượn nợ thêm',
+                  });
+                }
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
+      final hasIncrementsThisMonth = incrementRecordedThisMonthTotal > 0;
+
+      // Show if: (created this month AND recorded AND belongs to viewer) OR has payments this month OR has increments this month
+      if (!isCreatedThisMonth && !hasPaymentsThisMonth && !hasIncrementsThisMonth) continue;
+      if (isCreatedThisMonth && ((!isRecorded || !belongsToViewer) && !hasPaymentsThisMonth && !hasIncrementsThisMonth)) continue;
+
+      incrementsTotalThisMonthByDebtId[debtId] = incrementRecordedThisMonthTotal;
+      extraSubItemsByDebtId[debtId] = extraSubItems;
       filteredDebts.add(row);
     }
 
@@ -539,25 +585,50 @@ class DashboardService {
           ? linkedExpenseId != null
           : recordToIncome;
       final payments = paymentsByDebtId[debtId] ?? const [];
-
-      // Only count original amount if the debt was recorded AND created this month AND belongs to the viewer
       final belongsToViewer = viewerUserId == null || row['user_id'] == viewerUserId;
-      final originalAmount = (isCreatedThisMonth && isRecorded && belongsToViewer)
-          ? ((row['original_amount'] as num?)?.toDouble() ?? 0)
-          : 0.0;
+
+      // Parse all-time increments to compute the base debt amount
+      double totalIncrementsAllTime = 0;
+      final note = row['note'] as String?;
+      if (note != null && note.trim().startsWith('{')) {
+        try {
+          final data = jsonDecode(note);
+          if (data['increments'] is List) {
+            for (final inc in data['increments']) {
+              totalIncrementsAllTime += ((inc['amount'] as num?)?.toDouble() ?? 0);
+            }
+          }
+        } catch (_) {}
+      }
+
       final debtOriginal = ((row['original_amount'] as num?)?.toDouble() ?? 0);
+      final baseOriginalAmount = (debtOriginal - totalIncrementsAllTime).clamp(0.0, double.infinity);
+
+      final baseOriginalAmountToShow = (isCreatedThisMonth && isRecorded && belongsToViewer)
+          ? baseOriginalAmount
+          : 0.0;
+
+      final incrementRecordedThisMonthTotal = incrementsTotalThisMonthByDebtId[debtId] ?? 0.0;
+      final summaryAmount = baseOriginalAmountToShow + incrementRecordedThisMonthTotal;
+
       final totalPaid = totalPaidAllTimeByDebtId[debtId] ?? 0;
       final amount = (debtOriginal - totalPaid).clamp(0.0, double.infinity);
 
       final subItems = <Map<String, dynamic>>[];
-      if (isCreatedThisMonth && isRecorded && originalAmount > 0) {
+      if (isCreatedThisMonth && isRecorded && baseOriginalAmountToShow > 0) {
         subItems.add({
           'type': debtKind == 'lend' ? 'record_expense' : 'record_income',
-          'amount': originalAmount,
+          'amount': baseOriginalAmountToShow,
           'date': startDate,
           'description': null,
         });
       }
+
+      // Add monthly increments
+      final extraSubItems = extraSubItemsByDebtId[debtId] ?? const <Map<String, dynamic>>[];
+      subItems.addAll(extraSubItems);
+
+      // Add payments
       subItems.addAll(
         payments.map((p) {
           return <String, dynamic>{
@@ -573,8 +644,9 @@ class DashboardService {
         'id': debtId,
         'name': (row['name'] as String?) ?? 'Khoản nợ',
         'amount': amount,
-        'summary_amount': originalAmount,
+        'summary_amount': summaryAmount,
         'sub_items': subItems,
+        'user_id': row['user_id'] as String?,
       };
 
       if (debtKind == 'lend') {

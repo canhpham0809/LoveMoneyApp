@@ -246,11 +246,34 @@ class DebtService {
   }) async {
     final existingDebt = await _db
         .from('debts')
-        .select('couple_id, user_id, linked_income_id, linked_expense_id')
+        .select('couple_id, user_id, linked_income_id, linked_expense_id, note')
         .eq('id', debtId)
         .single();
     var linkedIncomeId = existingDebt['linked_income_id'] as String?;
     var linkedExpenseId = existingDebt['linked_expense_id'] as String?;
+    final existingNoteStr = existingDebt['note'] as String?;
+    String? nextNoteStr = note;
+    if (existingNoteStr != null && existingNoteStr.trim().startsWith('{')) {
+      try {
+        final data = Map<String, dynamic>.from(jsonDecode(existingNoteStr));
+        data['user_note'] = note;
+        nextNoteStr = jsonEncode(data);
+      } catch (_) {}
+    }
+
+    // Compute the sum of all increments to prevent double-counting in ledger
+    double incrementsTotal = 0;
+    if (existingNoteStr != null && existingNoteStr.trim().startsWith('{')) {
+      try {
+        final data = jsonDecode(existingNoteStr);
+        if (data['increments'] is List) {
+          for (final inc in data['increments']) {
+            incrementsTotal += ((inc['amount'] as num?)?.toDouble() ?? 0);
+          }
+        }
+      } catch (_) {}
+    }
+    final baseAmount = (originalAmount - incrementsTotal).clamp(0.0, double.infinity);
 
     final dateIso = startDate.toIso8601String().substring(0, 10);
     final incomeDescription = _resolveDebtDescription(name, note, 'Nhận nợ');
@@ -279,7 +302,7 @@ class DebtService {
           'creditor_name': creditorName,
           'start_date': dateIso,
           'due_date': dueDate?.toIso8601String().substring(0, 10),
-          'note': note,
+          'note': nextNoteStr,
           'is_closed': nextRemaining <= 0,
         })
         .eq('id', debtId);
@@ -314,7 +337,7 @@ class DebtService {
                 'user_id': existingDebt['user_id'] as String,
                 'wallet_id': fallbackWalletId,
                 'income_source_id': incomeSourceId,
-                'amount': originalAmount,
+                'amount': baseAmount,
                 'description': incomeDescription,
                 'date': dateIso,
               })
@@ -339,7 +362,7 @@ class DebtService {
               'user_id': _db.auth.currentUser!.id,
               'wallet_id': defaultWalletId,
               'income_source_id': incomeSourceId,
-              'amount': originalAmount,
+              'amount': baseAmount,
               'description': incomeDescription,
               'is_from_transfer': false,
               'date': dateIso,
@@ -392,7 +415,7 @@ class DebtService {
                 'user_id': existingDebt['user_id'] as String,
                 'wallet_id': fallbackWalletId,
                 'category_id': categoryId,
-                'amount': originalAmount,
+                'amount': baseAmount,
                 'description': expenseDescription,
                 'date': dateIso,
               })
@@ -417,7 +440,7 @@ class DebtService {
               'user_id': _db.auth.currentUser!.id,
               'wallet_id': defaultWalletId,
               'category_id': categoryId,
-              'amount': originalAmount,
+              'amount': baseAmount,
               'description': expenseDescription,
               'date': dateIso,
             })
@@ -457,9 +480,28 @@ class DebtService {
     final nowIso = DateTime.now().toUtc().toIso8601String();
     final debt = await _db
         .from('debts')
-        .select('couple_id, user_id, name, linked_income_id, linked_expense_id')
+        .select('couple_id, user_id, name, linked_income_id, linked_expense_id, note')
         .eq('id', debtId)
         .single();
+
+    final note = debt['note'] as String?;
+    final extraIncomeIds = <String>[];
+    final extraExpenseIds = <String>[];
+    if (note != null && note.trim().startsWith('{')) {
+      try {
+        final data = jsonDecode(note);
+        if (data['increments'] is List) {
+          for (final inc in data['increments']) {
+            if (inc['linked_income_id'] is String) {
+              extraIncomeIds.add(inc['linked_income_id'] as String);
+            }
+            if (inc['linked_expense_id'] is String) {
+              extraExpenseIds.add(inc['linked_expense_id'] as String);
+            }
+          }
+        }
+      } catch (_) {}
+    }
 
     // Cả hai partner đều có quyền xóa nợ
 
@@ -478,6 +520,7 @@ class DebtService {
       ...paymentRows
           .map((row) => row['linked_income_id'] as String?)
           .whereType<String>(),
+      ...extraIncomeIds,
     };
 
     if (incomeIdsToDelete.isNotEmpty) {
@@ -488,13 +531,20 @@ class DebtService {
           .eq('is_deleted', false);
     }
 
-    final linkedExpenseId = debt['linked_expense_id'] as String?;
-    if (linkedExpenseId != null) {
-      await _db
-          .from('expenses')
-          .update({'is_deleted': true, 'deleted_at': nowIso})
-          .eq('id', linkedExpenseId)
-          .eq('is_deleted', false);
+    final expenseIdsToDelete = <String>{
+      if (debt['linked_expense_id'] is String)
+        debt['linked_expense_id'] as String,
+      ...extraExpenseIds,
+    };
+
+    if (expenseIdsToDelete.isNotEmpty) {
+      for (final expId in expenseIdsToDelete) {
+        await _db
+            .from('expenses')
+            .update({'is_deleted': true, 'deleted_at': nowIso})
+            .eq('id', expId)
+            .eq('is_deleted', false);
+      }
     }
 
     await _db
@@ -512,7 +562,7 @@ class DebtService {
   Future<double> previewDeleteDebtImpact(String debtId) async {
     final debt = await _db
         .from('debts')
-        .select('linked_income_id, linked_expense_id')
+        .select('linked_income_id, linked_expense_id, note')
         .eq('id', debtId)
         .single();
 
@@ -529,6 +579,33 @@ class DebtService {
     final linkedExpenseAmount = await _getActiveExpenseAmount(
       debtRow['linked_expense_id'] as String?,
     );
+
+    final note = debtRow['note'] as String?;
+    double extraIncomeTotal = 0;
+    double extraExpenseTotal = 0;
+    if (note != null && note.trim().startsWith('{')) {
+      try {
+        final data = jsonDecode(note);
+        if (data['increments'] is List) {
+          final incIncomeIds = <String>[];
+          final incExpenseIds = <String>[];
+          for (final inc in data['increments']) {
+            if (inc['linked_income_id'] is String) {
+              incIncomeIds.add(inc['linked_income_id'] as String);
+            }
+            if (inc['linked_expense_id'] is String) {
+              incExpenseIds.add(inc['linked_expense_id'] as String);
+            }
+          }
+          if (incIncomeIds.isNotEmpty) {
+            extraIncomeTotal = await _getActiveIncomeTotalByIds(incIncomeIds);
+          }
+          if (incExpenseIds.isNotEmpty) {
+            extraExpenseTotal = await _getActiveExpenseTotalByIds(incExpenseIds);
+          }
+        }
+      } catch (_) {}
+    }
 
     final paymentRows = await _db
         .from('debt_payments')
@@ -547,9 +624,9 @@ class DebtService {
     final paymentExpenseTotal = await _getActiveDebtPaymentExpenseTotal(debtId);
 
     return linkedExpenseAmount +
+        extraExpenseTotal +
         paymentExpenseTotal -
-        linkedIncomeAmount -
-        paymentIncomeTotal;
+        (linkedIncomeAmount + extraIncomeTotal + paymentIncomeTotal);
   }
 
   Future<double> _getActiveDebtPaymentExpenseTotal(String debtId) async {
@@ -1126,6 +1203,365 @@ class DebtService {
       } catch (_) {}
     }
     return note?.trim().isNotEmpty == true ? note!.trim() : '$defaultPrefix: $name';
+  }
+
+  Future<void> increaseDebt({
+    required String debtId,
+    required double incrementAmount,
+    required DateTime date,
+    required bool recordTransaction,
+    String? note,
+  }) async {
+    final debt = await _db
+        .from('debts')
+        .select()
+        .eq('id', debtId)
+        .single();
+
+    final currentOriginal = (debt['original_amount'] as num).toDouble();
+    final newOriginal = currentOriginal + incrementAmount;
+
+    String? linkedIncomeId;
+    String? linkedExpenseId;
+    final coupleId = debt['couple_id'] as String;
+    final userId = _db.auth.currentUser!.id;
+    final debtKind = debt['debt_kind'] as String? ?? 'debt';
+    final name = debt['name'] as String;
+
+    final defaultWalletId = await _resolveDefaultWalletId(coupleId);
+    if (recordTransaction) {
+      if (defaultWalletId == null) {
+        throw Exception('Chưa có ví mặc định để ghi nhận giao dịch.');
+      }
+      final dateIso = date.toIso8601String().substring(0, 10);
+      if (debtKind == 'debt') {
+        final incomeSourceId = await _ensureIncomeSource(
+          coupleId,
+          _debtInitIncomeSource,
+          icon: 'request_quote',
+        );
+        final incomeRow = await _db
+            .from('incomes')
+            .insert({
+              'couple_id': coupleId,
+              'user_id': userId,
+              'wallet_id': defaultWalletId,
+              'income_source_id': incomeSourceId,
+              'amount': incrementAmount,
+              'description': note?.trim().isNotEmpty == true
+                  ? note!.trim()
+                  : 'Nợ thêm: $name',
+              'is_from_transfer': false,
+              'date': dateIso,
+            })
+            .select('id')
+            .single();
+        linkedIncomeId = incomeRow['id'] as String;
+      } else {
+        final categoryId = await _ensureExpenseCategory(
+          coupleId,
+          _debtLendExpenseCategory,
+          icon: 'payments',
+          color: '#F97316',
+        );
+        final expenseRow = await _db
+            .from('expenses')
+            .insert({
+              'couple_id': coupleId,
+              'user_id': userId,
+              'wallet_id': defaultWalletId,
+              'category_id': categoryId,
+              'amount': incrementAmount,
+              'description': note?.trim().isNotEmpty == true
+                  ? note!.trim()
+                  : 'Cho mượn thêm: $name',
+              'date': dateIso,
+            })
+            .select('id')
+            .single();
+        linkedExpenseId = expenseRow['id'] as String;
+      }
+    }
+
+    final existingNote = debt['note'] as String?;
+    Map<String, dynamic> noteData = {};
+    if (existingNote != null && existingNote.trim().startsWith('{')) {
+      try {
+        noteData = jsonDecode(existingNote);
+      } catch (_) {
+        noteData = {'user_note': existingNote};
+      }
+    } else {
+      noteData = {'user_note': existingNote};
+    }
+
+    final incrementsList = List<dynamic>.from(noteData['increments'] ?? []);
+    incrementsList.add({
+      'amount': incrementAmount,
+      'date': date.toIso8601String().substring(0, 10),
+      'note': note?.trim(),
+      'linked_income_id': linkedIncomeId,
+      'linked_expense_id': linkedExpenseId,
+      'created_at': DateTime.now().toUtc().toIso8601String(),
+    });
+    noteData['increments'] = incrementsList;
+
+    await _db
+        .from('debts')
+        .update({
+          'original_amount': newOriginal,
+          'note': jsonEncode(noteData),
+        })
+        .eq('id', debtId);
+
+    await _recalculateDebtRemaining(debtId);
+  }
+
+  Future<void> deleteIncrement(String debtId, int index) async {
+    final debt = await _db
+        .from('debts')
+        .select('original_amount, note')
+        .eq('id', debtId)
+        .single();
+
+    final note = debt['note'] as String?;
+    if (note == null || !note.trim().startsWith('{')) return;
+
+    final data = Map<String, dynamic>.from(jsonDecode(note));
+    if (data['increments'] is! List) return;
+
+    final incrementsList = List<Map<String, dynamic>>.from(
+        (data['increments'] as List).map((e) => Map<String, dynamic>.from(e)));
+    if (index < 0 || index >= incrementsList.length) return;
+
+    final removed = incrementsList.removeAt(index);
+    data['increments'] = incrementsList;
+
+    final currentOriginal = (debt['original_amount'] as num).toDouble();
+    final newOriginal = (currentOriginal - (removed['amount'] as num).toDouble())
+        .clamp(0.0, currentOriginal);
+
+    final linkedIncomeId = removed['linked_income_id'] as String?;
+    final linkedExpenseId = removed['linked_expense_id'] as String?;
+    final nowIso = DateTime.now().toUtc().toIso8601String();
+
+    await _db
+        .from('debts')
+        .update({
+          'original_amount': newOriginal,
+          'note': jsonEncode(data),
+        })
+        .eq('id', debtId);
+
+    if (linkedIncomeId != null) {
+      await _db
+          .from('incomes')
+          .update({'is_deleted': true, 'deleted_at': nowIso})
+          .eq('id', linkedIncomeId)
+          .eq('is_deleted', false);
+    }
+    if (linkedExpenseId != null) {
+      await _db
+          .from('expenses')
+          .update({'is_deleted': true, 'deleted_at': nowIso})
+          .eq('id', linkedExpenseId)
+          .eq('is_deleted', false);
+    }
+
+    await _recalculateDebtRemaining(debtId);
+  }
+
+  Future<void> updateIncrement({
+    required String debtId,
+    required int index,
+    required double newAmount,
+    required DateTime date,
+    required String? note,
+    required bool recordTransaction,
+  }) async {
+    final debt = await _db
+        .from('debts')
+        .select('name, original_amount, note, couple_id, user_id, debt_kind')
+        .eq('id', debtId)
+        .single();
+
+    final existingNote = debt['note'] as String?;
+    if (existingNote == null || !existingNote.trim().startsWith('{')) return;
+
+    final data = Map<String, dynamic>.from(jsonDecode(existingNote));
+    if (data['increments'] is! List) return;
+
+    final incrementsList = List<Map<String, dynamic>>.from(
+        (data['increments'] as List).map((e) => Map<String, dynamic>.from(e)));
+    if (index < 0 || index >= incrementsList.length) return;
+
+    final oldIncrement = incrementsList[index];
+    final oldAmount = (oldIncrement['amount'] as num).toDouble();
+    var linkedIncomeId = oldIncrement['linked_income_id'] as String?;
+    var linkedExpenseId = oldIncrement['linked_expense_id'] as String?;
+    final dateIso = date.toIso8601String().substring(0, 10);
+    final isLend = debt['debt_kind'] == 'lend';
+    final name = debt['name'] as String? ?? '';
+    final coupleId = debt['couple_id'] as String;
+    final userId = debt['user_id'] as String;
+    final nowIso = DateTime.now().toUtc().toIso8601String();
+
+    final wasRecorded = isLend ? linkedExpenseId != null : linkedIncomeId != null;
+
+    if (recordTransaction) {
+      if (wasRecorded) {
+        if (linkedIncomeId != null) {
+          final description = note?.trim().isNotEmpty == true
+              ? note!.trim()
+              : 'Nợ thêm: $name';
+          await _db
+              .from('incomes')
+              .update({
+                'amount': newAmount,
+                'date': dateIso,
+                'description': description,
+              })
+              .eq('id', linkedIncomeId)
+              .eq('is_deleted', false);
+        }
+        if (linkedExpenseId != null) {
+          final description = note?.trim().isNotEmpty == true
+              ? note!.trim()
+              : 'Cho mượn thêm: $name';
+          await _db
+              .from('expenses')
+              .update({
+                'amount': newAmount,
+                'date': dateIso,
+                'description': description,
+              })
+              .eq('id', linkedExpenseId)
+              .eq('is_deleted', false);
+        }
+      } else {
+        final defaultWalletId = await _resolveDefaultWalletId(coupleId);
+        if (defaultWalletId == null) {
+          throw Exception('Chưa có ví mặc định để ghi nhận giao dịch.');
+        }
+        if (!isLend) {
+          final incomeSourceId = await _ensureIncomeSource(
+            coupleId,
+            _debtInitIncomeSource,
+            icon: 'request_quote',
+          );
+          final incomeRow = await _db
+              .from('incomes')
+              .insert({
+                'couple_id': coupleId,
+                'user_id': userId,
+                'wallet_id': defaultWalletId,
+                'income_source_id': incomeSourceId,
+                'amount': newAmount,
+                'description': note?.trim().isNotEmpty == true
+                    ? note!.trim()
+                    : 'Nợ thêm: $name',
+                'is_from_transfer': false,
+                'date': dateIso,
+              })
+              .select('id')
+              .single();
+          linkedIncomeId = incomeRow['id'] as String;
+        } else {
+          final categoryId = await _ensureExpenseCategory(
+            coupleId,
+            _debtLendExpenseCategory,
+            icon: 'payments',
+            color: '#F97316',
+          );
+          final expenseRow = await _db
+              .from('expenses')
+              .insert({
+                'couple_id': coupleId,
+                'user_id': userId,
+                'wallet_id': defaultWalletId,
+                'category_id': categoryId,
+                'amount': newAmount,
+                'description': note?.trim().isNotEmpty == true
+                    ? note!.trim()
+                    : 'Cho mượn thêm: $name',
+                'date': dateIso,
+              })
+              .select('id')
+              .single();
+          linkedExpenseId = expenseRow['id'] as String;
+        }
+      }
+    } else {
+      if (wasRecorded) {
+        if (linkedIncomeId != null) {
+          await _db
+              .from('incomes')
+              .update({'is_deleted': true, 'deleted_at': nowIso})
+              .eq('id', linkedIncomeId)
+              .eq('is_deleted', false);
+          linkedIncomeId = null;
+        }
+        if (linkedExpenseId != null) {
+          await _db
+              .from('expenses')
+              .update({'is_deleted': true, 'deleted_at': nowIso})
+              .eq('id', linkedExpenseId)
+              .eq('is_deleted', false);
+          linkedExpenseId = null;
+        }
+      }
+    }
+
+    // Update the values in the JSON structure
+    oldIncrement['amount'] = newAmount;
+    oldIncrement['date'] = dateIso;
+    oldIncrement['note'] = note?.trim();
+    oldIncrement['linked_income_id'] = linkedIncomeId;
+    oldIncrement['linked_expense_id'] = linkedExpenseId;
+    oldIncrement['created_at'] ??= DateTime.now().toUtc().toIso8601String();
+
+    // Calculate new total original amount
+    final currentOriginal = (debt['original_amount'] as num).toDouble();
+    final newOriginal = (currentOriginal - oldAmount + newAmount).clamp(0.0, double.infinity);
+
+    // Update the database record
+    await _db
+        .from('debts')
+        .update({
+          'original_amount': newOriginal,
+          'note': jsonEncode(data),
+        })
+        .eq('id', debtId);
+
+    await _recalculateDebtRemaining(debtId);
+  }
+
+  Future<double> previewDeleteIncrementImpact({
+    String? linkedIncomeId,
+    String? linkedExpenseId,
+  }) async {
+    if (linkedIncomeId != null) {
+      final amount = await _getActiveIncomeAmount(linkedIncomeId);
+      return -amount;
+    }
+    if (linkedExpenseId != null) {
+      final amount = await _getActiveExpenseAmount(linkedExpenseId);
+      return amount;
+    }
+    return 0;
+  }
+
+  Future<double> _getActiveExpenseTotalByIds(List<String> expenseIds) async {
+    if (expenseIds.isEmpty) return 0;
+    final rows = await _db
+        .from('expenses')
+        .select('amount')
+        .inFilter('id', expenseIds)
+        .eq('is_deleted', false);
+    return rows.fold<double>(
+      0,
+      (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0),
+    );
   }
 
   Future<void> _recalculateDebtRemaining(String debtId) async {
