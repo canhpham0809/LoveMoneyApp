@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'app_colors.dart';
 import 'app_radius.dart';
@@ -75,7 +76,7 @@ class AppTheme {
           ),
           backgroundColor: AppColors.tealDeep,
           foregroundColor: Colors.white,
-          textStyle: const TextStyle(
+          textStyle: GoogleFonts.roboto(
             fontWeight: FontWeight.w800,
             fontSize: 16,
             letterSpacing: 0.5,
@@ -94,7 +95,7 @@ class AppTheme {
           ),
           side: const BorderSide(color: AppColors.border, width: 1.5),
           foregroundColor: scheme.onSurface,
-          textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+          textStyle: GoogleFonts.roboto(fontWeight: FontWeight.w700, fontSize: 15),
         ),
       ),
       listTileTheme: ListTileThemeData(
@@ -114,14 +115,14 @@ class AppTheme {
         ),
         elevation: 4,
       ),
-      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+      bottomNavigationBarTheme: BottomNavigationBarThemeData(
         type: BottomNavigationBarType.fixed,
         showUnselectedLabels: true,
         selectedItemColor: AppColors.tealDeep,
         unselectedItemColor: AppColors.textMuted,
-        selectedLabelStyle: TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+        selectedLabelStyle: GoogleFonts.roboto(fontWeight: FontWeight.w800, fontSize: 12),
         unselectedLabelStyle:
-            TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+            GoogleFonts.roboto(fontWeight: FontWeight.w600, fontSize: 12),
         backgroundColor: Colors.white,
         elevation: 8,
       ),

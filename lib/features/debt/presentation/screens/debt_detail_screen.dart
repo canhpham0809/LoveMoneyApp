@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_app_demo/core/theme/app_colors.dart';
 import 'package:flutter_app_demo/core/utils/amount_input.dart';
@@ -130,7 +131,7 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (_scheduleScrollController.hasClients) {
               // Subtract 16px padding so the card top is not cut off
-              final targetOffset = (nextUnpaidIndex * 110.0);
+              final targetOffset = (nextUnpaidIndex * 103.0) - 16.0;
               _scheduleScrollController.animateTo(
                 targetOffset.clamp(0.0, _scheduleScrollController.position.maxScrollExtent),
                 duration: const Duration(milliseconds: 400),
@@ -1443,7 +1444,7 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                               padding: const EdgeInsets.symmetric(vertical: 10),
                             ),
                             onPressed: () => _payBankLoanPeriod(nextUnpaid.monthIndex),
-                            child: const Text('Thanh toán kỳ này', style: TextStyle(fontWeight: FontWeight.bold)),
+                            child: Text('Thanh toán kỳ này', style: GoogleFonts.roboto(fontWeight: FontWeight.bold)),
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -1456,7 +1457,7 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                               padding: const EdgeInsets.symmetric(vertical: 10),
                             ),
                             onPressed: () => _openBankLoanPaymentPopup(monthIndex: nextUnpaid.monthIndex, isPrepayment: true),
-                            child: const Text('Trả gốc trước hạn', style: TextStyle(fontWeight: FontWeight.bold)),
+                            child: Text('Trả gốc trước hạn', style: GoogleFonts.roboto(fontWeight: FontWeight.bold)),
                           ),
                         ),
                       ],
@@ -1547,7 +1548,7 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                                   padding: const EdgeInsets.only(top: 4),
                                   child: Text(
                                     'Trả thêm gốc: ${formatVnd(item.earlyPrincipal)} (Phạt: ${formatVnd(item.penaltyFee)})',
-                                    style: const TextStyle(fontSize: 11, color: Color(0xFFB45309), fontWeight: FontWeight.bold),
+                                    style: GoogleFonts.roboto(fontSize: 11, color: const Color(0xFFB45309), fontWeight: FontWeight.bold),
                                   ),
                                 ),
                             ],
@@ -1719,7 +1720,7 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                           ? 'Trả gốc trước hạn kỳ $monthIndex'
                           : 'Thanh toán kỳ thứ $monthIndex',
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
+                      style: GoogleFonts.roboto(
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
                       ),
@@ -1732,7 +1733,7 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             if (!isPrepayment) ...[
-                              Text('Tiền gốc: ${formatVnd(standardPrincipal)}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                              Text('Tiền gốc: ${formatVnd(standardPrincipal)}', style: GoogleFonts.roboto(fontSize: 14, fontWeight: FontWeight.w500)),
                               const SizedBox(height: 4),
                               Text('Tiền lãi: ${formatVnd(standardInterest)}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
                               const SizedBox(height: 4),

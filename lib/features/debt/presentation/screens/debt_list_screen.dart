@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -1159,7 +1160,7 @@ class _DebtFormDialogState extends State<_DebtFormDialog> {
               Text(
                 widget.existing == null ? 'Thêm nợ' : 'Sửa nợ',
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: GoogleFonts.roboto(
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
                 ),
@@ -1282,9 +1283,9 @@ class _DebtFormDialogState extends State<_DebtFormDialog> {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        const Text(
+                        Text(
                           'Cấu hình Lãi suất theo thời gian:',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                          style: GoogleFonts.roboto(fontWeight: FontWeight.bold, fontSize: 13),
                         ),
                         const SizedBox(height: 4),
                         ListView.builder(

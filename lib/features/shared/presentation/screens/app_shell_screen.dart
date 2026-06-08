@@ -582,7 +582,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
                   },
                   icon: const Icon(Icons.logout),
                   label: const Text('Đăng xuất'),
-                ),
+                  ),
               ],
             ),
           ),
