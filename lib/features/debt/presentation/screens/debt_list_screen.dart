@@ -43,6 +43,7 @@ class _DebtFormPayload {
   final DateTime startDate;
   final DateTime? dueDate;
   final String? note;
+  final double prePaidPrincipal;
 
   const _DebtFormPayload({
     required this.debtTypeId,
@@ -55,6 +56,7 @@ class _DebtFormPayload {
     required this.startDate,
     required this.dueDate,
     required this.note,
+    this.prePaidPrincipal = 0.0,
   });
 }
 
@@ -291,11 +293,21 @@ class _DebtListScreenState extends State<DebtListScreen> {
             dueDate: payload.dueDate,
             note: payload.note,
           );
+          // Adjust remaining_amount for pre-paid periods
+          DebtModel effectiveDebt = created;
+          if (payload.prePaidPrincipal > 0) {
+            final newRemaining = (payload.originalAmount - payload.prePaidPrincipal).clamp(0.0, payload.originalAmount);
+            await Supabase.instance.client
+                .from('debts')
+                .update({'remaining_amount': newRemaining})
+                .eq('id', created.id);
+            effectiveDebt = await _service.getDebtById(created.id);
+          }
           if (!mounted) return;
           setState(() {
-            _items.insert(0, created);
-            _manualOrderIds.remove(created.id);
-            _manualOrderIds.insert(0, created.id);
+            _items.insert(0, effectiveDebt);
+            _manualOrderIds.remove(effectiveDebt.id);
+            _manualOrderIds.insert(0, effectiveDebt.id);
             _items = _applyDebtOrder(_items);
           });
         } else {
@@ -972,6 +984,13 @@ class _DebtFormDialogState extends State<_DebtFormDialog> {
     TextEditingController(),
   ];
 
+  // Bank loan fields
+  bool _isBankLoan = false;
+  final _monthsCtrl = TextEditingController(text: '360');
+  final _repaymentDayCtrl = TextEditingController(text: '15');
+  final _startingPeriodCtrl = TextEditingController(text: '1');
+  List<Map<String, dynamic>> _interestPeriods = [];
+
   List<Map<String, dynamic>> _debtTypes = [];
   bool _isLoading = true;
   String? _selectedDebtTypeId;
@@ -981,6 +1000,18 @@ class _DebtFormDialogState extends State<_DebtFormDialog> {
   bool _isSplitBill = false;
   late DateTime _startDate;
   DateTime? _dueDate;
+
+  void _updateInterestRulesSequencing() {
+    var nextFrom = 1;
+    for (var i = 0; i < _interestPeriods.length; i++) {
+      _interestPeriods[i]['from'] = nextFrom;
+      final to = _interestPeriods[i]['to'] as int? ?? nextFrom + 11;
+      if (to < nextFrom) {
+        _interestPeriods[i]['to'] = nextFrom + 11;
+      }
+      nextFrom = (_interestPeriods[i]['to'] as int) + 1;
+    }
+  }
 
   @override
   void initState() {
@@ -992,24 +1023,50 @@ class _DebtFormDialogState extends State<_DebtFormDialog> {
     _shouldRecordToExpense = widget.existing?.linkedExpenseId != null;
 
     if (widget.existing != null) {
-      final isSplit = widget.existing!.isSplitBill;
-      _isSplitBill = isSplit;
-      if (isSplit) {
-        final info = widget.existing!.splitBillInfo!;
-        _personCtrl.text = widget.existing!.name;
-        _amountCtrl.text = formatAmountInput(info.totalBill.toStringAsFixed(0));
-        _peopleCountCtrl.text = info.peopleCount.toString();
-        _noteCtrl.text = info.userNote ?? '';
-        _shareNameControllers = info.shares
-            .map((s) => TextEditingController(text: s.name))
-            .toList();
-      } else {
+      final isBank = widget.existing!.isBankLoan;
+      _isBankLoan = isBank;
+      if (isBank) {
+        final info = widget.existing!.bankLoanInfo!;
         _personCtrl.text = widget.existing!.name;
         _amountCtrl.text = formatAmountInput(
           widget.existing!.originalAmount.toStringAsFixed(0),
         );
+        _monthsCtrl.text = info.totalMonths.toString();
+        _repaymentDayCtrl.text = info.repaymentDay.toString();
+        _interestPeriods = info.interestRules.map((rule) {
+          return {
+            'from': rule.fromMonth,
+            'to': rule.toMonth,
+            'rateCtrl': TextEditingController(text: rule.rate.toString()),
+          };
+        }).toList();
         _noteCtrl.text = widget.existing!.displayNote ?? '';
+      } else {
+        final isSplit = widget.existing!.isSplitBill;
+        _isSplitBill = isSplit;
+        if (isSplit) {
+          final info = widget.existing!.splitBillInfo!;
+          _personCtrl.text = widget.existing!.name;
+          _amountCtrl.text = formatAmountInput(info.totalBill.toStringAsFixed(0));
+          _peopleCountCtrl.text = info.peopleCount.toString();
+          _noteCtrl.text = info.userNote ?? '';
+          _shareNameControllers = info.shares
+              .map((s) => TextEditingController(text: s.name))
+              .toList();
+        } else {
+          _personCtrl.text = widget.existing!.name;
+          _amountCtrl.text = formatAmountInput(
+            widget.existing!.originalAmount.toStringAsFixed(0),
+          );
+          _noteCtrl.text = widget.existing!.displayNote ?? '';
+        }
       }
+    } else {
+      _interestPeriods = [
+        {'from': 1, 'to': 12, 'rateCtrl': TextEditingController(text: '5.8')},
+        {'from': 13, 'to': 24, 'rateCtrl': TextEditingController(text: '6.8')},
+        {'from': 25, 'to': 360, 'rateCtrl': TextEditingController(text: '10.0')},
+      ];
     }
 
     _loadData();
@@ -1068,8 +1125,14 @@ class _DebtFormDialogState extends State<_DebtFormDialog> {
     _amountCtrl.dispose();
     _noteCtrl.dispose();
     _peopleCountCtrl.dispose();
+    _monthsCtrl.dispose();
+    _repaymentDayCtrl.dispose();
+    _startingPeriodCtrl.dispose();
     for (final ctrl in _shareNameControllers) {
       ctrl.dispose();
+    }
+    for (final period in _interestPeriods) {
+      (period['rateCtrl'] as TextEditingController).dispose();
     }
     super.dispose();
   }
@@ -1108,6 +1171,25 @@ class _DebtFormDialogState extends State<_DebtFormDialog> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      if (_selectedDebtKind == 'debt' && widget.existing == null) ...[
+                        SwitchListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Vay trả góp ngân hàng'),
+                          subtitle: const Text('Tính gốc lãi, phí phạt & lịch trả nợ'),
+                          value: _isBankLoan,
+                          onChanged: (v) {
+                            setState(() {
+                              _isBankLoan = v;
+                              if (v) {
+                                _personCtrl.text = _personCtrl.text.isEmpty ? 'Ngân hàng' : _personCtrl.text;
+                                _shouldRecordToIncome = true;
+                              }
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 8),
+                      ],
                       if (_selectedDebtKind == 'lend' && widget.existing == null) ...[
                         SwitchListTile(
                           dense: true,
@@ -1159,6 +1241,133 @@ class _DebtFormDialogState extends State<_DebtFormDialog> {
                           _amountCtrl.text = formatAmountInput(value.toString());
                         },
                       ),
+                      if (_isBankLoan) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _monthsCtrl,
+                                keyboardType: TextInputType.number,
+                                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                decoration: const InputDecoration(
+                                  labelText: 'Kỳ hạn vay (tháng)',
+                                  hintText: 'Ví dụ: 360',
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: TextField(
+                                controller: _repaymentDayCtrl,
+                                keyboardType: TextInputType.number,
+                                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                decoration: const InputDecoration(
+                                  labelText: 'Ngày thanh toán hàng tháng',
+                                  hintText: 'Ví dụ: 15',
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: _startingPeriodCtrl,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                          decoration: const InputDecoration(
+                            labelText: 'Kỳ hiện tại đang chờ thanh toán',
+                            hintText: 'Ví dụ: 1 (nếu chưa trả kỳ nào), hoặc 5 (đã trả 4 kỳ)',
+                            helperText: 'Hệ thống sẽ đánh dấu các kỳ trước là đã thanh toán',
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'Cấu hình Lãi suất theo thời gian:',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                        const SizedBox(height: 4),
+                        ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: _interestPeriods.length,
+                          itemBuilder: (context, index) {
+                            final period = _interestPeriods[index];
+                            final from = period['from'] as int;
+                            final rateCtrl = period['rateCtrl'] as TextEditingController;
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 8.0),
+                              child: Row(
+                                children: [
+                                  Text('Tháng $from - ', style: const TextStyle(fontSize: 13)),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    flex: 2,
+                                    child: TextField(
+                                      keyboardType: TextInputType.number,
+                                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                      decoration: const InputDecoration(
+                                        labelText: 'Đến tháng',
+                                        isDense: true,
+                                      ),
+                                      controller: TextEditingController(text: period['to']?.toString() ?? '')
+                                        ..addListener(() {
+                                          // Keep value
+                                        }),
+                                      onChanged: (val) {
+                                        final valInt = int.tryParse(val) ?? (period['to'] as int? ?? 0);
+                                        period['to'] = valInt;
+                                        _updateInterestRulesSequencing();
+                                      },
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    flex: 2,
+                                    child: TextField(
+                                      controller: rateCtrl,
+                                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                      decoration: const InputDecoration(
+                                        labelText: 'Lãi suất % / năm',
+                                        isDense: true,
+                                      ),
+                                    ),
+                                  ),
+                                  if (_interestPeriods.length > 1)
+                                    IconButton(
+                                      icon: const Icon(Icons.delete_outline, color: Colors.red),
+                                      onPressed: () {
+                                        setState(() {
+                                          final removed = _interestPeriods.removeAt(index);
+                                          (removed['rateCtrl'] as TextEditingController).dispose();
+                                          _updateInterestRulesSequencing();
+                                        });
+                                      },
+                                    ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                        TextButton.icon(
+                          onPressed: () {
+                            setState(() {
+                              final lastTo = _interestPeriods.isNotEmpty
+                                  ? (_interestPeriods.last['to'] as int? ?? 0)
+                                  : 0;
+                              final totalMonths = int.tryParse(_monthsCtrl.text) ?? 360;
+                              _interestPeriods.add({
+                                'from': lastTo + 1,
+                                'to': totalMonths,
+                                'rateCtrl': TextEditingController(text: '10.0'),
+                              });
+                            });
+                          },
+                          icon: const Icon(Icons.add, size: 16),
+                          label: const Text('Thêm khoảng lãi suất', style: TextStyle(fontSize: 12)),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
                       if (_isSplitBill) ...[
                         const SizedBox(height: 8),
                         TextField(
@@ -1448,6 +1657,116 @@ class _DebtFormDialogState extends State<_DebtFormDialog> {
                                     startDate: _startDate,
                                     dueDate: _dueDate,
                                     note: noteString,
+                                  ),
+                                );
+                              } else if (_isBankLoan) {
+                                final total = parseAmountInput(_amountCtrl.text.trim());
+                                final totalMonths = int.tryParse(_monthsCtrl.text.trim()) ?? 0;
+                                final repaymentDay = int.tryParse(_repaymentDayCtrl.text.trim()) ?? 0;
+
+                                if (_personCtrl.text.trim().isEmpty ||
+                                    total == null ||
+                                    total <= 0 ||
+                                    totalMonths <= 0 ||
+                                    repaymentDay < 1 ||
+                                    repaymentDay > 31) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Vui lòng nhập đầy đủ và hợp lệ các thông tin khoản vay.'),
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                final rules = <InterestRateRule>[];
+                                for (var i = 0; i < _interestPeriods.length; i++) {
+                                  final from = _interestPeriods[i]['from'] as int;
+                                  var to = _interestPeriods[i]['to'] as int? ?? totalMonths;
+                                  final rateStr = (_interestPeriods[i]['rateCtrl'] as TextEditingController).text.trim();
+                                  final rate = double.tryParse(rateStr) ?? 10.0;
+
+                                  if (to < from) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Khoảng thời gian thứ ${i + 1} không hợp lệ (Tháng đến nhỏ hơn Tháng từ).'),
+                                      ),
+                                    );
+                                    return;
+                                  }
+
+                                  if (i == _interestPeriods.length - 1 && to < totalMonths) {
+                                    to = totalMonths;
+                                  }
+
+                                  rules.add(InterestRateRule(
+                                    fromMonth: from,
+                                    toMonth: to,
+                                    rate: rate,
+                                  ));
+                                }
+
+                                final startingPeriod = (int.tryParse(_startingPeriodCtrl.text.trim()) ?? 1).clamp(1, totalMonths);
+
+                                var initialSchedule = DebtService.generateInitialSchedule(
+                                  originalAmount: total,
+                                  totalMonths: totalMonths,
+                                  startDate: _startDate,
+                                  repaymentDay: repaymentDay,
+                                  interestRules: rules,
+                                );
+
+                                // Mark periods before startingPeriod as pre-paid
+                                if (startingPeriod > 1) {
+                                  initialSchedule = initialSchedule.map((item) {
+                                    if (item.monthIndex < startingPeriod) {
+                                      return item.copyWith(
+                                        isPaid: true,
+                                        paidAmount: item.principal + item.interest,
+                                        paidDate: _startDate,
+                                      );
+                                    }
+                                    return item;
+                                  }).toList();
+                                  // Recalculate remaining schedule from startingPeriod
+                                  initialSchedule = DebtService.recalculateSchedule(
+                                    originalAmount: total,
+                                    totalMonths: totalMonths,
+                                    startDate: _startDate,
+                                    repaymentDay: repaymentDay,
+                                    interestRules: rules,
+                                    existingSchedule: initialSchedule,
+                                  );
+                                }
+
+                                final bankLoan = BankLoanInfo(
+                                  totalMonths: totalMonths,
+                                  repaymentDay: repaymentDay,
+                                  interestRules: rules,
+                                  schedule: initialSchedule,
+                                );
+
+                                final noteString = jsonEncode(bankLoan.toJson());
+
+                                // Compute total principal already paid in pre-paid periods
+                                final prePaidPrincipal = startingPeriod > 1
+                                    ? initialSchedule
+                                        .where((item) => item.isPaid)
+                                        .fold(0.0, (sum, item) => sum + item.principal)
+                                    : 0.0;
+
+                                Navigator.of(context).maybePop(
+                                  _DebtFormPayload(
+                                    debtTypeId: _selectedDebtTypeId!,
+                                    debtKind: _selectedDebtKind,
+                                    recordToIncome: _shouldRecordToIncome,
+                                    recordToExpense: false,
+                                    name: _personCtrl.text.trim(),
+                                    originalAmount: total,
+                                    creditorName: _personCtrl.text.trim(),
+                                    startDate: _startDate,
+                                    dueDate: initialSchedule.last.dueDate,
+                                    note: noteString,
+                                    prePaidPrincipal: prePaidPrincipal,
                                   ),
                                 );
                               } else {

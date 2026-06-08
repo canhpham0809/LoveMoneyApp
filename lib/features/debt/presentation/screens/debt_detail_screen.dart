@@ -36,6 +36,7 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
   String? _defaultWalletId;
   bool _isLoading = true;
   bool _isMutating = false;
+  final ScrollController _scheduleScrollController = ScrollController();
 
   Future<T> _runMutation<T>(Future<T> Function() action) async {
     if (mounted) {
@@ -82,6 +83,12 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
     _load();
   }
 
+  @override
+  void dispose() {
+    _scheduleScrollController.dispose();
+    super.dispose();
+  }
+
   Future<void> _load({bool showLoader = true}) async {
     if (showLoader) {
       setState(() => _isLoading = true);
@@ -115,6 +122,24 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
         _memberNameById = memberNameById;
         _defaultWalletId = defaultWalletId;
       });
+
+      if (debt.isBankLoan && debt.bankLoanInfo != null) {
+        final schedule = debt.bankLoanInfo!.schedule;
+        final nextUnpaidIndex = schedule.indexWhere((item) => !item.isPaid);
+        if (nextUnpaidIndex > 0) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (_scheduleScrollController.hasClients) {
+              // Subtract 16px padding so the card top is not cut off
+              final targetOffset = (nextUnpaidIndex * 110.0);
+              _scheduleScrollController.animateTo(
+                targetOffset.clamp(0.0, _scheduleScrollController.position.maxScrollExtent),
+                duration: const Duration(milliseconds: 400),
+                curve: Curves.easeOut,
+              );
+            }
+          });
+        }
+      }
     } finally {
       if (showLoader && mounted) {
         setState(() => _isLoading = false);
@@ -800,6 +825,10 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
     final debt = _debt;
     final isLend = debt?.debtKind == 'lend';
 
+    if (debt != null && debt.isBankLoan) {
+      return _buildBankLoanScaffold(context, debt);
+    }
+
     final paymentsList = _payments.map((p) => DebtHistoryItem(
           id: p.id,
           amount: p.amount,
@@ -1212,6 +1241,962 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
               child: const Icon(Icons.add),
             ),
     );
+  }
+
+  Widget _buildBankLoanScaffold(BuildContext context, DebtModel debt) {
+    final bankLoan = debt.bankLoanInfo!;
+    final totalPrincipal = debt.originalAmount;
+    final remainingPrincipal = debt.remainingAmount;
+    final paidPrincipal = (totalPrincipal - remainingPrincipal).clamp(0.0, totalPrincipal);
+    final pct = totalPrincipal > 0 ? (paidPrincipal / totalPrincipal) : 0.0;
+
+    final nextUnpaid = bankLoan.schedule.firstWhere(
+      (item) => !item.isPaid,
+      orElse: () => bankLoan.schedule.last,
+    );
+    final allPaid = bankLoan.schedule.every((item) => item.isPaid);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(debt.name),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.percent_outlined),
+            tooltip: 'Điều chỉnh lãi suất',
+            onPressed: () => _openEditInterestRulesPopup(bankLoan),
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () => _load(showLoader: false),
+          ),
+        ],
+      ),
+      body: BusyOverlay(
+        isVisible: _isMutating,
+        message: 'Đang xử lý...',
+        child: Column(
+          children: [
+            Container(
+              margin: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(color: AppColors.border),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Tổng dư nợ gốc',
+                        style: TextStyle(fontSize: 14, color: Colors.black54, fontWeight: FontWeight.w500),
+                      ),
+                      Text(
+                        formatVnd(totalPrincipal),
+                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.black87),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Đã trả',
+                        style: TextStyle(fontSize: 14, color: AppColors.success, fontWeight: FontWeight.w500),
+                      ),
+                      Text(
+                        formatVnd(paidPrincipal),
+                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.success),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Còn lại',
+                        style: TextStyle(fontSize: 14, color: AppColors.danger, fontWeight: FontWeight.w500),
+                      ),
+                      Text(
+                        formatVnd(remainingPrincipal),
+                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.danger),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: LinearProgressIndicator(
+                      value: pct.clamp(0.0, 1.0),
+                      minHeight: 10,
+                      backgroundColor: AppColors.successSoft,
+                      valueColor: const AlwaysStoppedAnimation<Color>(AppColors.success),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Tiến độ trả gốc: ${(pct.clamp(0.0, 1.0) * 100).toStringAsFixed(1)}%',
+                    style: const TextStyle(fontSize: 12, color: AppColors.success, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+            ),
+            if (!allPaid)
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.1),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Kỳ thanh toán thứ ${nextUnpaid.monthIndex}',
+                          style: const TextStyle(fontSize: 14, color: Colors.white70, fontWeight: FontWeight.bold),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.redAccent.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            'Hạn: ${formatDate(nextUnpaid.dueDate)}',
+                            style: const TextStyle(fontSize: 12, color: Colors.redAccent, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Tiền gốc cần trả', style: TextStyle(fontSize: 12, color: Colors.white60)),
+                            const SizedBox(height: 2),
+                            Text(formatVnd(nextUnpaid.principal), style: const TextStyle(fontSize: 14, color: Colors.white, fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text('Tiền lãi (${nextUnpaid.rate}%)', style: const TextStyle(fontSize: 12, color: Colors.white60)),
+                            const SizedBox(height: 2),
+                            Text(formatVnd(nextUnpaid.interest), style: const TextStyle(fontSize: 14, color: Colors.white, fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const Divider(color: Colors.white24, height: 20),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Tổng tiền cần trả',
+                          style: TextStyle(fontSize: 14, color: Colors.white, fontWeight: FontWeight.bold),
+                        ),
+                        Text(
+                          formatVnd(nextUnpaid.principal + nextUnpaid.interest),
+                          style: const TextStyle(fontSize: 16, color: Colors.amberAccent, fontWeight: FontWeight.w800),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              foregroundColor: const Color(0xFF0F172A),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                            ),
+                            onPressed: () => _payBankLoanPeriod(nextUnpaid.monthIndex),
+                            child: const Text('Thanh toán kỳ này', style: TextStyle(fontWeight: FontWeight.bold)),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: OutlinedButton(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              side: const BorderSide(color: Colors.white54),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                            ),
+                            onPressed: () => _openBankLoanPaymentPopup(monthIndex: nextUnpaid.monthIndex, isPrepayment: true),
+                            child: const Text('Trả gốc trước hạn', style: TextStyle(fontWeight: FontWeight.bold)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'LỊCH TRẢ NỢ CHI TIẾT',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: Colors.black54, letterSpacing: 0.5),
+                  ),
+                  Text(
+                    'Kỳ hạn: ${bankLoan.totalMonths} tháng',
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black45),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView.builder(
+                controller: _scheduleScrollController,
+                padding: const EdgeInsets.fromLTRB(12, 4, 12, 40),
+                itemCount: bankLoan.schedule.length,
+                itemBuilder: (context, index) {
+                  final item = bankLoan.schedule[index];
+                  final isNext = !item.isPaid && (index == 0 || bankLoan.schedule[index - 1].isPaid);
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: item.isPaid ? const Color(0xFFF0FDF4) : (isNext ? const Color(0xFFFFFBEB) : Colors.white),
+                      border: Border.all(
+                        color: item.isPaid
+                            ? const Color(0xFFDCFCE7)
+                            : (isNext ? const Color(0xFFFEF3C7) : AppColors.border),
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Text(
+                                    'Tháng thứ ${item.monthIndex}',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                      color: item.isPaid ? const Color(0xFF166534) : Colors.black87,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '(${item.rate}%/năm)',
+                                    style: const TextStyle(fontSize: 11, color: Colors.black45),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Hạn trả: ${formatDate(item.dueDate)}',
+                                style: const TextStyle(fontSize: 12, color: Colors.black54),
+                              ),
+                              if (item.isPaid && item.paidDate != null)
+                                Text(
+                                  'Đã trả ngày: ${formatDate(item.paidDate!)}',
+                                  style: const TextStyle(fontSize: 11, color: Color(0xFF15803D), fontWeight: FontWeight.w500),
+                                ),
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  Text('Gốc: ${formatVnd(item.principal)}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                                  const SizedBox(width: 12),
+                                  Text('Lãi: ${formatVnd(item.interest)}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                                ],
+                              ),
+                              if (item.earlyPrincipal > 0)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text(
+                                    'Trả thêm gốc: ${formatVnd(item.earlyPrincipal)} (Phạt: ${formatVnd(item.penaltyFee)})',
+                                    style: const TextStyle(fontSize: 11, color: Color(0xFFB45309), fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            if (item.isPaid) ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFDCFCE7),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Text(
+                                  'Đã trả',
+                                  style: TextStyle(color: Color(0xFF166534), fontSize: 12, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                                tooltip: 'Hủy thanh toán',
+                                onPressed: () => _confirmDeleteBankLoanPayment(item.monthIndex),
+                              ),
+                            ] else ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: isNext ? const Color(0xFFFEF3C7) : const Color(0xFFF1F5F9),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  isNext ? 'Đến hạn' : 'Chưa trả',
+                                  style: TextStyle(
+                                    color: isNext ? const Color(0xFF92400E) : Colors.black45,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              if (isNext) ...[
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.payment, color: Color(0xFF0F172A), size: 20),
+                                      tooltip: 'Thanh toán',
+                                      onPressed: () => _payBankLoanPeriod(item.monthIndex),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.add_card, color: Colors.orange, size: 20),
+                                      tooltip: 'Trả gốc trước hạn',
+                                      onPressed: () => _openBankLoanPaymentPopup(monthIndex: item.monthIndex, isPrepayment: true),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _payBankLoanPeriod(int monthIndex) async {
+    final defaultWalletId = _defaultWalletId;
+    if (defaultWalletId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Chưa có ví mặc định để thực hiện thanh toán.')),
+      );
+      return;
+    }
+
+    try {
+      await _runMutation(() async {
+        await _debtService.payBankLoanMonth(
+          coupleId: widget.coupleId,
+          debtId: widget.debtId,
+          monthIndex: monthIndex,
+          walletId: defaultWalletId,
+          paymentDate: DateTime.now(),
+          recordExpense: true,
+          extraPrincipal: 0.0,
+          penaltyFee: 0.0,
+          note: 'Trả gốc & lãi kỳ $monthIndex cho ${_debt!.name}',
+        );
+      });
+      await _load(showLoader: false);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Lỗi: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _openBankLoanPaymentPopup({
+    required int monthIndex,
+    required bool isPrepayment,
+  }) async {
+    final wallets = await _walletService.getWallets(widget.coupleId);
+    if (!mounted) return;
+    if (wallets.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Chưa có ví để thực hiện thanh toán.')),
+      );
+      return;
+    }
+
+    wallets.sort((a, b) {
+      if (a.isDefault == b.isDefault) return 0;
+      return a.isDefault ? -1 : 1;
+    });
+    String selectedWalletId = wallets.first.id;
+
+    final scheduleItem = _debt!.bankLoanInfo!.schedule.firstWhere((e) => e.monthIndex == monthIndex);
+    final double standardPrincipal = scheduleItem.principal;
+    final double standardInterest = scheduleItem.interest;
+
+    final extraPrincipalCtrl = TextEditingController();
+    final penaltyFeeCtrl = TextEditingController();
+    final noteCtrl = TextEditingController();
+    DateTime selectedDate = DateTime.now();
+    bool isSubmitting = false;
+
+    if (isPrepayment) {
+      noteCtrl.text = 'Trả gốc trước hạn kỳ $monthIndex cho ${_debt!.name}';
+    } else {
+      noteCtrl.text = 'Trả gốc & lãi kỳ $monthIndex cho ${_debt!.name}';
+    }
+
+    final saved = await showGeneralDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss',
+      barrierColor: Colors.black54,
+      transitionDuration: Duration.zero,
+      pageBuilder: (dialogContext, anim1, anim2) {
+        final media = MediaQuery.sizeOf(dialogContext);
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) => Dialog(
+            alignment: Alignment.center,
+            insetAnimationDuration: Duration.zero,
+            insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 520,
+                maxHeight: media.height * 0.8,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      isPrepayment
+                          ? 'Trả gốc trước hạn kỳ $monthIndex'
+                          : 'Thanh toán kỳ thứ $monthIndex',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (!isPrepayment) ...[
+                              Text('Tiền gốc: ${formatVnd(standardPrincipal)}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                              const SizedBox(height: 4),
+                              Text('Tiền lãi: ${formatVnd(standardInterest)}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Tổng cộng: ${formatVnd(standardPrincipal + standardInterest)}',
+                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.blueAccent),
+                              ),
+                              const Divider(height: 24),
+                              TextField(
+                                controller: extraPrincipalCtrl,
+                                keyboardType: TextInputType.number,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                  ThousandsSeparatorInputFormatter(),
+                                ],
+                                decoration: const InputDecoration(
+                                  labelText: 'Trả thêm gốc (tùy chọn)',
+                                  hintText: 'Ví dụ: 10,000,000',
+                                ),
+                              ),
+                            ] else ...[
+                              TextField(
+                                controller: extraPrincipalCtrl,
+                                keyboardType: TextInputType.number,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                  ThousandsSeparatorInputFormatter(),
+                                ],
+                                decoration: const InputDecoration(
+                                  labelText: 'Số tiền gốc trả trước',
+                                  hintText: 'Nhập số tiền gốc muốn trả',
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 10),
+                            TextField(
+                              controller: penaltyFeeCtrl,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                                ThousandsSeparatorInputFormatter(),
+                              ],
+                              decoration: const InputDecoration(
+                                labelText: 'Phí phạt trả trước gốc (nếu có)',
+                                hintText: 'Ví dụ: 500,000',
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            TextField(
+                              controller: noteCtrl,
+                              decoration: const InputDecoration(
+                                labelText: 'Ghi chú',
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            OutlinedButton.icon(
+                              onPressed: () async {
+                                final picked = await showDatePicker(
+                                  context: dialogContext,
+                                  initialDate: selectedDate,
+                                  firstDate: DateTime(2020),
+                                  lastDate: DateTime.now().add(const Duration(days: 365)),
+                                );
+                                if (picked != null) {
+                                  setDialogState(() => selectedDate = picked);
+                                }
+                              },
+                              icon: const Icon(Icons.calendar_month_outlined),
+                              label: Text('Ngày thanh toán: ${formatDate(selectedDate)}'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextButton(
+                            onPressed: isSubmitting
+                                ? null
+                                : () => Navigator.pop(dialogContext, false),
+                            child: const Text('Hủy'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: () async {
+                              if (isSubmitting) return;
+
+                              final double extraPrincipal = parseAmountInput(extraPrincipalCtrl.text.trim()) ?? 0.0;
+                              final double penaltyFee = parseAmountInput(penaltyFeeCtrl.text.trim()) ?? 0.0;
+
+                              if (isPrepayment && extraPrincipal <= 0) {
+                                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                                  const SnackBar(content: Text('Vui lòng nhập số tiền gốc trả trước.')),
+                                );
+                                return;
+                              }
+
+                              setDialogState(() => isSubmitting = true);
+                              try {
+                                await _debtService.payBankLoanMonth(
+                                  coupleId: widget.coupleId,
+                                  debtId: widget.debtId,
+                                  monthIndex: monthIndex,
+                                  walletId: selectedWalletId,
+                                  paymentDate: selectedDate,
+                                  recordExpense: true,
+                                  extraPrincipal: extraPrincipal,
+                                  penaltyFee: penaltyFee,
+                                  note: noteCtrl.text.trim().isNotEmpty ? noteCtrl.text.trim() : null,
+                                );
+
+                                if (dialogContext.mounted) {
+                                  Navigator.pop(dialogContext, true);
+                                }
+                              } catch (e) {
+                                if (dialogContext.mounted) {
+                                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                                    SnackBar(content: Text('Lỗi: $e')),
+                                  );
+                                }
+                              } finally {
+                                if (dialogContext.mounted) {
+                                  setDialogState(() => isSubmitting = false);
+                                }
+                              }
+                            },
+                            child: isSubmitting
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Text('Thanh toán'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    if (saved == true) {
+      await _load(showLoader: false);
+    }
+  }
+
+  Future<void> _confirmDeleteBankLoanPayment(int monthIndex) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Hủy thanh toán kỳ thứ $monthIndex'),
+        content: const Text('Xác nhận hủy đợt thanh toán kỳ hạn này? Hệ thống sẽ xóa các giao dịch thanh toán và chi tiêu liên kết, đồng thời tự động tính toán lại lịch trình trả nợ.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Hủy bỏ'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Xác nhận'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await _runMutation(() async {
+        await _debtService.deleteBankLoanPayment(
+          debtId: widget.debtId,
+          monthIndex: monthIndex,
+        );
+        await _load(showLoader: false);
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Đã hủy thanh toán kỳ nợ.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Lỗi: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _openEditInterestRulesPopup(BankLoanInfo bankLoan) async {
+    final rules = <Map<String, dynamic>>[];
+    for (final rule in bankLoan.interestRules) {
+      rules.add({
+        'from': rule.fromMonth,
+        'to': rule.toMonth,
+        'rateCtrl': TextEditingController(text: rule.rate.toString()),
+      });
+    }
+
+    void updateRulesSequencing() {
+      for (var i = 0; i < rules.length; i++) {
+        if (i == 0) {
+          rules[i]['from'] = 1;
+        } else {
+          rules[i]['from'] = (rules[i - 1]['to'] as int) + 1;
+        }
+        final fromVal = rules[i]['from'] as int;
+        if (i == rules.length - 1) {
+          rules[i]['to'] = bankLoan.totalMonths;
+        } else {
+          final currentTo = rules[i]['to'] as int?;
+          if (currentTo == null || currentTo <= fromVal) {
+            rules[i]['to'] = fromVal + 12;
+          }
+        }
+      }
+    }
+
+    bool isSubmitting = false;
+
+    final saved = await showGeneralDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss',
+      barrierColor: Colors.black54,
+      transitionDuration: Duration.zero,
+      pageBuilder: (dialogContext, anim1, anim2) {
+        final media = MediaQuery.sizeOf(dialogContext);
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) => Dialog(
+            alignment: Alignment.center,
+            insetAnimationDuration: Duration.zero,
+            insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 520,
+                maxHeight: media.height * 0.8,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'Điều chỉnh lãi suất vay ngân hàng',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            ListView.builder(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: rules.length,
+                              itemBuilder: (dialogContext, index) {
+                                final rule = rules[index];
+                                final from = rule['from'] as int;
+                                final to = rule['to'] as int;
+                                final isLast = index == rules.length - 1;
+                                final toCtrl = TextEditingController(text: isLast ? 'Hết hạn' : to.toString());
+                                final rateCtrl = rule['rateCtrl'] as TextEditingController;
+
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: 10),
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade50,
+                                    border: Border.all(color: Colors.grey.shade200),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        flex: 2,
+                                        child: Text(
+                                          'Tháng $from',
+                                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        flex: 3,
+                                        child: TextField(
+                                          controller: toCtrl,
+                                          enabled: !isLast,
+                                          keyboardType: TextInputType.number,
+                                          decoration: const InputDecoration(
+                                            labelText: 'Đến tháng',
+                                            isDense: true,
+                                          ),
+                                          onChanged: (val) {
+                                            final valInt = int.tryParse(val);
+                                            if (valInt != null) {
+                                              rule['to'] = valInt;
+                                              setDialogState(() {
+                                                updateRulesSequencing();
+                                              });
+                                            }
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        flex: 3,
+                                        child: TextField(
+                                          controller: rateCtrl,
+                                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                          decoration: const InputDecoration(
+                                            labelText: 'Lãi suất %/năm',
+                                            isDense: true,
+                                          ),
+                                        ),
+                                      ),
+                                      if (rules.length > 1)
+                                        IconButton(
+                                          icon: const Icon(Icons.delete_outline, color: Colors.red),
+                                          onPressed: () {
+                                            setDialogState(() {
+                                              rules.removeAt(index);
+                                              updateRulesSequencing();
+                                            });
+                                          },
+                                        ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 8),
+                            TextButton.icon(
+                              onPressed: () {
+                                final lastTo = rules.isNotEmpty
+                                    ? (rules.last['to'] as int)
+                                    : 0;
+                                if (lastTo >= bankLoan.totalMonths) {
+                                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                                    const SnackBar(content: Text('Khoảng lãi suất đã bao phủ toàn bộ kỳ hạn vay.')),
+                                  );
+                                  return;
+                                }
+                                setDialogState(() {
+                                  rules.add({
+                                    'from': lastTo + 1,
+                                    'to': bankLoan.totalMonths,
+                                    'rateCtrl': TextEditingController(text: '10.0'),
+                                  });
+                                  updateRulesSequencing();
+                                });
+                              },
+                              icon: const Icon(Icons.add, size: 16),
+                              label: const Text('Thêm khoảng lãi suất', style: TextStyle(fontSize: 12)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextButton(
+                            onPressed: isSubmitting
+                                ? null
+                                : () => Navigator.pop(dialogContext, false),
+                            child: const Text('Hủy'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: () async {
+                              if (isSubmitting) return;
+
+                              final newRules = <InterestRateRule>[];
+                              for (var i = 0; i < rules.length; i++) {
+                                final from = rules[i]['from'] as int;
+                                var to = rules[i]['to'] as int;
+                                final rateStr = (rules[i]['rateCtrl'] as TextEditingController).text.trim();
+                                final rate = double.tryParse(rateStr) ?? 10.0;
+
+                                if (to < from) {
+                                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                                    SnackBar(content: Text('Kỳ hạn thứ ${i + 1} không hợp lệ (Tháng đến < Tháng từ).')),
+                                  );
+                                  return;
+                                }
+
+                                if (i == rules.length - 1 && to < bankLoan.totalMonths) {
+                                  to = bankLoan.totalMonths;
+                                }
+
+                                newRules.add(InterestRateRule(
+                                  fromMonth: from,
+                                  toMonth: to,
+                                  rate: rate,
+                                ));
+                              }
+
+                              setDialogState(() => isSubmitting = true);
+                              try {
+                                await _debtService.updateBankLoanInterestRules(
+                                  debtId: widget.debtId,
+                                  newRules: newRules,
+                                );
+
+                                if (dialogContext.mounted) {
+                                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                                    const SnackBar(content: Text('Đã cập nhật lãi suất thành công.')),
+                                  );
+                                  Navigator.pop(dialogContext, true);
+                                }
+                              } catch (e) {
+                                if (dialogContext.mounted) {
+                                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                                    SnackBar(content: Text('Lỗi: $e')),
+                                  );
+                                }
+                              } finally {
+                                if (dialogContext.mounted) {
+                                  setDialogState(() => isSubmitting = false);
+                                }
+                              }
+                            },
+                            child: isSubmitting
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Text('Lưu'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    if (saved == true) {
+      await _load(showLoader: false);
+    }
   }
 }
 

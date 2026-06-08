@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
+import 'package:flutter_app_demo/core/utils/formatters.dart';
 import 'package:flutter_app_demo/features/debt/data/models/debt_model.dart';
 import 'package:flutter_app_demo/features/debt/data/models/debt_payment_model.dart';
 
@@ -12,6 +13,7 @@ class DebtService {
   static const String _debtInitIncomeSource = 'Nhận tiền nợ';
   static const String _debtRepaymentIncomeSource = 'Thu hồi cho mượn';
   static const String _debtLendExpenseCategory = 'Cho mượn nợ';
+  static const String _debtPaymentExpenseCategory = 'Trả nợ gốc & lãi';
 
   bool _isMissingSortOrderColumn(Object error) {
     return error is PostgrestException &&
@@ -246,18 +248,42 @@ class DebtService {
   }) async {
     final existingDebt = await _db
         .from('debts')
-        .select('couple_id, user_id, linked_income_id, linked_expense_id, note')
+        .select('couple_id, user_id, linked_income_id, linked_expense_id, note, original_amount')
         .eq('id', debtId)
         .single();
     var linkedIncomeId = existingDebt['linked_income_id'] as String?;
     var linkedExpenseId = existingDebt['linked_expense_id'] as String?;
     final existingNoteStr = existingDebt['note'] as String?;
     String? nextNoteStr = note;
-    if (existingNoteStr != null && existingNoteStr.trim().startsWith('{')) {
+    if (note != null && note.trim().startsWith('{')) {
+      nextNoteStr = note;
+    } else if (existingNoteStr != null && existingNoteStr.trim().startsWith('{')) {
       try {
         final data = Map<String, dynamic>.from(jsonDecode(existingNoteStr));
-        data['user_note'] = note;
-        nextNoteStr = jsonEncode(data);
+        if (data['is_bank_loan'] == true) {
+          final oldOriginal = (existingDebt['original_amount'] as num?)?.toDouble() ?? originalAmount;
+          if (oldOriginal != originalAmount) {
+            final bankLoan = BankLoanInfo.fromJson(data);
+            final regeneratedSchedule = recalculateSchedule(
+              originalAmount: originalAmount,
+              totalMonths: bankLoan.totalMonths,
+              startDate: startDate,
+              repaymentDay: bankLoan.repaymentDay,
+              interestRules: bankLoan.interestRules,
+              existingSchedule: bankLoan.schedule,
+            );
+            final updatedBankLoan = BankLoanInfo(
+              totalMonths: bankLoan.totalMonths,
+              repaymentDay: bankLoan.repaymentDay,
+              interestRules: bankLoan.interestRules,
+              schedule: regeneratedSchedule,
+            );
+            nextNoteStr = jsonEncode(updatedBankLoan.toJson());
+          }
+        } else {
+          data['user_note'] = note;
+          nextNoteStr = jsonEncode(data);
+        }
       } catch (_) {}
     }
 
@@ -497,6 +523,13 @@ class DebtService {
             }
             if (inc['linked_expense_id'] is String) {
               extraExpenseIds.add(inc['linked_expense_id'] as String);
+            }
+          }
+        }
+        if (data['is_bank_loan'] == true && data['schedule'] is List) {
+          for (final item in data['schedule']) {
+            if (item['expense_id'] is String) {
+              extraExpenseIds.add(item['expense_id'] as String);
             }
           }
         }
@@ -1567,7 +1600,7 @@ class DebtService {
   Future<void> _recalculateDebtRemaining(String debtId) async {
     final debtRow = await _db
         .from('debts')
-        .select('original_amount')
+        .select('original_amount, note')
         .eq('id', debtId)
         .single();
     final original = (debtRow['original_amount'] as num?)?.toDouble() ?? 0;
@@ -1582,7 +1615,27 @@ class DebtService {
       (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0),
     );
 
-    final nextRemaining = (original - paidTotal).clamp(0, original);
+    // Also account for pre-paid periods in bank loan schedule (isPaid=true but no paymentId)
+    double prePaidPrincipal = 0.0;
+    final noteStr = debtRow['note'] as String?;
+    if (noteStr != null && noteStr.trim().startsWith('{')) {
+      try {
+        final data = jsonDecode(noteStr);
+        if (data['is_bank_loan'] == true && data['schedule'] is List) {
+          for (final item in data['schedule'] as List) {
+            final isPaid = item['is_paid'] as bool? ?? false;
+            final paymentId = item['payment_id'] as String?;
+            if (isPaid && paymentId == null) {
+              // Pre-paid period without a real debt_payment record
+              prePaidPrincipal += ((item['principal'] as num?)?.toDouble() ?? 0);
+              prePaidPrincipal += ((item['early_principal'] as num?)?.toDouble() ?? 0);
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    final nextRemaining = (original - paidTotal - prePaidPrincipal).clamp(0, original);
     await _db
         .from('debts')
         .update({
@@ -1590,5 +1643,328 @@ class DebtService {
           'is_closed': nextRemaining <= 0,
         })
         .eq('id', debtId);
+  }
+
+  static double getInterestRateForMonth(int month, List<InterestRateRule> rules) {
+    for (final rule in rules) {
+      if (month >= rule.fromMonth && month <= rule.toMonth) {
+        return rule.rate;
+      }
+    }
+    if (rules.isNotEmpty) {
+      final sortedRules = List<InterestRateRule>.from(rules);
+      sortedRules.sort((a, b) => b.toMonth.compareTo(a.toMonth));
+      return sortedRules.first.rate;
+    }
+    return 10.0;
+  }
+
+  static List<RepaymentScheduleItem> generateInitialSchedule({
+    required double originalAmount,
+    required int totalMonths,
+    required DateTime startDate,
+    required int repaymentDay,
+    required List<InterestRateRule> interestRules,
+  }) {
+    final schedule = <RepaymentScheduleItem>[];
+    double remainingPrincipal = originalAmount;
+    final standardPrincipal = ((originalAmount / totalMonths) / 1000.0).ceil() * 1000.0;
+
+    for (var i = 1; i <= totalMonths; i++) {
+      final dueDate = DateTime(startDate.year, startDate.month + i, repaymentDay);
+      final prevDueDate = (i == 1)
+          ? startDate
+          : DateTime(startDate.year, startDate.month + i - 1, repaymentDay);
+      final days = dueDate.difference(prevDueDate).inDays;
+      final rate = getInterestRateForMonth(i, interestRules);
+      final interest = remainingPrincipal * (rate / 100.0 / 365.0) * days;
+
+      double principal;
+      if (i == totalMonths) {
+        principal = remainingPrincipal;
+      } else {
+        principal = standardPrincipal < remainingPrincipal ? standardPrincipal : (remainingPrincipal > 0 ? remainingPrincipal : 0.0);
+      }
+
+      schedule.add(RepaymentScheduleItem(
+        monthIndex: i,
+        dueDate: dueDate,
+        principal: principal,
+        interest: interest,
+        rate: rate,
+      ));
+
+      remainingPrincipal -= principal;
+    }
+    return schedule;
+  }
+
+  static List<RepaymentScheduleItem> recalculateSchedule({
+    required double originalAmount,
+    required int totalMonths,
+    required DateTime startDate,
+    required int repaymentDay,
+    required List<InterestRateRule> interestRules,
+    required List<RepaymentScheduleItem> existingSchedule,
+  }) {
+    final paidItems = existingSchedule.where((e) => e.isPaid).toList();
+    paidItems.sort((a, b) => a.monthIndex.compareTo(b.monthIndex));
+
+    final lastPaidIndex = paidItems.isEmpty ? 0 : paidItems.last.monthIndex;
+
+    double remainingPrincipal = originalAmount;
+    for (final item in paidItems) {
+      remainingPrincipal -= (item.principal + item.earlyPrincipal);
+    }
+    remainingPrincipal = remainingPrincipal.clamp(0.0, double.infinity);
+
+    final remainingMonths = totalMonths - lastPaidIndex;
+    final newStandardPrincipal = remainingMonths > 0
+        ? ((remainingPrincipal / remainingMonths) / 1000.0).ceil() * 1000.0
+        : 0.0;
+
+    final newSchedule = <RepaymentScheduleItem>[];
+    newSchedule.addAll(paidItems);
+
+    double runningPrincipal = remainingPrincipal;
+    for (var i = lastPaidIndex + 1; i <= totalMonths; i++) {
+      final dueDate = DateTime(startDate.year, startDate.month + i, repaymentDay);
+      final prevDueDate = (i == 1)
+          ? startDate
+          : DateTime(startDate.year, startDate.month + i - 1, repaymentDay);
+      final days = dueDate.difference(prevDueDate).inDays;
+      final rate = getInterestRateForMonth(i, interestRules);
+      final interest = runningPrincipal * (rate / 100.0 / 365.0) * days;
+
+      double principal;
+      if (i == totalMonths) {
+        principal = runningPrincipal;
+      } else {
+        principal = newStandardPrincipal < runningPrincipal ? newStandardPrincipal : (runningPrincipal > 0 ? runningPrincipal : 0.0);
+      }
+
+      newSchedule.add(RepaymentScheduleItem(
+        monthIndex: i,
+        dueDate: dueDate,
+        principal: principal,
+        interest: interest,
+        rate: rate,
+      ));
+
+      runningPrincipal -= principal;
+    }
+
+    newSchedule.sort((a, b) => a.monthIndex.compareTo(b.monthIndex));
+    return newSchedule;
+  }
+
+  Future<void> payBankLoanMonth({
+    required String coupleId,
+    required String debtId,
+    required int monthIndex,
+    required String walletId,
+    required DateTime paymentDate,
+    required bool recordExpense,
+    required double extraPrincipal,
+    required double penaltyFee,
+    String? note,
+  }) async {
+    final debt = await getDebtById(debtId);
+    final bankLoan = debt.bankLoanInfo;
+    if (bankLoan == null) {
+      throw Exception('Khoản nợ không phải là vay trả góp ngân hàng.');
+    }
+
+    final schedule = List<RepaymentScheduleItem>.from(bankLoan.schedule);
+    final idx = schedule.indexWhere((e) => e.monthIndex == monthIndex);
+    if (idx < 0) {
+      throw Exception('Không tìm thấy kỳ hạn thanh toán thứ $monthIndex.');
+    }
+
+    final item = schedule[idx];
+    if (item.isPaid) {
+      throw Exception('Kỳ hạn thanh toán thứ $monthIndex đã được trả.');
+    }
+
+    final principalPaid = item.principal + extraPrincipal;
+    final paymentId = _uuid.v4();
+    final dateStr = paymentDate.toIso8601String().substring(0, 10);
+
+    await _db.from('debt_payments').insert({
+      'id': paymentId,
+      'couple_id': coupleId,
+      'debt_id': debtId,
+      'wallet_id': walletId,
+      'amount': principalPaid,
+      'date': dateStr,
+      'note': note ?? 'Thanh toán kỳ $monthIndex (Gốc: ${formatVnd(principalPaid)})',
+    });
+
+    String? expenseId;
+    if (recordExpense) {
+      final categoryId = await _ensureExpenseCategory(
+        coupleId,
+        _debtPaymentExpenseCategory,
+        icon: 'payments',
+        color: '#EF4444',
+      );
+
+      final totalExpense = item.principal + item.interest + extraPrincipal + penaltyFee;
+      final extraDesc = extraPrincipal > 0 ? ' (Gốc trả thêm: ${formatVnd(extraPrincipal)})' : '';
+      final penaltyDesc = penaltyFee > 0 ? ' (Phí phạt: ${formatVnd(penaltyFee)})' : '';
+      final expenseDesc = 'Trả gốc & lãi kỳ $monthIndex: ${debt.name}$extraDesc$penaltyDesc';
+
+      final expenseRow = await _db.from('expenses').insert({
+        'couple_id': coupleId,
+        'user_id': _db.auth.currentUser!.id,
+        'wallet_id': walletId,
+        'category_id': categoryId,
+        'amount': totalExpense,
+        'description': note?.trim().isNotEmpty == true ? note : expenseDesc,
+        'date': dateStr,
+      }).select('id').single();
+      expenseId = expenseRow['id'] as String;
+    }
+
+    final updatedItem = item.copyWith(
+      isPaid: true,
+      paidAmount: item.principal + item.interest + extraPrincipal,
+      paidDate: paymentDate,
+      paymentId: paymentId,
+      expenseId: expenseId,
+      earlyPrincipal: extraPrincipal,
+      penaltyFee: penaltyFee,
+    );
+    schedule[idx] = updatedItem;
+
+    final regeneratedSchedule = recalculateSchedule(
+      originalAmount: debt.originalAmount,
+      totalMonths: bankLoan.totalMonths,
+      startDate: debt.startDate,
+      repaymentDay: bankLoan.repaymentDay,
+      interestRules: bankLoan.interestRules,
+      existingSchedule: schedule,
+    );
+
+    final updatedBankLoan = BankLoanInfo(
+      totalMonths: bankLoan.totalMonths,
+      repaymentDay: bankLoan.repaymentDay,
+      interestRules: bankLoan.interestRules,
+      schedule: regeneratedSchedule,
+    );
+
+    await _db.from('debts').update({
+      'note': jsonEncode(updatedBankLoan.toJson()),
+    }).eq('id', debtId);
+
+    await _recalculateDebtRemaining(debtId);
+  }
+
+  Future<void> deleteBankLoanPayment({
+    required String debtId,
+    required int monthIndex,
+  }) async {
+    final debt = await getDebtById(debtId);
+    final bankLoan = debt.bankLoanInfo;
+    if (bankLoan == null) {
+      throw Exception('Khoản nợ không phải là vay trả góp ngân hàng.');
+    }
+
+    final schedule = List<RepaymentScheduleItem>.from(bankLoan.schedule);
+    final idx = schedule.indexWhere((e) => e.monthIndex == monthIndex);
+    if (idx < 0) {
+      throw Exception('Không tìm thấy kỳ hạn thanh toán thứ $monthIndex.');
+    }
+
+    final item = schedule[idx];
+    if (!item.isPaid) {
+      throw Exception('Kỳ hạn thanh toán thứ $monthIndex chưa được trả.');
+    }
+
+    final paymentId = item.paymentId;
+    final expenseId = item.expenseId;
+
+    if (paymentId != null) {
+      await _db.from('debt_payments').update({
+        'is_deleted': true,
+        'deleted_at': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', paymentId);
+    }
+
+    if (expenseId != null) {
+      await _db.from('expenses').update({
+        'is_deleted': true,
+        'deleted_at': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', expenseId);
+    }
+
+    final updatedItem = RepaymentScheduleItem(
+      monthIndex: item.monthIndex,
+      dueDate: item.dueDate,
+      principal: item.principal,
+      interest: item.interest,
+      rate: item.rate,
+      isPaid: false,
+      paidAmount: 0.0,
+      paidDate: null,
+      paymentId: null,
+      expenseId: null,
+      earlyPrincipal: 0.0,
+      penaltyFee: 0.0,
+    );
+    schedule[idx] = updatedItem;
+
+    final regeneratedSchedule = recalculateSchedule(
+      originalAmount: debt.originalAmount,
+      totalMonths: bankLoan.totalMonths,
+      startDate: debt.startDate,
+      repaymentDay: bankLoan.repaymentDay,
+      interestRules: bankLoan.interestRules,
+      existingSchedule: schedule,
+    );
+
+    final updatedBankLoan = BankLoanInfo(
+      totalMonths: bankLoan.totalMonths,
+      repaymentDay: bankLoan.repaymentDay,
+      interestRules: bankLoan.interestRules,
+      schedule: regeneratedSchedule,
+    );
+
+    await _db.from('debts').update({
+      'note': jsonEncode(updatedBankLoan.toJson()),
+    }).eq('id', debtId);
+
+    await _recalculateDebtRemaining(debtId);
+  }
+
+  Future<void> updateBankLoanInterestRules({
+    required String debtId,
+    required List<InterestRateRule> newRules,
+  }) async {
+    final debt = await getDebtById(debtId);
+    final bankLoan = debt.bankLoanInfo;
+    if (bankLoan == null) {
+      throw Exception('Khoản nợ không phải là vay trả góp ngân hàng.');
+    }
+
+    final regeneratedSchedule = recalculateSchedule(
+      originalAmount: debt.originalAmount,
+      totalMonths: bankLoan.totalMonths,
+      startDate: debt.startDate,
+      repaymentDay: bankLoan.repaymentDay,
+      interestRules: newRules,
+      existingSchedule: bankLoan.schedule,
+    );
+
+    final updatedBankLoan = BankLoanInfo(
+      totalMonths: bankLoan.totalMonths,
+      repaymentDay: bankLoan.repaymentDay,
+      interestRules: newRules,
+      schedule: regeneratedSchedule,
+    );
+
+    await _db.from('debts').update({
+      'note': jsonEncode(updatedBankLoan.toJson()),
+    }).eq('id', debtId);
   }
 }

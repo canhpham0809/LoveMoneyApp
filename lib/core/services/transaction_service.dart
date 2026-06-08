@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/transaction.dart';
@@ -47,7 +48,7 @@ class TransactionService {
         .eq('is_deleted', false);
     var debtsQuery = supabase
         .from('debt_payments')
-        .select('id, amount, date, created_at, updated_by')
+        .select('id, amount, date, created_at, updated_by, debt_id')
         .eq('couple_id', coupleId)
         .isFilter('linked_income_id', null)
         .eq('is_deleted', false);
@@ -67,12 +68,19 @@ class TransactionService {
       );
     }
 
+    final debtsFuture = supabase
+        .from('debts')
+        .select('id, note')
+        .eq('couple_id', coupleId)
+        .eq('is_deleted', false);
+
     final results = await Future.wait([
       incomesQuery.order('created_at', ascending: false),
       expensesQuery.order('created_at', ascending: false),
       fundsQuery.order('created_at', ascending: false),
       debtsQuery.order('created_at', ascending: false),
       transfersQuery.order('created_at', ascending: false),
+      debtsFuture,
     ]);
 
     final grouped = <String, Map<String, double>>{};
@@ -113,11 +121,30 @@ class TransactionService {
       );
       addExpense(date, (row['amount'] as num).toDouble());
     }
+
+    final debtsList = results[5] as List;
+    final bankLoanDebtIds = debtsList
+        .where((d) {
+          final note = (d as Map<String, dynamic>)['note'] as String?;
+          if (note == null || !note.trim().startsWith('{')) return false;
+          try {
+            final data = jsonDecode(note);
+            return data['is_bank_loan'] == true;
+          } catch (_) {
+            return false;
+          }
+        })
+        .map((d) => (d as Map<String, dynamic>)['id'] as String)
+        .toSet();
+
     for (final row in results[3] as List) {
-      final date = DateTime.parse(
-        (row as Map<String, dynamic>)['date'] as String,
-      );
-      addExpense(date, (row['amount'] as num).toDouble());
+      final map = row as Map<String, dynamic>;
+      final debtId = map['debt_id'] as String?;
+      if (debtId != null && bankLoanDebtIds.contains(debtId)) {
+        continue;
+      }
+      final date = DateTime.parse(map['date'] as String);
+      addExpense(date, (map['amount'] as num).toDouble());
     }
     for (final row in results[4] as List) {
       final map = row as Map<String, dynamic>;
@@ -196,12 +223,25 @@ class TransactionService {
 
     final debts = await supabase
         .from('debts')
-        .select('id, name')
+        .select('id, name, note')
         .eq('couple_id', coupleId)
         .eq('is_deleted', false);
     final debtNameById = {
       for (final d in debts) d['id'] as String: d['name'] as String,
     };
+    final bankLoanDebtIds = debts
+        .where((d) {
+          final note = d['note'] as String?;
+          if (note == null || !note.trim().startsWith('{')) return false;
+          try {
+            final data = jsonDecode(note);
+            return data['is_bank_loan'] == true;
+          } catch (_) {
+            return false;
+          }
+        })
+        .map((d) => d['id'] as String)
+        .toSet();
 
     var incomesQuery = supabase
         .from('incomes')
@@ -318,21 +358,26 @@ class TransactionService {
         ),
       });
     });
-    final debtTx = (results[3] as List).map((json) {
-      final row = Map<String, dynamic>.from(json);
-      final debtId = row['debt_id'] as String?;
-      final debtName = debtId != null ? debtNameById[debtId] : null;
-      final fallback = debtName != null ? 'Trả nợ: $debtName' : 'Trả nợ';
-      return Transaction.fromJson({
-        ...row,
-        'type': 'debt',
-        'title': _pickTitle(
-          row: row,
-          fallback: fallback,
-          preferredFields: const ['note'],
-        ),
-      });
-    });
+    final debtTx = (results[3] as List)
+        .map((json) => Map<String, dynamic>.from(json))
+        .where((row) {
+          final debtId = row['debt_id'] as String?;
+          return debtId == null || !bankLoanDebtIds.contains(debtId);
+        })
+        .map((row) {
+          final debtId = row['debt_id'] as String?;
+          final debtName = debtId != null ? debtNameById[debtId] : null;
+          final fallback = debtName != null ? 'Trả nợ: $debtName' : 'Trả nợ';
+          return Transaction.fromJson({
+            ...row,
+            'type': 'debt',
+            'title': _pickTitle(
+              row: row,
+              fallback: fallback,
+              preferredFields: const ['note'],
+            ),
+          });
+        });
 
     final transferRows = (results[4] as List)
         .map((json) => Map<String, dynamic>.from(json))

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -318,7 +319,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
       db.from('funds').select('id, name').eq('couple_id', widget.coupleId),
       db
           .from('debts')
-          .select('id, name')
+          .select('id, name, note')
           .eq('couple_id', widget.coupleId)
           .eq('is_deleted', false),
     ]);
@@ -330,10 +331,24 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
       for (final row in List<Map<String, dynamic>>.from(futures[3] as List))
         row['id'] as String: row['name'] as String,
     };
+    final debtsList = List<Map<String, dynamic>>.from(futures[4] as List);
     final debtNameById = {
-      for (final row in List<Map<String, dynamic>>.from(futures[4] as List))
+      for (final row in debtsList)
         row['id'] as String: row['name'] as String,
     };
+    final bankLoanDebtIds = debtsList
+        .where((d) {
+          final note = d['note'] as String?;
+          if (note == null || !note.trim().startsWith('{')) return false;
+          try {
+            final data = jsonDecode(note);
+            return data['is_bank_loan'] == true;
+          } catch (_) {
+            return false;
+          }
+        })
+        .map((d) => d['id'] as String)
+        .toSet();
 
     final userIds = <String>{
       ...transfers.map((row) => row['from_user_id']).whereType<String>(),
@@ -381,6 +396,9 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
         continue;
       }
       final debtId = row['debt_id'] as String?;
+      if (debtId != null && bankLoanDebtIds.contains(debtId)) {
+        continue;
+      }
       final debtName = (debtId != null ? debtNameById[debtId] : null) ?? 'Nợ';
       final note = (row['note'] as String?)?.trim();
       externalItems.add(

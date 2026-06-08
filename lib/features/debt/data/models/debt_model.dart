@@ -154,6 +154,21 @@ class DebtModel extends Equatable {
     return SplitBillInfo.fromJson(jsonDecode(note!));
   }
 
+  bool get isBankLoan {
+    if (note == null || !note!.trim().startsWith('{')) return false;
+    try {
+      final data = jsonDecode(note!);
+      return data['is_bank_loan'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  BankLoanInfo? get bankLoanInfo {
+    if (!isBankLoan) return null;
+    return BankLoanInfo.fromJson(jsonDecode(note!));
+  }
+
   String? get displayNote {
     if (note == null) return null;
     if (!note!.trim().startsWith('{')) return note;
@@ -300,6 +315,160 @@ class SplitShare {
       name: name,
       paid: paid ?? this.paid,
       paymentId: paymentId ?? this.paymentId,
+    );
+  }
+}
+
+class BankLoanInfo {
+  final int totalMonths;
+  final int repaymentDay;
+  final List<InterestRateRule> interestRules;
+  final List<RepaymentScheduleItem> schedule;
+
+  BankLoanInfo({
+    required this.totalMonths,
+    required this.repaymentDay,
+    required this.interestRules,
+    required this.schedule,
+  });
+
+  factory BankLoanInfo.fromJson(Map<String, dynamic> json) {
+    return BankLoanInfo(
+      totalMonths: json['total_months'] as int,
+      repaymentDay: json['repayment_day'] as int,
+      interestRules: (json['interest_rules'] as List)
+          .map((e) => InterestRateRule.fromJson(Map<String, dynamic>.from(e)))
+          .toList(),
+      schedule: (json['schedule'] as List)
+          .map((e) => RepaymentScheduleItem.fromJson(Map<String, dynamic>.from(e)))
+          .toList(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'is_bank_loan': true,
+      'total_months': totalMonths,
+      'repayment_day': repaymentDay,
+      'interest_rules': interestRules.map((e) => e.toJson()).toList(),
+      'schedule': schedule.map((e) => e.toJson()).toList(),
+    };
+  }
+}
+
+class InterestRateRule {
+  final int fromMonth;
+  final int toMonth;
+  final double rate;
+
+  InterestRateRule({
+    required this.fromMonth,
+    required this.toMonth,
+    required this.rate,
+  });
+
+  factory InterestRateRule.fromJson(Map<String, dynamic> json) {
+    return InterestRateRule(
+      fromMonth: json['from_month'] as int,
+      toMonth: json['to_month'] as int,
+      rate: (json['rate'] as num).toDouble(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'from_month': fromMonth,
+      'to_month': toMonth,
+      'rate': rate,
+    };
+  }
+}
+
+class RepaymentScheduleItem {
+  final int monthIndex;
+  final DateTime dueDate;
+  final double principal;
+  final double interest;
+  final double rate;
+  final double paidAmount;
+  final String? paymentId;
+  final String? expenseId;
+  final DateTime? paidDate;
+  final bool isPaid;
+  final double earlyPrincipal;
+  final double penaltyFee;
+
+  RepaymentScheduleItem({
+    required this.monthIndex,
+    required this.dueDate,
+    required this.principal,
+    required this.interest,
+    required this.rate,
+    this.paidAmount = 0.0,
+    this.paymentId,
+    this.expenseId,
+    this.paidDate,
+    this.isPaid = false,
+    this.earlyPrincipal = 0.0,
+    this.penaltyFee = 0.0,
+  });
+
+  factory RepaymentScheduleItem.fromJson(Map<String, dynamic> json) {
+    return RepaymentScheduleItem(
+      monthIndex: json['month_index'] as int,
+      dueDate: DateTime.parse(json['due_date'] as String),
+      principal: (json['principal'] as num).toDouble(),
+      interest: (json['interest'] as num).toDouble(),
+      rate: (json['rate'] as num).toDouble(),
+      paidAmount: (json['paid_amount'] as num?)?.toDouble() ?? 0.0,
+      paymentId: json['payment_id'] as String?,
+      expenseId: json['expense_id'] as String?,
+      paidDate: json['paid_date'] != null ? DateTime.parse(json['paid_date'] as String) : null,
+      isPaid: json['is_paid'] as bool? ?? false,
+      earlyPrincipal: (json['early_principal'] as num?)?.toDouble() ?? 0.0,
+      penaltyFee: (json['penalty_fee'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'month_index': monthIndex,
+      'due_date': dueDate.toIso8601String().substring(0, 10),
+      'principal': principal,
+      'interest': interest,
+      'rate': rate,
+      'paid_amount': paidAmount,
+      'payment_id': paymentId,
+      'expense_id': expenseId,
+      'paid_date': paidDate?.toIso8601String().substring(0, 10),
+      'is_paid': isPaid,
+      'early_principal': earlyPrincipal,
+      'penalty_fee': penaltyFee,
+    };
+  }
+
+  RepaymentScheduleItem copyWith({
+    double? paidAmount,
+    String? paymentId,
+    String? expenseId,
+    DateTime? paidDate,
+    bool? isPaid,
+    double? earlyPrincipal,
+    double? penaltyFee,
+  }) {
+    return RepaymentScheduleItem(
+      monthIndex: monthIndex,
+      dueDate: dueDate,
+      principal: principal,
+      interest: interest,
+      rate: rate,
+      paidAmount: paidAmount ?? this.paidAmount,
+      paymentId: paymentId ?? this.paymentId,
+      expenseId: expenseId ?? this.expenseId,
+      paidDate: paidDate ?? this.paidDate,
+      isPaid: isPaid ?? this.isPaid,
+      earlyPrincipal: earlyPrincipal ?? this.earlyPrincipal,
+      penaltyFee: penaltyFee ?? this.penaltyFee,
     );
   }
 }
