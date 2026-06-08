@@ -587,10 +587,14 @@ class _FundListScreenState extends State<FundListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final totalFundAmount = _items.fold<double>(
-      0,
-      (sum, item) => sum + item.currentAmount,
-    );
+    final totalVndAmount = _items
+        .where((item) => !item.isGold)
+        .fold<double>(0, (sum, item) => sum + item.currentAmount);
+    final totalGoldQty = _items
+        .where((item) => item.isGold)
+        .fold<double>(0, (sum, item) => sum + item.currentGoldQuantity);
+    final hasGold = _items.any((item) => item.isGold);
+    final hasVnd = _items.any((item) => !item.isGold);
 
     return Scaffold(
       appBar: AppBar(
@@ -648,20 +652,36 @@ class _FundListScreenState extends State<FundListScreen> {
                         const SizedBox(width: 10),
                         const Expanded(
                           child: Text(
-                            'Tổng tiền đã góp quỹ',
+                            'Tổng quỹ đã góp',
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
                         ),
-                        Text(
-                          formatVnd(totalFundAmount),
-                          style: const TextStyle(
-                            color: AppColors.success,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (hasVnd)
+                              Text(
+                                formatVnd(totalVndAmount),
+                                style: const TextStyle(
+                                  color: AppColors.success,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            if (hasGold)
+                              Text(
+                                '${totalGoldQty.toStringAsFixed(totalGoldQty.truncateToDouble() == totalGoldQty ? 0 : 2)} chỉ',
+                                style: TextStyle(
+                                  color: Colors.amber[800],
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                          ],
                         ),
                       ],
                     ),

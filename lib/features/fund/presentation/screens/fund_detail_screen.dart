@@ -885,14 +885,6 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                                       ),
                                       const SizedBox(height: 2),
                                       if (isGoldContribution) ...[
-                                        Text(
-                                          'Số chỉ: ${c.goldQuantity} chỉ - Giá: ${formatVnd(c.goldUnitPrice ?? 0)}/chỉ',
-                                          style: const TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.black54,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
                                         if (c.goldStore != null && c.goldStore!.isNotEmpty)
                                           Text(
                                             'Cửa hàng: ${c.goldStore}',
@@ -928,12 +920,29 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                                     mainAxisSize: MainAxisSize.min,
                                     crossAxisAlignment: CrossAxisAlignment.end,
                                     children: [
+                                      if (isGoldContribution) ...[
+                                        Text(
+                                          '${isWithdrawal ? '-' : '+'}${c.goldQuantity?.toStringAsFixed(c.goldQuantity!.truncateToDouble() == c.goldQuantity ? 0 : 2) ?? '0'} chỉ',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w700,
+                                            color: isWithdrawal ? Colors.orange : Colors.amber[800],
+                                          ),
+                                        ),
+                                        Text(
+                                          '${formatVnd(c.goldUnitPrice ?? 0)}/chỉ',
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.black45,
+                                          ),
+                                        ),
+                                      ],
                                       Text(
                                         isWithdrawal
                                             ? '-${formatVnd(c.amount)}'
                                             : '+${formatVnd(c.amount)}',
                                         style: TextStyle(
-                                          fontSize: 14,
+                                          fontSize: 13,
                                           fontWeight: FontWeight.w600,
                                           color: isWithdrawal
                                               ? Colors.orange
