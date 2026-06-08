@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:equatable/equatable.dart';
 
 class FundContributionModel extends Equatable {
@@ -17,6 +18,15 @@ class FundContributionModel extends Equatable {
   final bool isDeleted;
   final DateTime? deletedAt;
 
+  // Gold specific fields
+  final bool isGold;
+  final double? goldQuantity;
+  final double? goldUnitPrice;
+  final String? goldStore;
+  final String? cleanNote;
+  final bool recordAsExpense;
+  final bool recordAsIncome;
+
   const FundContributionModel({
     required this.id,
     required this.coupleId,
@@ -33,9 +43,68 @@ class FundContributionModel extends Equatable {
     this.updatedBy,
     required this.isDeleted,
     this.deletedAt,
+    this.isGold = false,
+    this.goldQuantity,
+    this.goldUnitPrice,
+    this.goldStore,
+    this.cleanNote,
+    this.recordAsExpense = true,
+    this.recordAsIncome = true,
   });
 
   factory FundContributionModel.fromJson(Map<String, dynamic> json) {
+    final String? rawNote = json['note'] as String?;
+    String? note = rawNote;
+    bool isGold = false;
+    double? goldQuantity;
+    double? goldUnitPrice;
+    String? goldStore;
+    bool recordAsExpense = true;
+    bool recordAsIncome = true;
+
+    if (rawNote != null) {
+      if (rawNote.startsWith('[GOLD]')) {
+        try {
+          final metaStr = rawNote.substring(6);
+          final decoded = jsonDecode(metaStr);
+          if (decoded is Map) {
+            final qtyVal = decoded['quantity'] ?? decoded['goldQuantity'] ?? decoded['gold_quantity'];
+            if (qtyVal is num) {
+              goldQuantity = qtyVal.toDouble();
+            }
+            final priceVal = decoded['unit_price'] ?? decoded['goldUnitPrice'] ?? decoded['gold_unit_price'];
+            if (priceVal is num) {
+              goldUnitPrice = priceVal.toDouble();
+            }
+            goldStore = (decoded['store'] ?? decoded['shop'] ?? decoded['goldStore'] ?? decoded['gold_store'])?.toString();
+            note = (decoded['note'] ?? decoded['cleanNote'] ?? decoded['clean_note'])?.toString();
+            isGold = true;
+            
+            final expVal = decoded['record_as_expense'] ?? decoded['recordAsExpense'];
+            if (expVal is bool) {
+              recordAsExpense = expVal;
+            }
+            final incVal = decoded['record_as_income'] ?? decoded['recordAsIncome'];
+            if (incVal is bool) {
+              recordAsIncome = incVal;
+            }
+          }
+        } catch (_) {}
+      } else if (rawNote.startsWith('[WITHDRAWAL]')) {
+        try {
+          final metaStr = rawNote.substring(12);
+          final decoded = jsonDecode(metaStr);
+          if (decoded is Map) {
+            note = (decoded['note'] ?? decoded['cleanNote'] ?? decoded['clean_note'])?.toString();
+            final incVal = decoded['record_as_income'] ?? decoded['recordAsIncome'];
+            if (incVal is bool) {
+              recordAsIncome = incVal;
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
     return FundContributionModel(
       id: json['id'] as String,
       coupleId: json['couple_id'] as String,
@@ -46,7 +115,7 @@ class FundContributionModel extends Equatable {
       contributionType:
           (json['contribution_type'] as String?) ?? 'contribution',
       linkedIncomeId: json['linked_income_id'] as String?,
-      note: json['note'] as String?,
+      note: rawNote,
       date: DateTime.parse(json['date'] as String),
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
@@ -55,6 +124,13 @@ class FundContributionModel extends Equatable {
       deletedAt: json['deleted_at'] != null
           ? DateTime.parse(json['deleted_at'] as String)
           : null,
+      isGold: isGold,
+      goldQuantity: goldQuantity,
+      goldUnitPrice: goldUnitPrice,
+      goldStore: goldStore,
+      cleanNote: note,
+      recordAsExpense: recordAsExpense,
+      recordAsIncome: recordAsIncome,
     );
   }
 
@@ -95,5 +171,12 @@ class FundContributionModel extends Equatable {
     updatedBy,
     isDeleted,
     deletedAt,
+    isGold,
+    goldQuantity,
+    goldUnitPrice,
+    goldStore,
+    cleanNote,
+    recordAsExpense,
+    recordAsIncome,
   ];
 }

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:equatable/equatable.dart';
 
 class FundModel extends Equatable {
@@ -18,6 +19,21 @@ class FundModel extends Equatable {
   final bool isDeleted;
   final DateTime? deletedAt;
 
+  // Gold specific fields
+  final bool isGold;
+  final String cleanName;
+  final Map<String, dynamic>? goldMetadata;
+
+  double get customGoldPrice {
+    if (goldMetadata == null) return 15000000.0;
+    return ((goldMetadata!['custom_gold_price'] ?? 15000000.0) as num).toDouble();
+  }
+
+  double get currentGoldQuantity {
+    if (goldMetadata == null) return 0.0;
+    return ((goldMetadata!['total_gold_quantity'] ?? 0.0) as num).toDouble();
+  }
+
   const FundModel({
     required this.id,
     required this.coupleId,
@@ -35,9 +51,32 @@ class FundModel extends Equatable {
     this.updatedBy,
     required this.isDeleted,
     this.deletedAt,
+    this.isGold = false,
+    required this.cleanName,
+    this.goldMetadata,
   });
 
   factory FundModel.fromJson(Map<String, dynamic> json) {
+    final String rawName = json['name'] as String;
+    String name = rawName;
+    bool isGold = false;
+    Map<String, dynamic>? goldMetadata;
+
+    if (rawName.startsWith('[GOLD]')) {
+      final sepIndex = rawName.indexOf('|');
+      if (sepIndex != -1) {
+        name = rawName.substring(6, sepIndex);
+        final metaStr = rawName.substring(sepIndex + 1);
+        try {
+          goldMetadata = jsonDecode(metaStr) as Map<String, dynamic>;
+          isGold = true;
+        } catch (_) {}
+      } else {
+        name = rawName.substring(6);
+        isGold = true;
+      }
+    }
+
     return FundModel(
       id: json['id'] as String,
       coupleId: json['couple_id'] as String,
@@ -45,7 +84,7 @@ class FundModel extends Equatable {
           json['creator_user_id'] as String? ??
           json['user_id'] as String? ??
           json['updated_by'] as String?,
-      name: json['name'] as String,
+      name: rawName,
       icon: json['icon'] as String?,
       sortOrder: (json['sort_order'] as num?)?.toInt() ?? 0,
       targetAmount: json['target_amount'] != null
@@ -64,6 +103,9 @@ class FundModel extends Equatable {
       deletedAt: json['deleted_at'] != null
           ? DateTime.parse(json['deleted_at'] as String)
           : null,
+      isGold: isGold,
+      cleanName: name,
+      goldMetadata: goldMetadata,
     );
   }
 
@@ -88,6 +130,50 @@ class FundModel extends Equatable {
     };
   }
 
+  FundModel copyWith({
+    String? id,
+    String? coupleId,
+    String? creatorUserId,
+    String? name,
+    String? icon,
+    int? sortOrder,
+    double? targetAmount,
+    double? currentAmount,
+    DateTime? deadline,
+    String? color,
+    bool? isActive,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    String? updatedBy,
+    bool? isDeleted,
+    DateTime? deletedAt,
+    bool? isGold,
+    String? cleanName,
+    Map<String, dynamic>? goldMetadata,
+  }) {
+    return FundModel(
+      id: id ?? this.id,
+      coupleId: coupleId ?? this.coupleId,
+      creatorUserId: creatorUserId ?? this.creatorUserId,
+      name: name ?? this.name,
+      icon: icon ?? this.icon,
+      sortOrder: sortOrder ?? this.sortOrder,
+      targetAmount: targetAmount ?? this.targetAmount,
+      currentAmount: currentAmount ?? this.currentAmount,
+      deadline: deadline ?? this.deadline,
+      color: color ?? this.color,
+      isActive: isActive ?? this.isActive,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      updatedBy: updatedBy ?? this.updatedBy,
+      isDeleted: isDeleted ?? this.isDeleted,
+      deletedAt: deletedAt ?? this.deletedAt,
+      isGold: isGold ?? this.isGold,
+      cleanName: cleanName ?? this.cleanName,
+      goldMetadata: goldMetadata ?? this.goldMetadata,
+    );
+  }
+
   @override
   List<Object?> get props => [
     id,
@@ -106,5 +192,8 @@ class FundModel extends Equatable {
     updatedBy,
     isDeleted,
     deletedAt,
+    isGold,
+    cleanName,
+    goldMetadata,
   ];
 }

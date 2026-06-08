@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
@@ -84,10 +85,17 @@ class FundService {
     DateTime? deadline,
     String? icon,
     String? color,
+    bool isGold = false,
+    Map<String, dynamic>? goldMetadata,
   }) async {
     final currentUserId = Supabase.instance.client.auth.currentUser?.id;
     if (currentUserId == null) {
       throw Exception('Không tìm thấy phiên đăng nhập.');
+    }
+
+    String dbName = name;
+    if (isGold) {
+      dbName = '[GOLD]$name|${jsonEncode(goldMetadata ?? {})}';
     }
 
     final now = DateTime.now().toUtc();
@@ -95,7 +103,7 @@ class FundService {
       'id': _uuid.v4(),
       'couple_id': coupleId,
       'creator_user_id': currentUserId,
-      'name': name,
+      'name': dbName,
       'target_amount': targetAmount,
       'deadline': deadline?.toIso8601String().substring(0, 10),
       'icon': icon,
@@ -142,15 +150,40 @@ class FundService {
     DateTime? deadline,
     String? icon,
     String? color,
+    bool isGold = false,
+    Map<String, dynamic>? goldMetadata,
   }) async {
+    String dbName = name;
+    if (isGold) {
+      dbName = '[GOLD]$name|${jsonEncode(goldMetadata ?? {})}';
+    }
+
     await _db
         .from('funds')
         .update({
-          'name': name,
+          'name': dbName,
           'target_amount': targetAmount,
           'deadline': deadline?.toIso8601String().substring(0, 10),
           'icon': icon,
           'color': color,
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        })
+        .eq('id', fundId);
+  }
+
+  Future<void> updateGoldPrice(String fundId, double newPrice) async {
+    final fund = await getFundById(fundId);
+    if (!fund.isGold) return;
+
+    final nextMeta = Map<String, dynamic>.from(fund.goldMetadata ?? {});
+    nextMeta['custom_gold_price'] = newPrice;
+
+    final dbName = '[GOLD]${fund.cleanName}|${jsonEncode(nextMeta)}';
+
+    await _db
+        .from('funds')
+        .update({
+          'name': dbName,
           'updated_at': DateTime.now().toUtc().toIso8601String(),
         })
         .eq('id', fundId);
@@ -232,8 +265,26 @@ class FundService {
   }) async {
     final fund = await getFundById(fundId);
     final fundName = fund.name.trim();
-    if (amount > fund.currentAmount) {
-      throw Exception('Số tiền rút vượt quá số dư quỹ hiện tại.');
+    if (fund.isGold) {
+      double withdrawGoldQty = 0;
+      if (note != null && note.startsWith('[GOLD]')) {
+        try {
+          final decoded = jsonDecode(note.substring(6));
+          if (decoded is Map) {
+            final qtyVal = decoded['quantity'] ?? decoded['goldQuantity'] ?? decoded['gold_quantity'];
+            if (qtyVal is num) {
+              withdrawGoldQty = qtyVal.toDouble();
+            }
+          }
+        } catch (_) {}
+      }
+      if (withdrawGoldQty > fund.currentGoldQuantity) {
+        throw Exception('Số lượng vàng rút (${withdrawGoldQty} chỉ) vượt quá số dư vàng hiện tại của quỹ (${fund.currentGoldQuantity} chỉ).');
+      }
+    } else {
+      if (amount > fund.currentAmount) {
+        throw Exception('Số tiền rút vượt quá số dư quỹ hiện tại.');
+      }
     }
 
     final now = DateTime.now().toUtc();
@@ -268,7 +319,7 @@ class FundService {
     final existing = await _db
         .from('fund_contributions')
         .select(
-          'amount, contribution_type, linked_income_id, wallet_id, user_id',
+          'amount, contribution_type, linked_income_id, wallet_id, user_id, note',
         )
         .eq('id', contributionId)
         .single();
@@ -283,17 +334,45 @@ class FundService {
     final fund = await getFundById(fundId);
     final currentAmount = fund.currentAmount;
     if (contributionType == 'withdrawal') {
-      final maxAllowed = currentAmount + previousAmount;
-      if (amount > maxAllowed) {
-        throw Exception('Số tiền rut vuot qua so du quy hien tai.');
+      if (fund.isGold) {
+        double previousGoldQty = 0;
+        final prevNote = existing['note'] as String?;
+        if (prevNote != null && prevNote.startsWith('[GOLD]')) {
+          try {
+            final decoded = jsonDecode(prevNote.substring(6));
+            if (decoded is Map) {
+              final qtyVal = decoded['quantity'] ?? decoded['goldQuantity'] ?? decoded['gold_quantity'];
+              if (qtyVal is num) {
+                previousGoldQty = qtyVal.toDouble();
+              }
+            }
+          } catch (_) {}
+        }
+
+        double newGoldQty = 0;
+        if (note != null && note.startsWith('[GOLD]')) {
+          try {
+            final decoded = jsonDecode(note.substring(6));
+            if (decoded is Map) {
+              final qtyVal = decoded['quantity'] ?? decoded['goldQuantity'] ?? decoded['gold_quantity'];
+              if (qtyVal is num) {
+                newGoldQty = qtyVal.toDouble();
+              }
+            }
+          } catch (_) {}
+        }
+
+        final maxGoldAllowed = fund.currentGoldQuantity + previousGoldQty;
+        if (newGoldQty > maxGoldAllowed) {
+          throw Exception('Số lượng vàng rút (${newGoldQty} chỉ) vượt quá số dư vàng hiện tại của quỹ (${maxGoldAllowed} chỉ).');
+        }
+      } else {
+        final maxAllowed = currentAmount + previousAmount;
+        if (amount > maxAllowed) {
+          throw Exception('Số tiền rút vượt quá số dư quỹ hiện tại.');
+        }
       }
     }
-
-    final signedPrevious = contributionType == 'withdrawal'
-        ? -previousAmount
-        : previousAmount;
-    final signedNext = contributionType == 'withdrawal' ? -amount : amount;
-    final nextAmount = currentAmount - signedPrevious + signedNext;
 
     await _db
         .from('fund_contributions')
@@ -305,26 +384,86 @@ class FundService {
         })
         .eq('id', contributionId);
 
-    if (contributionType == 'withdrawal' && linkedIncomeId != null) {
-      await _db
-          .from('incomes')
-          .update({
-            'wallet_id': walletId,
-            'user_id': userId,
-            'amount': amount,
-            'description': note?.trim().isNotEmpty == true
-                ? note!.trim()
-                : 'Rút quỹ: ${fund.name}',
-            'date': date.toIso8601String().substring(0, 10),
-          })
-          .eq('id', linkedIncomeId)
-          .eq('is_deleted', false);
+    bool recordAsIncome = true;
+    if (note != null) {
+      if (note.startsWith('[GOLD]')) {
+        try {
+          final decoded = jsonDecode(note.substring(6));
+          if (decoded is Map) {
+            final incVal = decoded['record_as_income'] ?? decoded['recordAsIncome'];
+            if (incVal is bool) {
+              recordAsIncome = incVal;
+            }
+          }
+        } catch (_) {}
+      } else if (note.startsWith('[WITHDRAWAL]')) {
+        try {
+          final decoded = jsonDecode(note.substring(12));
+          if (decoded is Map) {
+            final incVal = decoded['record_as_income'] ?? decoded['recordAsIncome'];
+            if (incVal is bool) {
+              recordAsIncome = incVal;
+            }
+          }
+        } catch (_) {}
+      }
     }
 
-    await _db
-        .from('funds')
-        .update({'current_amount': nextAmount})
-        .eq('id', fundId);
+    if (contributionType == 'withdrawal') {
+      if (recordAsIncome) {
+        if (linkedIncomeId != null) {
+          await _db
+              .from('incomes')
+              .update({
+                'wallet_id': walletId,
+                'user_id': userId,
+                'amount': amount,
+                'description': note?.trim().isNotEmpty == true
+                    ? _cleanWithdrawalNote(note!, fund.cleanName)
+                    : 'Rút quỹ: ${fund.cleanName}',
+                'date': date.toIso8601String().substring(0, 10),
+              })
+              .eq('id', linkedIncomeId)
+              .eq('is_deleted', false);
+        } else {
+          final incomeSourceId = await _ensureFundWithdrawIncomeSource(fund.coupleId);
+          final incomeRow = await _db
+              .from('incomes')
+              .insert({
+                'couple_id': fund.coupleId,
+                'user_id': userId,
+                'wallet_id': walletId,
+                'income_source_id': incomeSourceId,
+                'amount': amount,
+                'description': note?.trim().isNotEmpty == true
+                    ? _cleanWithdrawalNote(note!, fund.cleanName)
+                    : 'Rút quỹ: ${fund.cleanName}',
+                'is_from_transfer': false,
+                'date': date.toIso8601String().substring(0, 10),
+              })
+              .select('id')
+              .single();
+          await _db
+              .from('fund_contributions')
+              .update({'linked_income_id': incomeRow['id'] as String})
+              .eq('id', contributionId);
+        }
+      } else {
+        if (linkedIncomeId != null) {
+          final nowIso = DateTime.now().toUtc().toIso8601String();
+          await _db
+              .from('incomes')
+              .update({'is_deleted': true, 'deleted_at': nowIso})
+              .eq('id', linkedIncomeId);
+          await _db
+              .from('fund_contributions')
+              .update({'linked_income_id': null})
+              .eq('id', contributionId);
+        }
+      }
+    }
+
+    await _refreshFundFromRemote(fundId);
   }
 
   Future<void> deleteContribution({
@@ -337,7 +476,6 @@ class FundService {
         .eq('id', contributionId)
         .single();
 
-    final previousAmount = (existing['amount'] as num?)?.toDouble() ?? 0;
     final contributionType =
         (existing['contribution_type'] as String?) ?? 'contribution';
     final linkedIncomeId = existing['linked_income_id'] as String?;
@@ -360,18 +498,7 @@ class FundService {
           .eq('is_deleted', false);
     }
 
-    final fund = await getFundById(fundId);
-    final signedPrevious = contributionType == 'withdrawal'
-        ? -previousAmount
-        : previousAmount;
-    final nextAmount = (fund.currentAmount - signedPrevious).clamp(
-      0,
-      double.infinity,
-    );
-    await _db
-        .from('funds')
-        .update({'current_amount': nextAmount})
-        .eq('id', fundId);
+    await _refreshFundFromRemote(fundId);
   }
 
   Future<Map<String, dynamic>> _createFundRemote(
@@ -434,6 +561,18 @@ class FundService {
             : 'Quỹ';
     payload.remove('fund_name');
 
+    String cleanFundName(String rawName) {
+      if (rawName.startsWith('[GOLD]')) {
+        final sepIndex = rawName.indexOf('|');
+        if (sepIndex != -1) {
+          return rawName.substring(6, sepIndex);
+        }
+        return rawName.substring(6);
+      }
+      return rawName;
+    }
+    final cleanName = cleanFundName(fundName);
+
     final row = await _db
         .from('fund_contributions')
         .insert(payload)
@@ -445,11 +584,40 @@ class FundService {
       return row;
     }
 
+    final note = payload['note'] as String?;
+    bool recordAsIncome = true;
+    if (note != null) {
+      if (note.startsWith('[GOLD]')) {
+        try {
+          final decoded = jsonDecode(note.substring(6));
+          if (decoded is Map) {
+            final incVal = decoded['record_as_income'] ?? decoded['recordAsIncome'];
+            if (incVal is bool) {
+              recordAsIncome = incVal;
+            }
+          }
+        } catch (_) {}
+      } else if (note.startsWith('[WITHDRAWAL]')) {
+        try {
+          final decoded = jsonDecode(note.substring(12));
+          if (decoded is Map) {
+            final incVal = decoded['record_as_income'] ?? decoded['recordAsIncome'];
+            if (incVal is bool) {
+              recordAsIncome = incVal;
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
+    if (!recordAsIncome) {
+      return row;
+    }
+
     final coupleId = payload['couple_id'] as String;
     final userId = payload['user_id'] as String;
     final walletId = payload['wallet_id'] as String;
     final amount = (payload['amount'] as num).toDouble();
-    final note = payload['note'] as String?;
     final incomeSourceId = await _ensureFundWithdrawIncomeSource(coupleId);
     final incomeRow = await _db
         .from('incomes')
@@ -460,8 +628,8 @@ class FundService {
           'income_source_id': incomeSourceId,
           'amount': amount,
           'description': note?.trim().isNotEmpty == true
-              ? note!.trim()
-              : 'Rút quỹ: $fundName',
+              ? _cleanWithdrawalNote(note!, cleanName)
+              : 'Rút quỹ: $cleanName',
           'is_from_transfer': false,
           'date': payload['date'] as String,
         })
@@ -478,30 +646,64 @@ class FundService {
   }
 
   Future<void> _refreshFundFromRemote(String fundId) async {
+    final fund = await getFundById(fundId);
     final rows = await _db
         .from('fund_contributions')
-        .select('amount, contribution_type')
+        .select('amount, contribution_type, note')
         .eq('fund_id', fundId)
         .eq('is_deleted', false);
 
-    double total = 0;
+    double totalVnd = 0;
+    double totalGold = 0;
     for (final row in rows) {
       final amount = (row['amount'] as num?)?.toDouble() ?? 0;
       final type = (row['contribution_type'] as String?) ?? 'contribution';
+      final note = row['note'] as String?;
+
+      double goldQty = 0;
+      if (note != null && note.startsWith('[GOLD]')) {
+        try {
+          final decoded = jsonDecode(note.substring(6));
+          if (decoded is Map) {
+            final qtyVal = decoded['quantity'] ?? decoded['goldQuantity'] ?? decoded['gold_quantity'];
+            if (qtyVal is num) {
+              goldQty = qtyVal.toDouble();
+            }
+          }
+        } catch (_) {}
+      }
+
       if (type == 'contribution') {
-        total += amount;
+        totalVnd += amount;
+        totalGold += goldQty;
       } else if (type == 'withdrawal') {
-        total -= amount;
+        totalVnd -= amount;
+        totalGold -= goldQty;
       }
     }
 
-    await _db
-        .from('funds')
-        .update({
-          'current_amount': total,
-          'updated_at': DateTime.now().toUtc().toIso8601String(),
-        })
-        .eq('id', fundId);
+    if (fund.isGold) {
+      final nextMeta = Map<String, dynamic>.from(fund.goldMetadata ?? {});
+      nextMeta['total_gold_quantity'] = totalGold < 0 ? 0.0 : totalGold;
+      final dbName = '[GOLD]${fund.cleanName}|${jsonEncode(nextMeta)}';
+
+      await _db
+          .from('funds')
+          .update({
+            'name': dbName,
+            'current_amount': totalVnd < 0 ? 0.0 : totalVnd,
+            'updated_at': DateTime.now().toUtc().toIso8601String(),
+          })
+          .eq('id', fundId);
+    } else {
+      await _db
+          .from('funds')
+          .update({
+            'current_amount': totalVnd < 0 ? 0.0 : totalVnd,
+            'updated_at': DateTime.now().toUtc().toIso8601String(),
+          })
+          .eq('id', fundId);
+    }
   }
 
   Future<double> previewDeleteContributionImpact(String contributionId) async {
@@ -534,30 +736,50 @@ class FundService {
 
       if (existing.isNotEmpty) {
         final id = existing.first['id'] as String;
-        final showInIncomeForm =
-            (existing.first['show_in_income_form'] as bool?) ?? true;
-        if (showInIncomeForm) {
-          await _db
-              .from('income_sources')
-              .update({'show_in_income_form': false})
-              .eq('id', id);
-        }
+        try {
+          final showInIncomeForm =
+              (existing.first['show_in_income_form'] as bool?) ?? true;
+          if (showInIncomeForm) {
+            await _db
+                .from('income_sources')
+                .update({'show_in_income_form': false})
+                .eq('id', id);
+          }
+        } catch (_) {}
         return id;
       }
+    } catch (_) {}
 
+    final payload = <String, dynamic>{
+      'couple_id': coupleId,
+      'name': _fundWithdrawIncomeSourceName,
+      'icon': 'savings',
+      'type': 'other',
+    };
+
+    try {
       final created = await _db
           .from('income_sources')
           .insert({
-            'couple_id': coupleId,
-            'name': _fundWithdrawIncomeSourceName,
-            'icon': 'savings',
-            'type': 'other',
+            ...payload,
             'show_in_income_form': false,
           })
           .select('id')
           .single();
       return created['id'] as String;
     } catch (e) {
+      if (e is PostgrestException && e.code == '23505') {
+        final raceExisting = await _db
+            .from('income_sources')
+            .select('id')
+            .eq('couple_id', coupleId)
+            .eq('name', _fundWithdrawIncomeSourceName)
+            .eq('is_deleted', false)
+            .limit(1);
+        if (raceExisting.isNotEmpty) {
+          return raceExisting.first['id'] as String;
+        }
+      }
       if (!_isMissingIncomeFormColumn(e)) rethrow;
       final existing = await _db
           .from('income_sources')
@@ -573,15 +795,41 @@ class FundService {
 
       final created = await _db
           .from('income_sources')
-          .insert({
-            'couple_id': coupleId,
-            'name': _fundWithdrawIncomeSourceName,
-            'icon': 'savings',
-            'type': 'other',
-          })
+          .insert(payload)
           .select('id')
           .single();
       return created['id'] as String;
     }
+  }
+
+  String _cleanWithdrawalNote(String rawNote, String fundName) {
+    if (rawNote.startsWith('[GOLD]')) {
+      try {
+        final decoded = jsonDecode(rawNote.substring(6));
+        if (decoded is Map) {
+          final qty = decoded['quantity'] ?? decoded['goldQuantity'] ?? decoded['gold_quantity'] ?? '0';
+          final userNote = (decoded['note'] ?? decoded['cleanNote'] ?? decoded['clean_note'])?.toString();
+          String res = 'Rút $qty chỉ vàng';
+          if (userNote != null && userNote.trim().isNotEmpty) {
+            res += ' (${userNote.trim()})';
+          }
+          return res;
+        }
+      } catch (_) {}
+      return rawNote;
+    } else if (rawNote.startsWith('[WITHDRAWAL]')) {
+      try {
+        final decoded = jsonDecode(rawNote.substring(12));
+        if (decoded is Map) {
+          final userNote = (decoded['note'] ?? decoded['cleanNote'] ?? decoded['clean_note'])?.toString();
+          if (userNote != null && userNote.trim().isNotEmpty) {
+            return userNote.trim();
+          }
+        }
+        return 'Rút quỹ: $fundName';
+      } catch (_) {}
+      return rawNote;
+    }
+    return rawNote;
   }
 }

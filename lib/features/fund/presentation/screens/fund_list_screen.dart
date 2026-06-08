@@ -189,12 +189,18 @@ class _FundListScreenState extends State<FundListScreen> {
     final targetCtrl = TextEditingController();
     DateTime? deadline = existing?.deadline;
     var isClosingDialog = false;
+    var isGold = existing?.isGold ?? false;
+
     if (existing != null) {
-      nameCtrl.text = existing.name;
+      nameCtrl.text = existing.cleanName;
       if (existing.targetAmount != null) {
-        targetCtrl.text = formatAmountInput(
-          existing.targetAmount!.toStringAsFixed(0),
-        );
+        if (existing.isGold) {
+          targetCtrl.text = existing.targetAmount!.toString();
+        } else {
+          targetCtrl.text = formatAmountInput(
+            existing.targetAmount!.toStringAsFixed(0),
+          );
+        }
       }
     }
 
@@ -242,24 +248,49 @@ class _FundListScreenState extends State<FundListScreen> {
                               decoration: const InputDecoration(hintText: 'Tên quỹ'),
                             ),
                             const SizedBox(height: 10),
-                            TextField(
-                              controller: targetCtrl,
-                              keyboardType: TextInputType.number,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.digitsOnly,
-                                ThousandsSeparatorInputFormatter(),
-                              ],
+                            DropdownButtonFormField<bool>(
+                              value: isGold,
                               decoration: const InputDecoration(
-                                hintText: 'Mục tiêu (tuỳ chọn)',
+                                labelText: 'Đơn vị mục tiêu',
+                                border: OutlineInputBorder(),
                               ),
-                            ),
-                            const SizedBox(height: 6),
-                            AmountSuggestionChips(
-                              controller: targetCtrl,
-                              onSelected: (value) {
-                                targetCtrl.text = formatAmountInput(value.toString());
+                              items: const [
+                                DropdownMenuItem(value: false, child: Text('VNĐ')),
+                                DropdownMenuItem(value: true, child: Text('Vàng (chỉ)')),
+                              ],
+                              onChanged: (v) {
+                                setDialogState(() {
+                                  isGold = v ?? false;
+                                });
                               },
                             ),
+                            const SizedBox(height: 10),
+                            TextField(
+                              controller: targetCtrl,
+                              keyboardType: isGold
+                                  ? const TextInputType.numberWithOptions(decimal: true)
+                                  : TextInputType.number,
+                              inputFormatters: isGold
+                                  ? []
+                                  : [
+                                      FilteringTextInputFormatter.digitsOnly,
+                                      ThousandsSeparatorInputFormatter(),
+                                    ],
+                              decoration: InputDecoration(
+                                hintText: isGold
+                                    ? 'Mục tiêu số chỉ vàng (tuỳ chọn)'
+                                    : 'Mục tiêu số tiền (tuỳ chọn)',
+                              ),
+                            ),
+                            if (!isGold) ...[
+                              const SizedBox(height: 6),
+                              AmountSuggestionChips(
+                                controller: targetCtrl,
+                                onSelected: (value) {
+                                  targetCtrl.text = formatAmountInput(value.toString());
+                                },
+                              ),
+                            ],
                             const SizedBox(height: 10),
                             OutlinedButton.icon(
                               onPressed: () async {
@@ -321,7 +352,9 @@ class _FundListScreenState extends State<FundListScreen> {
                               final targetAmount =
                                   targetCtrl.text.trim().isEmpty
                                   ? null
-                                  : parseAmountInput(targetCtrl.text.trim());
+                                  : (isGold
+                                      ? double.tryParse(targetCtrl.text.trim())
+                                      : parseAmountInput(targetCtrl.text.trim()));
                               isClosingDialog = true;
                               WidgetsBinding.instance.addPostFrameCallback((
                                 _,
@@ -331,6 +364,7 @@ class _FundListScreenState extends State<FundListScreen> {
                                   'name': name,
                                   'targetAmount': targetAmount,
                                   'deadline': deadline,
+                                  'isGold': isGold,
                                 });
                               });
                             },
@@ -353,6 +387,7 @@ class _FundListScreenState extends State<FundListScreen> {
     final name = payload['name'] as String;
     final targetAmount = payload['targetAmount'] as double?;
     final selectedDeadline = payload['deadline'] as DateTime?;
+    final isGoldResult = payload['isGold'] as bool? ?? false;
 
     try {
       await _runMutation(() async {
@@ -362,6 +397,8 @@ class _FundListScreenState extends State<FundListScreen> {
             name: name,
             targetAmount: targetAmount,
             deadline: selectedDeadline,
+            isGold: isGoldResult,
+            goldMetadata: isGoldResult ? {'custom_gold_price': 15000000.0} : null,
           );
           if (!mounted) return;
           setState(() {
@@ -376,6 +413,8 @@ class _FundListScreenState extends State<FundListScreen> {
             name: name,
             targetAmount: targetAmount,
             deadline: selectedDeadline,
+            isGold: isGoldResult,
+            goldMetadata: isGoldResult ? (existing.goldMetadata ?? {'custom_gold_price': 15000000.0}) : null,
           );
           final refreshed = await _service.getFundById(existing.id);
           if (!mounted) return;
@@ -653,10 +692,11 @@ class _FundListScreenState extends State<FundListScreen> {
                             : null,
                         itemBuilder: (context, index) {
                           final item = _items[index];
+                          final isGold = item.isGold;
                           final progress =
                               (item.targetAmount != null &&
                                   item.targetAmount! > 0)
-                              ? (item.currentAmount / item.targetAmount!).clamp(
+                              ? ((isGold ? item.currentGoldQuantity : item.currentAmount) / item.targetAmount!).clamp(
                                   0.0,
                                   1.0,
                                 )
@@ -697,21 +737,22 @@ class _FundListScreenState extends State<FundListScreen> {
                                           height: 56,
                                           width: 56,
                                           decoration: BoxDecoration(
-                                            color: AppColors.tealSoft
-                                                .withValues(alpha: 0.45),
+                                            color: isGold
+                                                ? Colors.amber.withValues(alpha: 0.25)
+                                                : AppColors.tealSoft.withValues(alpha: 0.45),
                                             borderRadius: BorderRadius.circular(
                                               16,
                                             ),
                                           ),
-                                          child: const Icon(
-                                            Icons.savings_outlined,
-                                            color: AppColors.tealDeep,
+                                          child: Icon(
+                                            isGold ? Icons.stars_rounded : Icons.savings_outlined,
+                                            color: isGold ? Colors.amber[800] : AppColors.tealDeep,
                                           ),
                                         ),
                                         const SizedBox(width: 14),
                                         Expanded(
                                           child: Text(
-                                            item.name,
+                                            item.cleanName,
                                             style: const TextStyle(
                                               fontWeight: FontWeight.w700,
                                               fontSize: 18,
@@ -719,7 +760,9 @@ class _FundListScreenState extends State<FundListScreen> {
                                           ),
                                         ),
                                         Text(
-                                          formatVnd(item.currentAmount),
+                                          isGold
+                                              ? '${item.currentGoldQuantity.toStringAsFixed(item.currentGoldQuantity.truncateToDouble() == item.currentGoldQuantity ? 0 : 2)} chỉ'
+                                              : formatVnd(item.currentAmount),
                                           style: const TextStyle(
                                             color: Colors.black,
                                             fontWeight: FontWeight.w800,
@@ -746,8 +789,8 @@ class _FundListScreenState extends State<FundListScreen> {
                                           999,
                                         ),
                                         valueColor:
-                                            const AlwaysStoppedAnimation<Color>(
-                                              AppColors.tealDeep,
+                                            AlwaysStoppedAnimation<Color>(
+                                              isGold ? Colors.amber[700]! : AppColors.tealDeep,
                                             ),
                                         backgroundColor: Colors.grey[200],
                                       ),
@@ -758,14 +801,16 @@ class _FundListScreenState extends State<FundListScreen> {
                                         children: [
                                           Text(
                                             '${(progress * 100).toStringAsFixed(0)}%',
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 13,
-                                              color: AppColors.tealDeep,
+                                              color: isGold ? Colors.amber[800] : AppColors.tealDeep,
                                               fontWeight: FontWeight.w600,
                                             ),
                                           ),
                                           Text(
-                                            'Mục tiêu: ${formatVnd(item.targetAmount!)}',
+                                            isGold
+                                                ? 'Mục tiêu: ${item.targetAmount!.toStringAsFixed(item.targetAmount!.truncateToDouble() == item.targetAmount! ? 0 : 2)} chỉ'
+                                                : 'Mục tiêu: ${formatVnd(item.targetAmount!)}',
                                             style: const TextStyle(
                                               fontSize: 13,
                                               fontWeight: FontWeight.w500,

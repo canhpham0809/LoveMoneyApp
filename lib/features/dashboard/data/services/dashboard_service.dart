@@ -198,8 +198,18 @@ class DashboardService {
         .select('id, name, icon, current_amount')
         .eq('couple_id', coupleId)
         .eq('is_deleted', false);
+    String cleanFundName(String rawName) {
+      if (rawName.startsWith('[GOLD]')) {
+        final sepIndex = rawName.indexOf('|');
+        if (sepIndex != -1) {
+          return rawName.substring(6, sepIndex);
+        }
+        return rawName.substring(6);
+      }
+      return rawName;
+    }
     final fundNameById = {
-      for (final row in funds) row['id'] as String: row['name'] as String,
+      for (final row in funds) row['id'] as String: cleanFundName(row['name'] as String),
     };
     final fundIconById = {
       for (final row in funds)
@@ -561,11 +571,58 @@ class DashboardService {
       final contribType =
           (row['contribution_type'] as String?) ?? 'contribution';
       final amount = (row['amount'] as num?)?.toDouble() ?? 0;
+      
+      final noteVal = row['note'] as String?;
+      String formattedDesc = '';
+      if (noteVal != null && noteVal.trim().isNotEmpty) {
+        if (noteVal.startsWith('[GOLD]')) {
+          try {
+            final decoded = jsonDecode(noteVal.substring(6));
+            if (decoded is Map) {
+              final qty = decoded['quantity'] ?? decoded['goldQuantity'] ?? decoded['gold_quantity'] ?? '0';
+              final store = (decoded['store'] ?? decoded['shop'] ?? decoded['goldStore'] ?? decoded['gold_store'])?.toString();
+              final userNote = (decoded['note'] ?? decoded['cleanNote'] ?? decoded['clean_note'])?.toString();
+              formattedDesc = contribType == 'withdrawal'
+                  ? 'Rút $qty chỉ vàng'
+                  : 'Góp $qty chỉ vàng';
+              if (store != null && store.trim().isNotEmpty) {
+                formattedDesc += ' tại ${store.trim()}';
+              }
+              if (userNote != null && userNote.trim().isNotEmpty) {
+                formattedDesc += ' ($userNote)';
+              }
+            } else {
+              formattedDesc = noteVal;
+            }
+          } catch (_) {
+            formattedDesc = noteVal;
+          }
+        } else if (noteVal.startsWith('[WITHDRAWAL]')) {
+          try {
+            final decoded = jsonDecode(noteVal.substring(12));
+            if (decoded is Map) {
+              final userNote = (decoded['note'] ?? decoded['cleanNote'] ?? decoded['clean_note'])?.toString();
+              formattedDesc = (userNote != null && userNote.trim().isNotEmpty)
+                  ? userNote.trim()
+                  : (contribType == 'withdrawal' ? 'Rút quỹ' : 'Góp quỹ');
+            } else {
+              formattedDesc = noteVal;
+            }
+          } catch (_) {
+            formattedDesc = noteVal;
+          }
+        } else {
+          formattedDesc = noteVal;
+        }
+      } else {
+        formattedDesc = contribType == 'withdrawal' ? 'Rút quỹ' : 'Góp quỹ';
+      }
+
       (bucket['sub_items'] as List<Map<String, dynamic>>).add({
         'type': contribType,
         'amount': amount,
         'date': row['date'] as String?,
-        'description': row['note'] as String?,
+        'description': formattedDesc,
       });
     }
 
@@ -801,13 +858,39 @@ class DashboardService {
                 (fundId != null ? fundNameById[fundId] : null) ?? 'Quỹ';
             final fundIcon =
                 (fundId != null ? fundIconById[fundId] : null) ?? 'savings';
+            final noteVal = row['note'] as String?;
+            String formattedTitle = 'Góp quỹ $fundName';
+            if (noteVal != null && noteVal.trim().isNotEmpty) {
+              if (noteVal.startsWith('[GOLD]')) {
+                try {
+                  final decoded = jsonDecode(noteVal.substring(6));
+                  if (decoded is Map) {
+                    final qty = decoded['quantity'] ?? decoded['goldQuantity'] ?? decoded['gold_quantity'] ?? '0';
+                    final store = (decoded['store'] ?? decoded['shop'] ?? decoded['goldStore'] ?? decoded['gold_store'])?.toString();
+                    final userNote = (decoded['note'] ?? decoded['cleanNote'] ?? decoded['clean_note'])?.toString();
+                    formattedTitle = 'Góp $qty chỉ vàng';
+                    if (store != null && store.trim().isNotEmpty) {
+                      formattedTitle += ' tại ${store.trim()}';
+                    }
+                    if (userNote != null && userNote.trim().isNotEmpty) {
+                      formattedTitle += ' ($userNote)';
+                    }
+                  } else {
+                    formattedTitle = noteVal;
+                  }
+                } catch (_) {
+                  formattedTitle = noteVal;
+                }
+              } else {
+                // Plain note (non-gold contribution)
+                formattedTitle = 'Góp quỹ $fundName: ${noteVal.trim()}';
+              }
+            }
             return <String, dynamic>{
               'kind': 'fund_contribution',
               'bucket_id': fundId ?? fundName,
               'bucket_name': fundName,
-              'title': (row['note'] as String?)?.trim().isNotEmpty == true
-                  ? (row['note'] as String).trim()
-                  : 'Góp quỹ $fundName',
+              'title': formattedTitle,
               'icon_key': fundIcon,
               'amount': (row['amount'] as num?)?.toDouble() ?? 0,
               'date': row['date'] as String?,
@@ -826,13 +909,52 @@ class DashboardService {
                 (fundId != null ? fundNameById[fundId] : null) ?? 'Quỹ';
             final fundIcon =
                 (fundId != null ? fundIconById[fundId] : null) ?? 'savings';
+            final noteVal = row['note'] as String?;
+            String formattedTitle = 'Rút quỹ $fundName';
+            if (noteVal != null && noteVal.trim().isNotEmpty) {
+              if (noteVal.startsWith('[GOLD]')) {
+                try {
+                  final decoded = jsonDecode(noteVal.substring(6));
+                  if (decoded is Map) {
+                    final qty = decoded['quantity'] ?? decoded['goldQuantity'] ?? decoded['gold_quantity'] ?? '0';
+                    final store = (decoded['store'] ?? decoded['shop'] ?? decoded['goldStore'] ?? decoded['gold_store'])?.toString();
+                    final userNote = (decoded['note'] ?? decoded['cleanNote'] ?? decoded['clean_note'])?.toString();
+                    formattedTitle = 'Rút $qty chỉ vàng';
+                    if (store != null && store.trim().isNotEmpty) {
+                      formattedTitle += ' tại ${store.trim()}';
+                    }
+                    if (userNote != null && userNote.trim().isNotEmpty) {
+                      formattedTitle += ' ($userNote)';
+                    }
+                  } else {
+                    formattedTitle = noteVal;
+                  }
+                } catch (_) {
+                  formattedTitle = noteVal;
+                }
+              } else if (noteVal.startsWith('[WITHDRAWAL]')) {
+                try {
+                  final decoded = jsonDecode(noteVal.substring(12));
+                  if (decoded is Map) {
+                    final userNote = (decoded['note'] ?? decoded['cleanNote'] ?? decoded['clean_note'])?.toString();
+                    formattedTitle = (userNote != null && userNote.trim().isNotEmpty)
+                        ? 'Rút quỹ $fundName: ${userNote.trim()}'
+                        : 'Rút quỹ $fundName';
+                  } else {
+                    formattedTitle = 'Rút quỹ $fundName';
+                  }
+                } catch (_) {
+                  formattedTitle = 'Rút quỹ $fundName';
+                }
+              } else {
+                formattedTitle = 'Rút quỹ $fundName: ${noteVal.trim()}';
+              }
+            }
             return <String, dynamic>{
               'kind': 'fund_withdrawal',
               'bucket_id': fundId ?? fundName,
               'bucket_name': fundName,
-              'title': (row['note'] as String?)?.trim().isNotEmpty == true
-                  ? (row['note'] as String).trim()
-                  : 'Rút quỹ $fundName',
+              'title': formattedTitle,
               'icon_key': fundIcon,
               'amount': (row['amount'] as num?)?.toDouble() ?? 0,
               'date': row['date'] as String?,
@@ -968,6 +1090,21 @@ class DashboardService {
             .where(
               (row) => (row['contribution_type'] as String?) == 'contribution',
             )
+            .where((row) {
+              final noteVal = row['note'] as String?;
+              if (noteVal != null && noteVal.startsWith('[GOLD]')) {
+                try {
+                  final decoded = jsonDecode(noteVal.substring(6));
+                  if (decoded is Map) {
+                    final expVal = decoded['record_as_expense'] ?? decoded['recordAsExpense'];
+                    if (expVal == false) {
+                      return false;
+                    }
+                  }
+                } catch (_) {}
+              }
+              return true;
+            })
             .fold<double>(
               0,
               (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0),

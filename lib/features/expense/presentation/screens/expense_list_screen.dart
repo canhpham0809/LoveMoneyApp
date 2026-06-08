@@ -327,9 +327,19 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
     final funds = List<Map<String, dynamic>>.from(futures[0] as List);
     final payments = List<Map<String, dynamic>>.from(futures[1] as List);
     final transfers = List<Map<String, dynamic>>.from(futures[2] as List);
+    String cleanFundName(String rawName) {
+      if (rawName.startsWith('[GOLD]')) {
+        final sepIndex = rawName.indexOf('|');
+        if (sepIndex != -1) {
+          return rawName.substring(6, sepIndex);
+        }
+        return rawName.substring(6);
+      }
+      return rawName;
+    }
     final fundNameById = {
       for (final row in List<Map<String, dynamic>>.from(futures[3] as List))
-        row['id'] as String: row['name'] as String,
+        row['id'] as String: cleanFundName(row['name'] as String),
     };
     final debtsList = List<Map<String, dynamic>>.from(futures[4] as List);
     final debtNameById = {
@@ -373,18 +383,56 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
     final externalItems = <_ExpenseFeedItem>[];
 
     for (final row in funds) {
+      final note = (row['note'] as String?)?.trim();
+      if (note != null && note.startsWith('[GOLD]')) {
+        try {
+          final decoded = jsonDecode(note.substring(6));
+          if (decoded is Map) {
+            final expVal = decoded['record_as_expense'] ?? decoded['recordAsExpense'];
+            if (expVal == false) {
+              continue; // Skip this contribution!
+            }
+          }
+        } catch (_) {}
+      }
+
       final fundId = row['fund_id'] as String?;
       final fundName =
           (fundId != null ? fundNameById[fundId] : null) ?? 'Quỹ tiết kiệm';
-      final note = (row['note'] as String?)?.trim();
+      
+      String formattedTitle = 'Đóng góp quỹ: $fundName';
+      if (note != null && note.isNotEmpty) {
+        if (note.startsWith('[GOLD]')) {
+          try {
+            final decoded = jsonDecode(note.substring(6));
+            if (decoded is Map) {
+              final qty = decoded['quantity'] ?? decoded['goldQuantity'] ?? decoded['gold_quantity'] ?? '0';
+              final store = (decoded['store'] ?? decoded['shop'] ?? decoded['goldStore'] ?? decoded['gold_store'])?.toString();
+              final userNote = (decoded['note'] ?? decoded['cleanNote'] ?? decoded['clean_note'])?.toString();
+              formattedTitle = 'Góp $qty chỉ vàng';
+              if (store != null && store.trim().isNotEmpty) {
+                formattedTitle += ' tại ${store.trim()}';
+              }
+              if (userNote != null && userNote.trim().isNotEmpty) {
+                formattedTitle += ' ($userNote)';
+              }
+            } else {
+              formattedTitle = note;
+            }
+          } catch (_) {
+            formattedTitle = note;
+          }
+        } else {
+          formattedTitle = note;
+        }
+      }
+
       externalItems.add(
         _ExpenseFeedItem(
           id: 'fund-${row['id']}',
           kind: _ExpenseFeedKind.fundContribution,
           amount: (row['amount'] as num).toDouble(),
-          title: (note != null && note.isNotEmpty)
-              ? note
-              : 'Đóng góp quỹ: $fundName',
+          title: formattedTitle,
           date: DateTime.parse(row['date'] as String),
           createdAt: DateTime.parse(row['created_at'] as String),
         ),

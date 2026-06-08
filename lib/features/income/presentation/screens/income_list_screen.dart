@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -388,6 +389,36 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
     final items = <_IncomeFeedItem>[];
 
     for (final row in funds) {
+      final note = (row['note'] as String?)?.trim();
+      bool recordAsIncome = true;
+      if (note != null) {
+        if (note.startsWith('[GOLD]')) {
+          try {
+            final decoded = jsonDecode(note.substring(6));
+            if (decoded is Map) {
+              final incVal = decoded['record_as_income'] ?? decoded['recordAsIncome'];
+              if (incVal is bool) {
+                recordAsIncome = incVal;
+              }
+            }
+          } catch (_) {}
+        } else if (note.startsWith('[WITHDRAWAL]')) {
+          try {
+            final decoded = jsonDecode(note.substring(12));
+            if (decoded is Map) {
+              final incVal = decoded['record_as_income'] ?? decoded['recordAsIncome'];
+              if (incVal is bool) {
+                recordAsIncome = incVal;
+              }
+            }
+          } catch (_) {}
+        }
+      }
+
+      if (!recordAsIncome) {
+        continue; // Skip withdrawals that shouldn't be recorded as income!
+      }
+
       final linkedIncomeId = row['linked_income_id'] as String?;
       if (linkedIncomeId != null) {
         linkedIncomeIds.add(linkedIncomeId);
@@ -395,17 +426,54 @@ class _IncomeListScreenState extends State<IncomeListScreen> {
       final fundId = row['fund_id'] as String?;
       final fundName =
           (fundId != null ? fundNameById[fundId] : null) ?? 'Quỹ tiết kiệm';
-      final note = (row['note'] as String?)?.trim();
-      final hasCustomNote =
-          note != null &&
-          note.isNotEmpty &&
-          note.toLowerCase() != fundName.toLowerCase();
+
+      String formattedTitle = 'Rút quỹ: $fundName';
+      if (note != null && note.isNotEmpty) {
+        if (note.startsWith('[GOLD]')) {
+          try {
+            final decoded = jsonDecode(note.substring(6));
+            if (decoded is Map) {
+              final qty = decoded['quantity'] ?? decoded['goldQuantity'] ?? decoded['gold_quantity'] ?? '0';
+              final store = (decoded['store'] ?? decoded['shop'] ?? decoded['goldStore'] ?? decoded['gold_store'])?.toString();
+              final userNote = (decoded['note'] ?? decoded['cleanNote'] ?? decoded['clean_note'])?.toString();
+              formattedTitle = 'Rút $qty chỉ vàng';
+              if (store != null && store.trim().isNotEmpty) {
+                formattedTitle += ' tại ${store.trim()}';
+              }
+              if (userNote != null && userNote.trim().isNotEmpty) {
+                formattedTitle += ' ($userNote)';
+              }
+            } else {
+              formattedTitle = note;
+            }
+          } catch (_) {
+            formattedTitle = note;
+          }
+        } else if (note.startsWith('[WITHDRAWAL]')) {
+          try {
+            final decoded = jsonDecode(note.substring(12));
+            if (decoded is Map) {
+              final userNote = (decoded['note'] ?? decoded['cleanNote'] ?? decoded['clean_note'])?.toString();
+              formattedTitle = (userNote != null && userNote.trim().isNotEmpty)
+                  ? userNote.trim()
+                  : 'Rút quỹ: $fundName';
+            } else {
+              formattedTitle = note;
+            }
+          } catch (_) {
+            formattedTitle = note;
+          }
+        } else {
+          formattedTitle = note;
+        }
+      }
+
       items.add(
         _IncomeFeedItem(
           id: 'fund-${row['id']}',
           kind: _IncomeFeedKind.fundWithdrawal,
           amount: (row['amount'] as num).toDouble(),
-          title: hasCustomNote ? note : 'Rút quỹ: $fundName',
+          title: formattedTitle,
           date: DateTime.parse(row['date'] as String),
           createdAt: DateTime.parse(row['created_at'] as String),
         ),

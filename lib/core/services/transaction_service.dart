@@ -15,6 +15,26 @@ class TransactionService {
     for (final key in preferredFields) {
       final value = (row[key] as String?)?.trim();
       if (value != null && value.isNotEmpty) {
+        if (value.startsWith('[GOLD]')) {
+          try {
+            final metaStr = value.substring(6);
+            final decoded = jsonDecode(metaStr);
+            if (decoded is Map) {
+              final qty = decoded['quantity'] ?? decoded['goldQuantity'] ?? decoded['gold_quantity'] ?? '0';
+              final store = (decoded['store'] ?? decoded['shop'] ?? decoded['goldStore'] ?? decoded['gold_store'])?.toString();
+              final userNote = (decoded['note'] ?? decoded['cleanNote'] ?? decoded['clean_note'])?.toString();
+              String formatted = 'Góp $qty chỉ vàng';
+              if (store != null && store.trim().isNotEmpty) {
+                formatted += ' tại ${store.trim()}';
+              }
+              if (userNote != null && userNote.trim().isNotEmpty) {
+                formatted += ' ($userNote)';
+              }
+              return formatted;
+            }
+          } catch (_) {}
+          return value;
+        }
         return value;
       }
     }
@@ -42,7 +62,7 @@ class TransactionService {
         .eq('is_deleted', false);
     var fundsQuery = supabase
         .from('fund_contributions')
-        .select('id, amount, date, created_at')
+        .select('id, amount, date, created_at, note')
         .eq('couple_id', coupleId)
         .eq('contribution_type', 'contribution')
         .eq('is_deleted', false);
@@ -116,10 +136,21 @@ class TransactionService {
       addExpense(date, (row['amount'] as num).toDouble());
     }
     for (final row in results[2] as List) {
-      final date = DateTime.parse(
-        (row as Map<String, dynamic>)['date'] as String,
-      );
-      addExpense(date, (row['amount'] as num).toDouble());
+      final map = row as Map<String, dynamic>;
+      final noteVal = map['note'] as String?;
+      if (noteVal != null && noteVal.startsWith('[GOLD]')) {
+        try {
+          final decoded = jsonDecode(noteVal.substring(6));
+          if (decoded is Map) {
+            final expVal = decoded['record_as_expense'] ?? decoded['recordAsExpense'];
+            if (expVal == false) {
+              continue;
+            }
+          }
+        } catch (_) {}
+      }
+      final date = DateTime.parse(map['date'] as String);
+      addExpense(date, (map['amount'] as num).toDouble());
     }
 
     final debtsList = results[5] as List;
@@ -217,8 +248,18 @@ class TransactionService {
         .from('funds')
         .select('id, name')
         .eq('couple_id', coupleId);
+    String cleanFundName(String rawName) {
+      if (rawName.startsWith('[GOLD]')) {
+        final sepIndex = rawName.indexOf('|');
+        if (sepIndex != -1) {
+          return rawName.substring(6, sepIndex);
+        }
+        return rawName.substring(6);
+      }
+      return rawName;
+    }
     final fundNameById = {
-      for (final f in funds) f['id'] as String: f['name'] as String,
+      for (final f in funds) f['id'] as String: cleanFundName(f['name'] as String),
     };
 
     final debts = await supabase
@@ -343,21 +384,37 @@ class TransactionService {
         'title': _pickTitle(row: row, fallback: 'Chi tiêu'),
       });
     });
-    final fundsTx = (results[2] as List).map((json) {
-      final row = Map<String, dynamic>.from(json);
-      final fundId = row['fund_id'] as String?;
-      final fundName = fundId != null ? fundNameById[fundId] : null;
-      final fallback = fundName != null ? 'Góp quỹ: $fundName' : 'Góp quỹ';
-      return Transaction.fromJson({
-        ...row,
-        'type': 'fund',
-        'title': _pickTitle(
-          row: row,
-          fallback: fallback,
-          preferredFields: const ['note'],
-        ),
-      });
-    });
+    final fundsTx = (results[2] as List)
+        .map((json) => Map<String, dynamic>.from(json))
+        .where((row) {
+          final noteVal = row['note'] as String?;
+          if (noteVal != null && noteVal.startsWith('[GOLD]')) {
+            try {
+              final decoded = jsonDecode(noteVal.substring(6));
+              if (decoded is Map) {
+                final expVal = decoded['record_as_expense'] ?? decoded['recordAsExpense'];
+                if (expVal == false) {
+                  return false;
+                }
+              }
+            } catch (_) {}
+          }
+          return true;
+        })
+        .map((row) {
+          final fundId = row['fund_id'] as String?;
+          final fundName = fundId != null ? fundNameById[fundId] : null;
+          final fallback = fundName != null ? 'Góp quỹ: $fundName' : 'Góp quỹ';
+          return Transaction.fromJson({
+            ...row,
+            'type': 'fund',
+            'title': _pickTitle(
+              row: row,
+              fallback: fallback,
+              preferredFields: const ['note'],
+            ),
+          });
+        });
     final debtTx = (results[3] as List)
         .map((json) => Map<String, dynamic>.from(json))
         .where((row) {
