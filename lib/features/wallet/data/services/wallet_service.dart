@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:flutter_app_demo/features/wallet/data/models/wallet_model.dart';
@@ -21,16 +22,29 @@ class WalletService {
     required String type,
     required String currency,
     bool isDefault = false,
+    Map<String, dynamic>? goldMetadata,
   }) async {
+    String dbName = name;
+    String dbType = type;
+    double initialBalance = 0;
+    if (type == 'gold') {
+      dbType = 'other';
+      dbName = '[GOLD]$name|${jsonEncode(goldMetadata ?? {})}';
+      initialBalance = ((goldMetadata?['rounds'] as List?) ?? []).fold<double>(
+        0,
+        (sum, item) => sum + ((item['total_price'] ?? item['total_amount'] ?? 0) as num).toDouble(),
+      );
+    }
+
     final row = await _db
         .from('wallets')
         .insert({
           'couple_id': coupleId,
-          'name': name,
-          'type': type,
+          'name': dbName,
+          'type': dbType,
           'currency': currency,
           'is_default': isDefault,
-          'balance': 0,
+          'balance': initialBalance,
         })
         .select()
         .single();

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'package:flutter_app_demo/core/utils/formatters.dart';
 import 'package:flutter_app_demo/features/wallet/presentation/screens/add_wallet_screen.dart';
+import 'package:flutter_app_demo/features/wallet/presentation/screens/wallet_detail_screen.dart';
 import 'package:flutter_app_demo/features/wallet/data/models/wallet_model.dart';
 import 'package:flutter_app_demo/features/wallet/data/services/wallet_service.dart';
 
@@ -48,6 +50,8 @@ class _WalletListScreenState extends State<WalletListScreen> {
         return Icons.phone_android;
       case 'cash':
         return Icons.payments_outlined;
+      case 'gold':
+        return Icons.stars_rounded;
       default:
         return Icons.wallet;
     }
@@ -82,7 +86,11 @@ class _WalletListScreenState extends State<WalletListScreen> {
               itemBuilder: (context, index) {
                 final item = _items[index];
                 return ListTile(
-                  leading: CircleAvatar(child: Icon(_walletIcon(item.type))),
+                  leading: CircleAvatar(
+                    backgroundColor: item.type == 'gold' ? Colors.amber[100] : null,
+                    foregroundColor: item.type == 'gold' ? Colors.amber[800] : null,
+                    child: Icon(_walletIcon(item.type)),
+                  ),
                   title: Row(
                     children: [
                       Text(item.name),
@@ -97,8 +105,25 @@ class _WalletListScreenState extends State<WalletListScreen> {
                     ],
                   ),
                   subtitle: Text(
-                    '${item.type.toUpperCase()} · ${item.currency}',
+                    item.type == 'gold'
+                        ? 'VÀNG · ${(item.goldMetadata?['total_quantity'] ?? 0)} chỉ'
+                        : '${item.type.toUpperCase()} · ${item.currency}',
                   ),
+                  trailing: Text(
+                    formatVnd(item.balance),
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                  ),
+                  onTap: () async {
+                    final updated = await Navigator.push<bool>(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => WalletDetailScreen(wallet: item),
+                      ),
+                    );
+                    if (updated == true) {
+                      await _load();
+                    }
+                  },
                 );
               },
             ),
