@@ -337,7 +337,66 @@ class DashboardService {
     }
 
     // Fetch payments in the month for ALL debts of this couple, then decide
-    // inclusion in Dart (recorded+created-this-month OR has payments this month by viewerUserId).
+    // Build map of expenseId -> expenseAmount to sync edited expenses from Expense List screen
+    final expenseAmountById = <String, double>{
+      for (final e in expenses)
+        if (e['id'] is String && e['amount'] is num)
+          e['id'] as String: (e['amount'] as num).toDouble(),
+    };
+
+    // Build map of paymentId -> full amount (Gốc + Lãi + Phí) from bank loan schedules & linked expenses
+    final bankLoanPaymentFullAmountMap = <String, double>{};
+    for (final debt in allDebts) {
+      final note = debt['note'] as String?;
+      if (note != null && note.trim().startsWith('{')) {
+        try {
+          final data = jsonDecode(note);
+          if (data['is_bank_loan'] == true && data['schedule'] is List) {
+            bool scheduleUpdated = false;
+            final scheduleList = data['schedule'] as List;
+
+            for (final item in scheduleList) {
+              final pid = item['payment_id'] as String? ?? item['paymentId'] as String?;
+              final expId = item['expense_id'] as String? ?? item['expenseId'] as String?;
+              final isPaid = item['is_paid'] as bool? ?? item['isPaid'] as bool? ?? false;
+
+              if (isPaid) {
+                double fullAmount = (item['paid_amount'] as num?)?.toDouble() ?? (item['paidAmount'] as num?)?.toDouble() ?? 0;
+                final principal = (item['principal'] as num?)?.toDouble() ?? 0;
+                final interest = (item['interest'] as num?)?.toDouble() ?? 0;
+                final earlyPrincipal = (item['early_principal'] as num?)?.toDouble() ?? (item['earlyPrincipal'] as num?)?.toDouble() ?? 0;
+                final penaltyFee = (item['penalty_fee'] as num?)?.toDouble() ?? (item['penaltyFee'] as num?)?.toDouble() ?? 0;
+
+                if (fullAmount == 0) {
+                  fullAmount = principal + interest + earlyPrincipal + penaltyFee;
+                }
+
+                // If user edited the linked expense in Expense List screen, use the edited expense amount!
+                if (expId != null && expenseAmountById.containsKey(expId)) {
+                  final editedExpAmount = expenseAmountById[expId]!;
+                  if (editedExpAmount > 0 && editedExpAmount != fullAmount) {
+                    fullAmount = editedExpAmount;
+                    item['paid_amount'] = editedExpAmount;
+                    item['paidAmount'] = editedExpAmount;
+                    scheduleUpdated = true;
+                  }
+                }
+
+                if (pid != null && pid.isNotEmpty && fullAmount > 0) {
+                  bankLoanPaymentFullAmountMap[pid] = fullAmount;
+                }
+              }
+            }
+
+            if (scheduleUpdated) {
+              final debtId = debt['id'] as String;
+              _db.from('debts').update({'note': jsonEncode(data)}).eq('id', debtId).then((_) {}).catchError((_) {});
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
     final allDebtIdsForCouple = allDebts.map((r) => r['id'] as String).toList();
     final paymentsByDebtId = <String, List<Map<String, dynamic>>>{};
     if (allDebtIdsForCouple.isNotEmpty) {
@@ -345,7 +404,7 @@ class DashboardService {
         final paymentRows = List<Map<String, dynamic>>.from(
           await _db
               .from('debt_payments')
-              .select('debt_id, amount, date, note, linked_income_id, updated_by')
+              .select('id, debt_id, amount, date, note, linked_income_id, updated_by')
               .inFilter('debt_id', allDebtIdsForCouple)
               .eq('is_deleted', false)
               .gte('date', from)
@@ -360,6 +419,17 @@ class DashboardService {
             final updatedBy = p['updated_by'] as String?;
             if (updatedBy != viewerUserId) {
               continue;
+            }
+          }
+
+          final payId = p['id'] as String?;
+          if (payId != null && bankLoanPaymentFullAmountMap.containsKey(payId)) {
+            final fullAmount = bankLoanPaymentFullAmountMap[payId]!;
+            final currentAmount = (p['amount'] as num?)?.toDouble() ?? 0;
+            if (fullAmount != currentAmount) {
+              p['amount'] = fullAmount;
+              // Sync DB retroactively
+              _db.from('debt_payments').update({'amount': fullAmount}).eq('id', payId).then((_) {}).catchError((_) {});
             }
           }
 
@@ -403,10 +473,27 @@ class DashboardService {
           .map((row) => row['linked_income_id'] as String?)
           .whereType<String>(),
     };
+    final bankLoanExpenseIds = <String>{};
+    for (final row in allDebts) {
+      final note = row['note'] as String?;
+      if (note != null && note.trim().startsWith('{')) {
+        try {
+          final data = jsonDecode(note);
+          if (data['is_bank_loan'] == true && data['schedule'] is List) {
+            for (final item in data['schedule'] as List) {
+              final expId = item['expense_id'] as String?;
+              if (expId != null) bankLoanExpenseIds.add(expId);
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
     final excludedExpenseIds = <String>{
       ...allDebts
           .map((row) => row['linked_expense_id'] as String?)
           .whereType<String>(),
+      ...bankLoanExpenseIds,
     };
 
     // Filter debts and count payments based on belongsToViewer and hasPaymentsThisMonth
@@ -491,9 +578,19 @@ class DashboardService {
           !hiddenIncomeSourceIds.contains(sourceId) &&
           !generatedIncomeSourceNames.contains(sourceName);
     }).toList();
-    final manualExpenses = expenses
-        .where((row) => !excludedExpenseIds.contains(row['id'] as String?))
-        .toList();
+    final manualExpenses = expenses.where((row) {
+      final expId = row['id'] as String?;
+      if (excludedExpenseIds.contains(expId)) return false;
+
+      final catId = row['category_id'] as String?;
+      final catName = ((catId != null ? categoryNameById[catId] : null) ?? (row['category_name'] as String?) ?? '')
+          .trim()
+          .toLowerCase();
+      if (catName == 'trả nợ gốc & lãi' || catName == 'trả nợ' || catName == 'trả nợ ngân hàng') {
+        return false;
+      }
+      return true;
+    }).toList();
 
     final expenseMap = <String, Map<String, dynamic>>{};
     for (final row in manualExpenses) {

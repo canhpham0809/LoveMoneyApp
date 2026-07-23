@@ -86,7 +86,7 @@ class _WalletDetailScreenState extends State<WalletDetailScreen> {
             TextField(
               controller: ctrl,
               autofocus: true,
-              keyboardType: TextInputType.number,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
               inputFormatters: [ThousandsSeparatorInputFormatter()],
               decoration: const InputDecoration(
                 labelText: 'Giá vàng hiện tại (VND/1 chỉ)',
@@ -232,7 +232,7 @@ class _WalletDetailScreenState extends State<WalletDetailScreen> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: priceCtrl,
-                  keyboardType: TextInputType.number,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   inputFormatters: [ThousandsSeparatorInputFormatter()],
                   decoration: const InputDecoration(
                     labelText: 'Đơn giá mua 1 chỉ (VND)',

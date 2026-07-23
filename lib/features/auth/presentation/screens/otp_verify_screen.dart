@@ -248,7 +248,7 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen> {
                 controller: _controllers[i],
                 focusNode: _focusNodes[i],
                 textAlign: TextAlign.center,
-                keyboardType: TextInputType.number,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 obscureText: false,
                 autocorrect: false,
                 enableSuggestions: false,

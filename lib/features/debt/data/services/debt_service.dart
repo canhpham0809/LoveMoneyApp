@@ -1605,28 +1605,17 @@ class DebtService {
         .single();
     final original = (debtRow['original_amount'] as num?)?.toDouble() ?? 0;
 
-    final payments = await _db
-        .from('debt_payments')
-        .select('amount')
-        .eq('debt_id', debtId)
-        .eq('is_deleted', false);
-    final paidTotal = payments.fold<double>(
-      0,
-      (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0),
-    );
-
-    // Also account for pre-paid periods in bank loan schedule (isPaid=true but no paymentId)
-    double prePaidPrincipal = 0.0;
     final noteStr = debtRow['note'] as String?;
+    bool isBankLoan = false;
+    double prePaidPrincipal = 0.0;
     if (noteStr != null && noteStr.trim().startsWith('{')) {
       try {
         final data = jsonDecode(noteStr);
         if (data['is_bank_loan'] == true && data['schedule'] is List) {
+          isBankLoan = true;
           for (final item in data['schedule'] as List) {
             final isPaid = item['is_paid'] as bool? ?? false;
-            final paymentId = item['payment_id'] as String?;
-            if (isPaid && paymentId == null) {
-              // Pre-paid period without a real debt_payment record
+            if (isPaid) {
               prePaidPrincipal += ((item['principal'] as num?)?.toDouble() ?? 0);
               prePaidPrincipal += ((item['early_principal'] as num?)?.toDouble() ?? 0);
             }
@@ -1635,7 +1624,22 @@ class DebtService {
       } catch (_) {}
     }
 
-    final nextRemaining = (original - paidTotal - prePaidPrincipal).clamp(0, original);
+    double nextRemaining;
+    if (isBankLoan) {
+      nextRemaining = (original - prePaidPrincipal).clamp(0.0, original);
+    } else {
+      final payments = await _db
+          .from('debt_payments')
+          .select('amount')
+          .eq('debt_id', debtId)
+          .eq('is_deleted', false);
+      final paidTotal = payments.fold<double>(
+        0,
+        (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0),
+      );
+      nextRemaining = (original - paidTotal).clamp(0.0, original);
+    }
+
     await _db
         .from('debts')
         .update({
@@ -1787,17 +1791,22 @@ class DebtService {
     }
 
     final principalPaid = item.principal + extraPrincipal;
+    final totalPaid = item.principal + item.interest + extraPrincipal + penaltyFee;
     final paymentId = _uuid.v4();
     final dateStr = paymentDate.toIso8601String().substring(0, 10);
+
+    final extraDesc = extraPrincipal > 0 ? ' (Gốc trả thêm: ${formatVnd(extraPrincipal)})' : '';
+    final penaltyDesc = penaltyFee > 0 ? ' (Phí phạt: ${formatVnd(penaltyFee)})' : '';
+    final defaultNote = 'Trả nợ ngân hàng kỳ $monthIndex (${debt.name}, Gốc: ${formatVnd(principalPaid)})$extraDesc$penaltyDesc';
 
     await _db.from('debt_payments').insert({
       'id': paymentId,
       'couple_id': coupleId,
       'debt_id': debtId,
       'wallet_id': walletId,
-      'amount': principalPaid,
+      'amount': totalPaid,
       'date': dateStr,
-      'note': note ?? 'Thanh toán kỳ $monthIndex (Gốc: ${formatVnd(principalPaid)})',
+      'note': note?.trim().isNotEmpty == true ? note!.trim() : defaultNote,
     });
 
     String? expenseId;
@@ -1809,9 +1818,7 @@ class DebtService {
         color: '#EF4444',
       );
 
-      final totalExpense = item.principal + item.interest + extraPrincipal + penaltyFee;
-      final extraDesc = extraPrincipal > 0 ? ' (Gốc trả thêm: ${formatVnd(extraPrincipal)})' : '';
-      final penaltyDesc = penaltyFee > 0 ? ' (Phí phạt: ${formatVnd(penaltyFee)})' : '';
+      final totalExpense = totalPaid;
       final expenseDesc = 'Trả gốc & lãi kỳ $monthIndex: ${debt.name}$extraDesc$penaltyDesc';
 
       final expenseRow = await _db.from('expenses').insert({
@@ -1828,7 +1835,7 @@ class DebtService {
 
     final updatedItem = item.copyWith(
       isPaid: true,
-      paidAmount: item.principal + item.interest + extraPrincipal,
+      paidAmount: totalPaid,
       paidDate: paymentDate,
       paymentId: paymentId,
       expenseId: expenseId,

@@ -254,15 +254,18 @@ class _AppShellScreenState extends State<AppShellScreen> {
       pageBuilder: (dialogContext, anim1, anim2) => StatefulBuilder(
         builder: (dialogContext, setDialogState) {
           final media = MediaQuery.sizeOf(dialogContext);
-          return Dialog(
-            alignment: Alignment.center,
-            insetAnimationDuration: Duration.zero,
-            insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: 520,
-                maxHeight: media.height * 0.8,
-              ),
+          return MediaQuery.removeViewInsets(
+            context: dialogContext,
+            removeBottom: true,
+            child: Dialog(
+              alignment: Alignment.center,
+              insetAnimationDuration: Duration.zero,
+              insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: 520,
+                  maxHeight: media.height * 0.8,
+                ),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                 child: Column(
@@ -413,10 +416,11 @@ class _AppShellScreenState extends State<AppShellScreen> {
                 ),
               ),
             ),
-          );
-        },
-      ),
-    );
+          ),
+        );
+      },
+    ),
+  );
 
     final input = payload?['input']?.trim();
     final forcedCategoryId = payload?['categoryId'];
@@ -672,7 +676,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
       ),
     ];
 
-    final screenWidth = MediaQuery.of(context).size.width;
+    final screenWidth = MediaQuery.sizeOf(context).width;
     final isLargeScreen = screenWidth > 800;
 
     if (isLargeScreen) {

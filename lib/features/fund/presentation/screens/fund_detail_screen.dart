@@ -214,7 +214,7 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                               const SizedBox(height: 10),
                               TextField(
                                 controller: goldUnitPriceCtrl,
-                                keyboardType: TextInputType.number,
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                 inputFormatters: [
                                   FilteringTextInputFormatter.digitsOnly,
                                   ThousandsSeparatorInputFormatter(),
@@ -258,7 +258,7 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
                             ] else ...[
                               TextField(
                                 controller: amountCtrl,
-                                keyboardType: TextInputType.number,
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                 inputFormatters: [
                                   FilteringTextInputFormatter.digitsOnly,
                                   ThousandsSeparatorInputFormatter(),
@@ -548,7 +548,7 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
         title: const Text('Nhập giá vàng hiện tại'),
         content: TextField(
           controller: controller,
-          keyboardType: TextInputType.number,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
           inputFormatters: [
             FilteringTextInputFormatter.digitsOnly,
             ThousandsSeparatorInputFormatter(),

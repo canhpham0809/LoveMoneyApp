@@ -896,15 +896,18 @@ class _TransferFormDialogState extends State<_TransferFormDialog> {
   Widget build(BuildContext context) {
     final media = MediaQuery.sizeOf(context);
 
-    return Dialog(
-      alignment: Alignment.center,
-      insetAnimationDuration: Duration.zero,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: 520,
-          maxHeight: media.height * 0.8,
-        ),
+    return MediaQuery.removeViewInsets(
+      context: context,
+      removeBottom: true,
+      child: Dialog(
+        alignment: Alignment.center,
+        insetAnimationDuration: Duration.zero,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 520,
+            maxHeight: media.height * 0.8,
+          ),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           child: Column(
@@ -930,7 +933,7 @@ class _TransferFormDialogState extends State<_TransferFormDialog> {
                     children: [
                       TextField(
                         controller: _amountCtrl,
-                        keyboardType: TextInputType.number,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         inputFormatters: [
                           FilteringTextInputFormatter.digitsOnly,
                           ThousandsSeparatorInputFormatter(),
@@ -1053,6 +1056,7 @@ class _TransferFormDialogState extends State<_TransferFormDialog> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }

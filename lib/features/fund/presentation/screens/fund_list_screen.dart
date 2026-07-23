@@ -213,15 +213,18 @@ class _FundListScreenState extends State<FundListScreen> {
       pageBuilder: (dialogContext, anim1, anim2) {
         final media = MediaQuery.sizeOf(dialogContext);
         return StatefulBuilder(
-          builder: (dialogContext, setDialogState) => Dialog(
-            alignment: Alignment.center,
-            insetAnimationDuration: Duration.zero,
-            insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: 520,
-                maxHeight: media.height * 0.8,
-              ),
+          builder: (dialogContext, setDialogState) => MediaQuery.removeViewInsets(
+            context: dialogContext,
+            removeBottom: true,
+            child: Dialog(
+              alignment: Alignment.center,
+              insetAnimationDuration: Duration.zero,
+              insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: 520,
+                  maxHeight: media.height * 0.8,
+                ),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                 child: Column(
@@ -267,9 +270,7 @@ class _FundListScreenState extends State<FundListScreen> {
                             const SizedBox(height: 10),
                             TextField(
                               controller: targetCtrl,
-                              keyboardType: isGold
-                                  ? const TextInputType.numberWithOptions(decimal: true)
-                                  : TextInputType.number,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
                               inputFormatters: isGold
                                   ? []
                                   : [
@@ -370,10 +371,11 @@ class _FundListScreenState extends State<FundListScreen> {
                             },
                             child: const Text('Lưu'),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -898,7 +900,7 @@ class _FundListScreenState extends State<FundListScreen> {
       ),
       floatingActionButton: LayoutBuilder(
         builder: (context, constraints) {
-          final isLarge = MediaQuery.of(context).size.width > 800;
+          final isLarge = MediaQuery.sizeOf(context).width > 800;
           if (isLarge) {
             return FloatingActionButton.extended(
               onPressed: _openFundPopup,

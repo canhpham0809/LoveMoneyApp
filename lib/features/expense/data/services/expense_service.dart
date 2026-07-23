@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:flutter_app_demo/features/expense/data/models/expense_model.dart';
@@ -104,6 +105,43 @@ class ExpenseService {
           'event_id': eventId,
         })
         .eq('id', expenseId);
+
+    // Sync to linked debt payment or bank loan schedule if this expense is linked
+    try {
+      final debts = await _db
+          .from('debts')
+          .select('id, note')
+          .eq('is_deleted', false);
+      for (final debt in debts) {
+        final note = debt['note'] as String?;
+        if (note != null && note.trim().startsWith('{')) {
+          final data = jsonDecode(note);
+          if (data['is_bank_loan'] == true && data['schedule'] is List) {
+            bool updated = false;
+            for (final item in data['schedule']) {
+              final expId = item['expense_id'] as String? ?? item['expenseId'] as String?;
+              if (expId == expenseId) {
+                item['paid_amount'] = amount;
+                item['paidAmount'] = amount;
+                updated = true;
+
+                final pid = item['payment_id'] as String? ?? item['paymentId'] as String?;
+                if (pid != null && pid.isNotEmpty) {
+                  await _db.from('debt_payments').update({
+                    'amount': amount,
+                    'wallet_id': walletId,
+                    'date': date.toIso8601String().substring(0, 10),
+                  }).eq('id', pid);
+                }
+              }
+            }
+            if (updated) {
+              await _db.from('debts').update({'note': jsonEncode(data)}).eq('id', debt['id'] as String);
+            }
+          }
+        }
+      }
+    } catch (_) {}
   }
 
   Future<void> restoreExpense(String expenseId) async {

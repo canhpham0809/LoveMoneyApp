@@ -1142,15 +1142,18 @@ class _DebtFormDialogState extends State<_DebtFormDialog> {
   Widget build(BuildContext context) {
     final media = MediaQuery.sizeOf(context);
 
-    return Dialog(
-      alignment: Alignment.center,
-      insetAnimationDuration: Duration.zero,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: 520,
-          maxHeight: media.height * 0.85,
-        ),
+    return MediaQuery.removeViewInsets(
+      context: context,
+      removeBottom: true,
+      child: Dialog(
+        alignment: Alignment.center,
+        insetAnimationDuration: Duration.zero,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 520,
+            maxHeight: media.height * 0.85,
+          ),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           child: Column(
@@ -1226,7 +1229,7 @@ class _DebtFormDialogState extends State<_DebtFormDialog> {
                       const SizedBox(height: 8),
                       TextField(
                         controller: _amountCtrl,
-                        keyboardType: TextInputType.number,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         inputFormatters: [
                           FilteringTextInputFormatter.digitsOnly,
                           ThousandsSeparatorInputFormatter(),
@@ -1249,7 +1252,7 @@ class _DebtFormDialogState extends State<_DebtFormDialog> {
                             Expanded(
                               child: TextField(
                                 controller: _monthsCtrl,
-                                keyboardType: TextInputType.number,
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                                 decoration: const InputDecoration(
                                   labelText: 'Kỳ hạn vay (tháng)',
@@ -1261,7 +1264,7 @@ class _DebtFormDialogState extends State<_DebtFormDialog> {
                             Expanded(
                               child: TextField(
                                 controller: _repaymentDayCtrl,
-                                keyboardType: TextInputType.number,
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                                 decoration: const InputDecoration(
                                   labelText: 'Ngày thanh toán hàng tháng',
@@ -1274,7 +1277,7 @@ class _DebtFormDialogState extends State<_DebtFormDialog> {
                         const SizedBox(height: 8),
                         TextField(
                           controller: _startingPeriodCtrl,
-                          keyboardType: TextInputType.number,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
                           inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                           decoration: const InputDecoration(
                             labelText: 'Kỳ hiện tại đang chờ thanh toán',
@@ -1305,7 +1308,7 @@ class _DebtFormDialogState extends State<_DebtFormDialog> {
                                   Expanded(
                                     flex: 2,
                                     child: TextField(
-                                      keyboardType: TextInputType.number,
+                                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                                       decoration: const InputDecoration(
                                         labelText: 'Đến tháng',
@@ -1373,7 +1376,7 @@ class _DebtFormDialogState extends State<_DebtFormDialog> {
                         const SizedBox(height: 8),
                         TextField(
                           controller: _peopleCountCtrl,
-                          keyboardType: TextInputType.number,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
                           inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                           onChanged: _onPeopleCountChanged,
                           enabled: widget.existing == null,
@@ -1811,11 +1814,12 @@ class _DebtFormDialogState extends State<_DebtFormDialog> {
                   ),
                 ],
               ),
-              ],
-            ),
+            ],
           ),
         ),
-      );
-  }
+      ),
+    ),
+  );
+}
 }
 

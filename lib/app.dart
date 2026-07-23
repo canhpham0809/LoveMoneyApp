@@ -14,7 +14,6 @@ class AppScrollBehavior extends MaterialScrollBehavior {
         PointerDeviceKind.touch,
         PointerDeviceKind.mouse,
         PointerDeviceKind.trackpad,
-        PointerDeviceKind.stylus,
       };
 }
 

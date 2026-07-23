@@ -6,6 +6,11 @@ class ThousandsSeparatorInputFormatter extends TextInputFormatter {
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) {
+    if (oldValue.text == newValue.text &&
+        oldValue.selection == newValue.selection) {
+      return newValue;
+    }
+
     final digits = _digitsOnly(newValue.text);
     if (digits.isEmpty) {
       return const TextEditingValue(text: '');
@@ -13,11 +18,16 @@ class ThousandsSeparatorInputFormatter extends TextInputFormatter {
 
     final formatted = formatAmountInput(digits);
 
+    if (formatted == newValue.text) {
+      return newValue;
+    }
+
     // Count digits before the cursor in the new (unformatted) value
     final cursorPos = newValue.selection.end.clamp(0, newValue.text.length);
     int digitsBeforeCursor = 0;
     for (int i = 0; i < cursorPos; i++) {
-      if (newValue.text[i].contains(RegExp(r'[0-9]'))) digitsBeforeCursor++;
+      final code = newValue.text.codeUnitAt(i);
+      if (code >= 48 && code <= 57) digitsBeforeCursor++;
     }
 
     // Find where that many digits fall in the formatted string
@@ -28,7 +38,8 @@ class ThousandsSeparatorInputFormatter extends TextInputFormatter {
         newCursorPos = i;
         break;
       }
-      if (formatted[i].contains(RegExp(r'[0-9]'))) seen++;
+      final code = formatted.codeUnitAt(i);
+      if (code >= 48 && code <= 57) seen++;
     }
 
     return TextEditingValue(
@@ -60,5 +71,13 @@ double? parseAmountInput(String text) {
 }
 
 String _digitsOnly(String input) {
-  return input.replaceAll(RegExp(r'[^0-9]'), '');
+  final sb = StringBuffer();
+  for (int i = 0; i < input.length; i++) {
+    final code = input.codeUnitAt(i);
+    if (code >= 48 && code <= 57) {
+      sb.writeCharCode(code);
+    }
+  }
+  return sb.toString();
 }
+

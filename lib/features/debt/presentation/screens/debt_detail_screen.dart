@@ -217,7 +217,7 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                           children: [
                             TextField(
                               controller: amountCtrl,
-                              keyboardType: TextInputType.number,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
                               inputFormatters: [
                                 FilteringTextInputFormatter.digitsOnly,
                                 ThousandsSeparatorInputFormatter(),
@@ -597,7 +597,7 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                           children: [
                             TextField(
                               controller: amountCtrl,
-                              keyboardType: TextInputType.number,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
                               inputFormatters: [
                                 FilteringTextInputFormatter.digitsOnly,
                                 ThousandsSeparatorInputFormatter(),
@@ -1843,7 +1843,7 @@ class _DebtDetailScreenState extends State<DebtDetailScreen> {
                                   monthIndex: monthIndex,
                                   walletId: selectedWalletId,
                                   paymentDate: selectedDate,
-                                  recordExpense: true,
+                                  recordExpense: false,
                                   extraPrincipal: extraPrincipal,
                                   penaltyFee: penaltyFee,
                                   note: noteCtrl.text.trim().isNotEmpty ? noteCtrl.text.trim() : null,

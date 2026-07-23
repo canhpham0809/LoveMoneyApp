@@ -323,7 +323,7 @@ class _MonthlyOperationsDashboardScreenState
       isScrollControlled: true,
       showDragHandle: true,
       builder: (context) {
-        final maxHeight = MediaQuery.of(context).size.height * 0.8;
+        final maxHeight = MediaQuery.sizeOf(context).height * 0.8;
         return SizedBox(
           height: maxHeight,
           child: Padding(

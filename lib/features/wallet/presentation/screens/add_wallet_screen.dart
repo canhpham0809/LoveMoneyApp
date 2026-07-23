@@ -174,7 +174,7 @@ class _AddWalletScreenState extends State<AddWalletScreen> {
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _goldUnitPriceCtrl,
-                  keyboardType: TextInputType.number,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   inputFormatters: [ThousandsSeparatorInputFormatter()],
                   decoration: const InputDecoration(
                     labelText: 'Đơn giá lúc mua (VND cho 1 chỉ)',

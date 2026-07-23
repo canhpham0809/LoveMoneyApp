@@ -565,7 +565,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ? null
           : LayoutBuilder(
               builder: (context, constraints) {
-                final isLarge = MediaQuery.of(context).size.width > 800;
+                final isLarge = MediaQuery.sizeOf(context).width > 800;
                 if (isLarge) {
                   return FloatingActionButton.extended(
                     onPressed: () async => widget.onCreatePressed!.call(),

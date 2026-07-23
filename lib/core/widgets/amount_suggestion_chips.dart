@@ -77,9 +77,15 @@ class AmountSuggestionChips extends StatelessWidget {
   }
 
   int? _parseBase(String text) {
-    final digitsOnly = text.replaceAll(RegExp(r'[^0-9]'), '');
-    if (digitsOnly.isEmpty) return null;
-    return int.tryParse(digitsOnly);
+    final buffer = StringBuffer();
+    for (int i = 0; i < text.length; i++) {
+      final code = text.codeUnitAt(i);
+      if (code >= 48 && code <= 57) {
+        buffer.writeCharCode(code);
+      }
+    }
+    if (buffer.isEmpty) return null;
+    return int.tryParse(buffer.toString());
   }
 
   String _formatWithComma(int value) {
