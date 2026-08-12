@@ -45,6 +45,7 @@ jobs:
       - name: 🔨 Xây Dựng Flutter Web
         run: |
           flutter build web --release --base-href "/${{ github.event.repository.name }}/"
+          touch build/web/.nojekyll
 
       # 6. Đóng gói & Tải lên Artifact
       - name: 📤 Tải Lên Artifact (Thư Mục Web Build)
