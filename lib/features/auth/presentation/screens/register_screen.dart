@@ -64,6 +64,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
         return;
       }
 
+      // Nếu Supabase đã tự động xác minh email (Confirm Email tắt trên Dashboard)
+      // res.session sẽ khác null -> Đăng nhập thành công ngay lập tức
+      if (res.session != null) {
+        if (!mounted) return;
+        Navigator.of(context).popUntil((route) => route.isFirst);
+        return;
+      }
+
+      // Nếu cần xác minh OTP qua email
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => OtpVerifyScreen(email: _emailCtrl.text.trim()),

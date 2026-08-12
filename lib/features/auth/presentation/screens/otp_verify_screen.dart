@@ -104,12 +104,15 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen> {
       _otpError = null;
     });
     try {
-      await Supabase.instance.client.auth.verifyOTP(
+      final res = await Supabase.instance.client.auth.verifyOTP(
         type: OtpType.signup,
         email: widget.email,
         token: otp,
       );
-      // _AuthGate will handle navigation
+      if (!mounted) return;
+      if (res.session != null) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
     } on AuthException catch (e) {
       setState(() => _otpError = _mapError(e.message));
     } catch (_) {
